@@ -301,7 +301,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
 
             # Score combinado, ambos términos en 0..1 (antes mezclaba varianza cruda
             # con aesthetic*100, dominado por el blur).
-            SHARP_REF = 600.0   # ref para normalizar varianza Laplaciana (a 1600px)
+            SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
             cluster_scores = []
             for idx in cluster.image_indices:
                 blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
