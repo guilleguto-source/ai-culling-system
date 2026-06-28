@@ -12,7 +12,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Umbral de probabilidad para clasificar un ojo como "cerrado"
-EYE_CLOSED_THRESHOLD = 0.65
+# (OCEC: cerrado cuando prob_open <= 0.42, i.e. prob_closed >= 0.58)
+EYE_CLOSED_THRESHOLD = 0.58
 
 # Índices de landmarks de YuNet: [ojo_izq, ojo_der, nariz, boca_izq, boca_der]
 LANDMARK_LEFT_EYE = 0
@@ -155,32 +156,34 @@ def evaluate_eyes_onnx(
     face_results = []
     any_closed = False
 
+    # Tamaño de entrada del modelo (OCEC: 24x40). Salida: prob_open (sigmoide única).
+    inp = onnx_session.get_inputs()[0]
+    in_name = inp.name
+    ih, iw = (int(inp.shape[2]), int(inp.shape[3])) if len(inp.shape) == 4 else (24, 40)
+
     for i, landmarks in enumerate(eye_landmarks):
         if len(landmarks) < 2:
             continue
 
+        h, w = img_rgb.shape[:2]
+        lx, ly = landmarks[LANDMARK_LEFT_EYE]
+        rx, ry = landmarks[LANDMARK_RIGHT_EYE]
+        eye_dist = max(8.0, ((lx - rx) ** 2 + (ly - ry) ** 2) ** 0.5)
+        half = max(8, int(eye_dist * 0.35))   # recorte relativo a la cara (independiente de la resolución)
+
         probs_closed = []
-        for lm_idx in [LANDMARK_LEFT_EYE, LANDMARK_RIGHT_EYE]:
-            cx, cy = landmarks[lm_idx]
-            h, w = img_rgb.shape[:2]
-            half = 16
+        for cx, cy in (landmarks[LANDMARK_LEFT_EYE], landmarks[LANDMARK_RIGHT_EYE]):
             x1, y1 = max(0, cx - half), max(0, cy - half)
             x2, y2 = min(w, cx + half), min(h, cy + half)
             patch = img_rgb[y1:y2, x1:x2]
-
             if patch.size == 0:
                 probs_closed.append(0.5)
                 continue
-
-            # Preprocesar para el modelo ONNX (32x32, float32, normalizado)
-            patch_resized = cv2.resize(patch, (32, 32)).astype(np.float32) / 255.0
+            patch_resized = cv2.resize(patch, (iw, ih)).astype(np.float32) / 255.0
             patch_input = patch_resized.transpose(2, 0, 1)[np.newaxis, ...]  # NCHW
-
-            input_name = onnx_session.get_inputs()[0].name
-            output = onnx_session.run(None, {input_name: patch_input})[0]
-            # Asume salida [prob_abierto, prob_cerrado]
-            prob_closed = float(output[0][1]) if output.shape[-1] >= 2 else float(output[0][0])
-            probs_closed.append(prob_closed)
+            output = onnx_session.run(None, {in_name: patch_input})[0]
+            prob_open = float(np.clip(np.ravel(output)[0], 0.0, 1.0))
+            probs_closed.append(1.0 - prob_open)   # OCEC da prob_open; cerrado = 1 - open
 
         left_prob_closed, right_prob_closed = probs_closed[0], probs_closed[1]
         has_closed = (

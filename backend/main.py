@@ -200,6 +200,13 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 score_threshold=0.6, nms_threshold=0.3, top_k=5000
             )
 
+        # Modelo de estado de ojos (OCEC). Si falta, se usa el fallback EAR.
+        eye_session = None
+        eye_path = models_dir / "eye_state.onnx"
+        if eye_path.exists():
+            import onnxruntime as ort
+            eye_session = ort.InferenceSession(str(eye_path), providers=["CPUExecutionProvider"])
+
         # FASE 1: Ingesta
         def progress_cb(done, total):
             _job_state["processed"] = done
@@ -211,9 +218,12 @@ def _run_culling_pipeline(directory: str, job_id: str):
         _job_state["stats"]["ingest"] = ingest_stats
 
         # FASE 2: Clasificación de escena y análisis técnico
+        from services.scene_classifier import classify_scene
+        from services.face_assessment import evaluate_eyes_onnx, evaluate_eyes_fast
         scene_types, blur_scores, saliency_regions = [], [], []
         blur_flags = []
         face_bboxes_list = []
+        closed_flags = []           # ojos cerrados por imagen (solo retratos)
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -222,22 +232,32 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 blur_flags.append(False)
                 saliency_regions.append(None)
                 face_bboxes_list.append([])
+                closed_flags.append(False)
                 continue
 
             arr = record.thumb_ai
 
-            # Clasificar escena
-            if face_detector is not None and prefs.get("detect_closed_eyes", True):
-                from services.scene_classifier import classify_scene
+            # Clasificar escena (siempre que haya detector; la pref solo aplica a ojos)
+            if face_detector is not None:
                 scene_result = classify_scene(arr, face_detector)
                 scene_type = scene_result.scene_type.value
                 bboxes = scene_result.face_bboxes
+                eye_lms = scene_result.eye_landmarks
             else:
                 scene_type = "detail"
                 bboxes = []
+                eye_lms = []
 
             scene_types.append(scene_type)
             face_bboxes_list.append(bboxes)
+
+            # Ojos cerrados (solo retratos, OCEC si está, EAR si no)
+            closed = False
+            if scene_type == "portrait" and eye_lms and prefs.get("detect_closed_eyes", True):
+                fa = (evaluate_eyes_onnx(arr, eye_lms, eye_session) if eye_session is not None
+                      else evaluate_eyes_fast(arr, eye_lms))
+                closed = fa.any_closed_eyes
+            closed_flags.append(closed)
 
             # Región de saliencia para detalles
             saliency = compute_saliency_region(arr) if scene_type == "detail" else None
@@ -279,12 +299,15 @@ def _run_culling_pipeline(directory: str, job_id: str):
             if not cluster.image_indices:
                 continue
 
-            # Sort indices in this cluster by score: 0.6 * blur + 0.4 * aesthetic * 100
+            # Score combinado, ambos términos en 0..1 (antes mezclaba varianza cruda
+            # con aesthetic*100, dominado por el blur).
+            SHARP_REF = 600.0   # ref para normalizar varianza Laplaciana (a 1600px)
             cluster_scores = []
             for idx in cluster.image_indices:
                 blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
                 aesthetic = aesthetic_scores[idx] if idx < len(aesthetic_scores) else 0.0
-                score = 0.6 * blur + 0.4 * aesthetic * 100
+                blur_norm = min(1.0, blur / SHARP_REF)
+                score = 0.6 * blur_norm + 0.4 * aesthetic
                 cluster_scores.append((score, idx))
 
             # Sort ascending (worst to best)
@@ -294,34 +317,29 @@ def _run_culling_pipeline(directory: str, job_id: str):
             best_idx = sorted_indices[-1]
             cluster.representative_index = best_idx
 
-            # Determine deletion candidates (1 or 2 worst in burst)
-            n = len(sorted_indices)
-            red_indices = set()
-            if n >= 2:
-                red_indices.add(sorted_indices[0])  # Worst goes to red
-            if n >= 4:
-                red_indices.add(sorted_indices[1])  # Second worst goes to red
-
             for idx in cluster.image_indices:
                 if idx >= len(records):
                     continue
                 record = records[idx]
                 is_representative = (idx == cluster.representative_index)
                 is_blurry = blur_flags[idx] if idx < len(blur_flags) else False
+                has_closed = closed_flags[idx] if idx < len(closed_flags) else False
 
-                # Determinar calificación
+                # Prioridad: error > borrosa > ojos cerrados > seleccionada > duplicado.
+                # (Las no-mejores de una ráfaga ya NO se etiquetan "blurry" si son nítidas;
+                #  van a "duplicates". Los ojos cerrados tienen su propia etiqueta.)
                 if record.error:
                     label = None
                     stars = 0
                 elif is_blurry and prefs.get("detect_blurry", True):
                     label = "blurry"
                     stars = ratings_map["blurry"]["stars"]
+                elif has_closed and not is_representative:
+                    label = "closed_eyes"
+                    stars = ratings_map["closed_eyes"]["stars"]
                 elif is_representative:
                     label = "selected"
                     stars = ratings_map["selected"]["stars"]
-                elif idx in red_indices and prefs.get("detect_duplicates", True):
-                    label = "blurry"
-                    stars = ratings_map["blurry"]["stars"]
                 else:
                     label = "duplicates"
                     stars = ratings_map["duplicates"]["stars"]
