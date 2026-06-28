@@ -29,7 +29,12 @@ SUPPORTED_EXTENSIONS = RAW_EXTENSIONS | JPG_EXTENSIONS
 
 # Tamaños de thumbnail
 THUMB_UI_SIZE = (320, 240)    # Para la galería de la UI
-THUMB_AI_SIZE = (224, 224)    # Para modelos de IA (YuNet, estético, etc.)
+# Para análisis de IA: debe ser suficientemente grande para que YuNet detecte
+# rostros en fotos de grupo (a 224px las caras quedan diminutas y no se detectan).
+# Aspecto preservado; lado largo = 1600.
+# NOTA (Fase 3): mantener todos los thumb_ai en memoria a la vez no escala a miles
+# de fotos; conviene procesar en streaming. Aceptable por ahora.
+THUMB_AI_SIZE = (1600, 1600)
 
 
 @dataclass
@@ -118,8 +123,9 @@ def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, np.ndarray]:
     img_ui.save(buf, format="JPEG", quality=85)
     thumb_ui_bytes = buf.getvalue()
 
-    # Thumbnail cuadrado para IA
-    img_ai = img.resize(THUMB_AI_SIZE, Image.LANCZOS)
+    # Thumbnail para IA — aspecto preservado (NO cuadrado, no deforma rostros)
+    img_ai = img.copy()
+    img_ai.thumbnail(THUMB_AI_SIZE, Image.LANCZOS)
     thumb_ai_arr = np.array(img_ai)
 
     return thumb_ui_bytes, thumb_ai_arr
