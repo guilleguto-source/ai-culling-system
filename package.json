@@ -1,0 +1,40 @@
+{
+  "name": "ai-culling-system",
+  "version": "1.0.0",
+  "description": "AI Culling System with Electron, Vite React, and FastAPI",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev:frontend": "vite",
+    "dev:electron": "tsc -p tsconfig.json && electron .",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:electron\"",
+    "build:frontend": "vite build",
+    "build:electron": "tsc -p tsconfig.json",
+    "build:backend": "pyinstaller --clean --noconfirm --onedir --windowed -n backend backend/run.py",
+    "build": "npm run build:frontend && npm run build:electron && npm run build:backend && electron-builder",
+    "test:backend": "pytest backend/tests"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  },
+  "build": {
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}
