@@ -162,22 +162,30 @@ class LearnPreferenceRequest(BaseModel):
 @app.post("/learn_preference")
 def learn_preference(data: LearnPreferenceRequest):
     from services.ingester import _load_jpg, _extract_raw_preview, RAW_EXTENSIONS
-    from services.aesthetic_assessment import evaluate_aesthetics_fast
     from services.taste_model import taste_model
+    from services import embedding_service
 
-    def get_features(path_str):
+    def get_embedding(path_str):
+        # Caché primero (poblado durante el culling); si no, decodifica y embebe.
+        emb = embedding_service.embed_path(path_str, img_rgb=None)
+        if emb is not None:
+            return emb
         p = Path(path_str)
         arr = _extract_raw_preview(p) if p.suffix.lower() in RAW_EXTENSIONS else _load_jpg(p)
-        if arr is None: return None
-        return evaluate_aesthetics_fast(arr, return_features=True)
+        return embedding_service.embed_path(path_str, arr) if arr is not None else None
 
-    w_feat = get_features(data.winner_path)
-    l_feat = get_features(data.loser_path)
-
-    if not (w_feat and l_feat):
-        raise HTTPException(status_code=400, detail="No se pudieron extraer las características")
-
-    taste_model.learn_preference(w_feat, l_feat)
+    learned = False
+    if embedding_service.is_available():
+        w_emb = get_embedding(data.winner_path)
+        l_emb = get_embedding(data.loser_path)
+        if w_emb is not None and l_emb is not None:
+            event_dir = str(Path(data.winner_path).parent)
+            taste_model.learn_preference(w_emb, l_emb, source="duel", event_dir=event_dir)
+            learned = True
+    if not learned:
+        # Sin modelo CLIP el duelo no entrena, pero la elección del usuario
+        # se respeta igual (re-export XMP abajo).
+        logger.warning("Duelo sin aprendizaje: embeddings no disponibles.")
 
     # La elección del usuario manda: re-escribir el XMP de la ráfaga ahora mismo,
     # ascendiendo al ganador a "selected" y degradando al anterior a "duplicates".
@@ -208,7 +216,7 @@ def learn_preference(data: LearnPreferenceRequest):
 
     from services.xmp_exporter import export_results_to_xmp
     xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True)
-    return {"success": True, "xmp": xmp_stats}
+    return {"success": True, "learned": learned, "xmp": xmp_stats}
 
 
 # --- Endpoint de Apagado ---
@@ -335,9 +343,9 @@ def _run_culling_pipeline(directory: str, job_id: str):
             blur_scores.append(tq.blur_score)
             blur_flags.append(tq.is_blurry)
 
-            # Análisis estético usando el modelo de gustos del usuario
-            feats = evaluate_aesthetics_fast(arr, return_features=True)
-            aesthetic_scores.append(taste_model.predict_score(feats))
+            # Análisis estético heurístico (el gusto aprendido se aplica en el
+            # ranking dentro del cluster, sobre embeddings — FASE 4)
+            aesthetic_scores.append(evaluate_aesthetics_fast(arr))
 
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
 
@@ -395,15 +403,22 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 cluster.image_indices, closed_flags, face_sharpness_list
             )
 
-            # Score combinado, ambos términos en 0..1 (antes mezclaba varianza cruda
-            # con aesthetic*100, dominado por el blur).
+            # Ranking entre candidatos:
+            # - Con gusto entrenado (≥ MIN_EXAMPLES) → score del taste model
+            #   sobre el embedding (los supervivientes ya son técnicamente OK).
+            # - Fallback frío → combinado blur+heurísticas, ambos en 0..1.
             SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
+            use_taste = taste_model.is_trained and embedding_service.is_available()
             cluster_scores = []
             for idx in candidates:
                 blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
                 aesthetic = aesthetic_scores[idx] if idx < len(aesthetic_scores) else 0.0
                 blur_norm = min(1.0, blur / SHARP_REF)
                 score = 0.6 * blur_norm + 0.4 * aesthetic
+                if use_taste and len(candidates) > 1:
+                    emb = embedding_service.embed_path(records[idx].path, records[idx].thumb_ai)
+                    if emb is not None:
+                        score = taste_model.predict_score(emb)
                 cluster_scores.append((score, idx))
 
             # Sort ascending (worst to best)
