@@ -37,6 +37,38 @@ class ImageFaceResult:
     face_results: list[FaceAssessmentResult] = field(default_factory=list)
 
 
+# --- Nitidez por rostro ---
+
+def compute_face_sharpness(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> list[float]:
+    """
+    Varianza del Laplaciano calculada en el crop de cada cara (con margen del 10%).
+    A diferencia del blur global, detecta la cara movida/desenfocada aunque el
+    fondo esté nítido (o viceversa: no penaliza bokeh de fondo).
+
+    Returns:
+        Lista de scores de nitidez, uno por bbox (mismo orden). Vacía si no hay caras.
+    """
+    if not face_bboxes:
+        return []
+
+    img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    h, w = img_gray.shape
+    scores = []
+    for (x, y, fw, fh) in face_bboxes:
+        margin_x = int(fw * 0.1)
+        margin_y = int(fh * 0.1)
+        x1 = max(0, x - margin_x)
+        y1 = max(0, y - margin_y)
+        x2 = min(w, x + fw + margin_x)
+        y2 = min(h, y + fh + margin_y)
+        crop = img_gray[y1:y2, x1:x2]
+        if crop.size == 0:
+            scores.append(0.0)
+            continue
+        scores.append(float(cv2.Laplacian(crop, cv2.CV_64F).var()))
+    return scores
+
+
 # --- Método rápido: Eye Aspect Ratio (EAR) sin modelo ONNX ---
 
 def _eye_aspect_ratio_from_patch(eye_patch_gray: np.ndarray) -> float:

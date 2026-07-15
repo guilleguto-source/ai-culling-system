@@ -153,6 +153,64 @@ def get_thumbnail(path: str):
     raise HTTPException(status_code=404, detail="Thumbnail no encontrado")
 
 
+# --- Endpoint de Aprendizaje de Gustos ---
+
+class LearnPreferenceRequest(BaseModel):
+    winner_path: str
+    loser_path: str
+
+@app.post("/learn_preference")
+def learn_preference(data: LearnPreferenceRequest):
+    from services.ingester import _load_jpg, _extract_raw_preview, RAW_EXTENSIONS
+    from services.aesthetic_assessment import evaluate_aesthetics_fast
+    from services.taste_model import taste_model
+
+    def get_features(path_str):
+        p = Path(path_str)
+        arr = _extract_raw_preview(p) if p.suffix.lower() in RAW_EXTENSIONS else _load_jpg(p)
+        if arr is None: return None
+        return evaluate_aesthetics_fast(arr, return_features=True)
+
+    w_feat = get_features(data.winner_path)
+    l_feat = get_features(data.loser_path)
+
+    if not (w_feat and l_feat):
+        raise HTTPException(status_code=400, detail="No se pudieron extraer las características")
+
+    taste_model.learn_preference(w_feat, l_feat)
+
+    # La elección del usuario manda: re-escribir el XMP de la ráfaga ahora mismo,
+    # ascendiendo al ganador a "selected" y degradando al anterior a "duplicates".
+    settings = load_settings()
+    ratings_map = settings["ratings_mapping"]
+
+    def _with_siblings(path_str: str) -> list[str]:
+        # Incluye el RAW/JPG hermano (mismo stem) para mantener par RAW+JPG sincronizado.
+        p = Path(path_str)
+        out = [str(p)]
+        if p.parent.is_dir():
+            for sib in p.parent.glob(p.stem + ".*"):
+                if sib != p and sib.suffix.lower() != p.suffix.lower():
+                    out.append(str(sib))
+        return out
+
+    rewrite = []
+    for label in ("selected", "duplicates"):
+        src = data.winner_path if label == "selected" else data.loser_path
+        m = ratings_map.get(label, {})
+        for path_str in _with_siblings(src):
+            rewrite.append({
+                "path": path_str,
+                "label": label,
+                "stars": m.get("stars", 0),
+                "color": m.get("color", ""),
+            })
+
+    from services.xmp_exporter import export_results_to_xmp
+    xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True)
+    return {"success": True, "xmp": xmp_stats}
+
+
 # --- Endpoint de Apagado ---
 
 @app.post("/shutdown")
@@ -182,7 +240,10 @@ def _run_culling_pipeline(directory: str, job_id: str):
         from services.ingester import ingest_directory
         from services.scene_classifier import classify_scene, compute_saliency_region, SceneType
         from services.clustering import cluster_images, assign_cluster_representatives
+        from services.cluster_gates import apply_technical_gates
         from services.technical_quality import evaluate_technical_quality
+        from services.aesthetic_assessment import evaluate_aesthetics_fast
+        from services.taste_model import taste_model
         from services.settings_manager import get_blur_threshold, get_dbscan_epsilon
         import cv2
 
@@ -219,11 +280,12 @@ def _run_culling_pipeline(directory: str, job_id: str):
 
         # FASE 2: Clasificación de escena y análisis técnico
         from services.scene_classifier import classify_scene
-        from services.face_assessment import evaluate_eyes_onnx, evaluate_eyes_fast
-        scene_types, blur_scores, saliency_regions = [], [], []
+        from services.face_assessment import evaluate_eyes_onnx, evaluate_eyes_fast, compute_face_sharpness
+        scene_types, blur_scores, saliency_regions, aesthetic_scores = [], [], [], []
         blur_flags = []
         face_bboxes_list = []
         closed_flags = []           # ojos cerrados por imagen (solo retratos)
+        face_sharpness_list = []    # nitidez Laplaciana por cara, por imagen
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -233,6 +295,8 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 saliency_regions.append(None)
                 face_bboxes_list.append([])
                 closed_flags.append(False)
+                face_sharpness_list.append([])
+                aesthetic_scores.append(0.5)
                 continue
 
             arr = record.thumb_ai
@@ -251,6 +315,9 @@ def _run_culling_pipeline(directory: str, job_id: str):
             scene_types.append(scene_type)
             face_bboxes_list.append(bboxes)
 
+            # Nitidez por cara (para el gate técnico dentro del cluster)
+            face_sharpness_list.append(compute_face_sharpness(arr, bboxes) if bboxes else [])
+
             # Ojos cerrados (solo retratos, OCEC si está, EAR si no)
             closed = False
             if scene_type == "portrait" and eye_lms and prefs.get("detect_closed_eyes", True):
@@ -268,11 +335,13 @@ def _run_culling_pipeline(directory: str, job_id: str):
             blur_scores.append(tq.blur_score)
             blur_flags.append(tq.is_blurry)
 
+            # Análisis estético usando el modelo de gustos del usuario
+            feats = evaluate_aesthetics_fast(arr, return_features=True)
+            aesthetic_scores.append(taste_model.predict_score(feats))
+
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
 
         # FASE 3: Clustering
-        aesthetic_scores = [0.5] * len(records)  # Placeholder hasta tener modelo estético
-
         if prefs.get("detect_duplicates", True):
             clusters = cluster_images(
                 [r.phash for r in records],
@@ -289,7 +358,27 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 for i in range(len(records))
             ]
 
-        _job_state["progress"] = 80.0
+        # FASE 3b: Embeddings visuales (solo fotos en clusters con >1 imagen,
+        # donde hay que desempatar). Caché en disco: re-correr un evento no
+        # re-embebe. Si el modelo CLIP no está, se omite sin error.
+        from services import embedding_service
+        if embedding_service.is_available():
+            multi_indices = [
+                idx for c in clusters if len(c.image_indices) > 1
+                for idx in c.image_indices
+            ]
+            embedded = 0
+            for n, idx in enumerate(multi_indices):
+                rec = records[idx]
+                if rec.error or rec.thumb_ai is None:
+                    continue
+                if embedding_service.embed_path(rec.path, rec.thumb_ai) is not None:
+                    embedded += 1
+                _job_state["progress"] = 80.0 + round(n / max(1, len(multi_indices)) * 10, 1)  # 80-90%
+            _job_state["stats"]["embeddings"] = {"computed": embedded, "candidates": len(multi_indices)}
+            logger.info(f"Embeddings listos: {embedded}/{len(multi_indices)} fotos en clusters.")
+
+        _job_state["progress"] = 90.0
 
         # FASE 4: Asignar calificaciones
         ratings_map = settings["ratings_mapping"]
@@ -299,11 +388,18 @@ def _run_culling_pipeline(directory: str, job_id: str):
             if not cluster.image_indices:
                 continue
 
+            # Gates técnicos: el representative se elige solo entre las fotos
+            # sin defectos técnicos relativos (ojos cerrados, cara borrosa),
+            # si es que existe al menos una alternativa limpia en el cluster.
+            candidates = apply_technical_gates(
+                cluster.image_indices, closed_flags, face_sharpness_list
+            )
+
             # Score combinado, ambos términos en 0..1 (antes mezclaba varianza cruda
             # con aesthetic*100, dominado por el blur).
             SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
             cluster_scores = []
-            for idx in cluster.image_indices:
+            for idx in candidates:
                 blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
                 aesthetic = aesthetic_scores[idx] if idx < len(aesthetic_scores) else 0.0
                 blur_norm = min(1.0, blur / SHARP_REF)
@@ -357,6 +453,16 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     "blur_score": round(blur_scores[idx], 2) if idx < len(blur_scores) else 0,
                     "error": record.error,
                 })
+                
+                # Si este JPG tenía un RAW emparejado, inyectar otra entrada en los resultados
+                # para que también se escriba el metadato XMP sidecar para el RAW.
+                if getattr(record, "linked_raw_path", None):
+                    import copy
+                    raw_res = copy.deepcopy(results[-1])
+                    raw_res["path"] = record.linked_raw_path
+                    raw_res["filename"] = Path(record.linked_raw_path).name
+                    raw_res["is_raw"] = True
+                    results.append(raw_res)
 
         # FASE 5: Exportar metadatos a XMP sidecars
         from services.xmp_exporter import export_results_to_xmp
