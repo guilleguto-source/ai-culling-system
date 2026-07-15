@@ -78,6 +78,7 @@ export default function App() {
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'grid' | 'duel'>('grid');
+  const [lastDirectory, setLastDirectory] = useState<string>('');
   
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -150,6 +151,7 @@ export default function App() {
   const handleIngest = async (directory: string) => {
     try {
       await window.api.ingestMedia(directory);
+      setLastDirectory(directory);
       setJobResults(null); // Reset results for new job
       setCurrentView('grid'); // Reset view
     } catch (err) {
@@ -183,11 +185,12 @@ export default function App() {
       />
       
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <MainContent 
+        <MainContent
           jobState={jobState}
           jobResults={jobResults}
           settings={settings}
           viewMode={currentView}
+          directory={lastDirectory}
         />
       </div>
 

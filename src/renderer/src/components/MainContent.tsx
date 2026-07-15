@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
 
@@ -7,9 +7,40 @@ interface MainContentProps {
   jobResults: any;
   settings: any;
   viewMode: 'grid' | 'duel';
+  directory?: string;
 }
 
-export default function MainContent({ jobState, jobResults, settings, viewMode }: MainContentProps) {
+export default function MainContent({ jobState, jobResults, settings, viewMode, directory }: MainContentProps) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string>('');
+
+  const handleLightroomSync = async () => {
+    if (!directory) return;
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('http://127.0.0.1:8000/reimport_xmp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMsg(
+          data.corrections === 0
+            ? 'Sin cambios nuevos en Lightroom'
+            : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
+              (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)')
+        );
+      } else {
+        setSyncMsg(data.detail || 'Error al sincronizar');
+      }
+    } catch (e) {
+      setSyncMsg('Error de conexión con el backend');
+    } finally {
+      setSyncing(false);
+    }
+  };
   
   if (!jobState && !jobResults) {
     return (
@@ -70,6 +101,19 @@ export default function MainContent({ jobState, jobResults, settings, viewMode }
              <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>
                {jobResults.stats.ingest?.images_per_second || 0} <span style={{ fontSize: '0.8rem', fontWeight: 'normal' }}>img/s</span>
              </span>
+           </div>
+           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+             {syncMsg && (
+               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{syncMsg}</span>
+             )}
+             <button
+               className="btn btn-secondary"
+               onClick={handleLightroomSync}
+               disabled={syncing || !directory}
+               title="Relee los XMP del directorio y aprende de tus correcciones en Lightroom"
+             >
+               {syncing ? 'Sincronizando…' : 'Sincronizar desde Lightroom'}
+             </button>
            </div>
         </div>
 

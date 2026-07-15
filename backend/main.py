@@ -215,8 +215,101 @@ def learn_preference(data: LearnPreferenceRequest):
             })
 
     from services.xmp_exporter import export_results_to_xmp
+    from services.export_snapshot import update_labels
     xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True)
+    # Mantener el snapshot al día: el cambio vino de un duelo, no de Lightroom.
+    update_labels(
+        str(Path(data.winner_path).parent),
+        {r["path"]: r["label"] for r in rewrite},
+    )
     return {"success": True, "learned": learned, "xmp": xmp_stats}
+
+
+# --- Endpoint de Sync desde Lightroom ---
+
+class ReimportRequest(BaseModel):
+    directory: str
+
+@app.post("/reimport_xmp")
+def reimport_xmp(data: ReimportRequest):
+    """
+    Relee los XMP de un directorio ya exportado y convierte las correcciones
+    del usuario en Lightroom (subir/bajar estrellas) en ejemplos de
+    entrenamiento: subió → +1, bajó → -1. Idempotente: un segundo sync sin
+    cambios nuevos no genera ejemplos repetidos.
+    """
+    from services.export_snapshot import load_snapshot, update_synced_stars
+    from services.xmp_reader import read_xmp
+    from services.ingester import _load_jpg, _extract_raw_preview, RAW_EXTENSIONS
+    from services.taste_model import taste_model
+    from services import embedding_service
+
+    snapshot = load_snapshot(data.directory)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Este directorio no tiene un export previo")
+
+    ratings_map = load_settings()["ratings_mapping"]
+    synced = snapshot.get("synced_stars", {})
+
+    # Agrupar RAW+JPG por (carpeta, stem) para no duplicar ejemplos del par.
+    groups: dict[tuple, list[str]] = {}
+    for path_str in snapshot["items"]:
+        p = Path(path_str)
+        groups.setdefault((str(p.parent).lower(), p.stem.lower()), []).append(path_str)
+
+    def get_embedding(path_str):
+        emb = embedding_service.embed_path(path_str, img_rgb=None)  # caché primero
+        if emb is not None:
+            return emb
+        p = Path(path_str)
+        arr = _extract_raw_preview(p) if p.suffix.lower() in RAW_EXTENSIONS else _load_jpg(p)
+        return embedding_service.embed_path(path_str, arr) if arr is not None else None
+
+    upgraded = downgraded = 0
+    learned = 0
+    new_synced: dict[str, int] = {}
+    emb_available = embedding_service.is_available()
+
+    for members in groups.values():
+        # Preferir el JPG para leer XMP y embeber (su caché ya existe del culling)
+        members.sort(key=lambda s: Path(s).suffix.lower() in RAW_EXTENSIONS)
+        primary = members[0]
+        exported_label = snapshot["items"][primary]
+        baseline = synced.get(primary, ratings_map.get(exported_label, {}).get("stars", 0))
+
+        # El usuario pudo editar el JPG o el sidecar del RAW: primer XMP que difiera
+        current = None
+        for m in members:
+            xmp = read_xmp(m)
+            if xmp is not None and xmp["stars"] != baseline:
+                current = xmp
+                break
+        if current is None:
+            continue
+
+        sign = +1 if current["stars"] > baseline else -1
+        upgraded += sign > 0
+        downgraded += sign < 0
+        new_synced[primary] = current["stars"]
+
+        if emb_available:
+            emb = get_embedding(primary)
+            if emb is not None:
+                taste_model.add_example(emb, sign, "lightroom", event_dir=data.directory)
+                learned += 1
+
+    if new_synced:
+        update_synced_stars(data.directory, new_synced)
+
+    return {
+        "success": True,
+        "corrections": upgraded + downgraded,
+        "upgraded": upgraded,
+        "downgraded": downgraded,
+        "learned": learned,
+        "embeddings_available": emb_available,
+        "total_examples": taste_model.n_examples,
+    }
 
 
 # --- Endpoint de Apagado ---
@@ -484,6 +577,11 @@ def _run_culling_pipeline(directory: str, job_id: str):
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
         xmp_stats = export_results_to_xmp(results, ratings_map, overwrite=overwrite_xmp)
         _job_state["stats"]["xmp"] = xmp_stats
+
+        # Persistir qué exportamos: base para el sync desde Lightroom
+        # (las diferencias futuras en los XMP = correcciones del usuario).
+        from services.export_snapshot import save_snapshot
+        save_snapshot(directory, results)
 
         _job_state["results"] = results
         _job_state["status"] = "completed"
