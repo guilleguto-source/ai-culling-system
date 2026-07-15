@@ -15,12 +15,14 @@ function createWindow() {
     }
   });
 
-  const isDev = !app.isPackaged;
-  if (isDev) {
+  // CULLING_LOCAL=1: lanzamiento desde el escritorio sin terminal — usa el
+  // frontend ya compilado (dist/renderer) y el Python del sistema, sin Vite.
+  const useBuiltRenderer = app.isPackaged || process.env.CULLING_LOCAL === '1';
+  if (useBuiltRenderer) {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  } else {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
   mainWindow.on('closed', () => {
