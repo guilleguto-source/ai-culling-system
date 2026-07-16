@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   sendSettings: (settings: any) => ipcRenderer.invoke('backend:settings:save', settings),
   getSettings: () => ipcRenderer.invoke('backend:settings:get'),
   
-  ingestMedia: (directory: string) => ipcRenderer.invoke('backend:ingest', directory),
+  ingestMedia: (directory: string, mode?: string) => ipcRenderer.invoke('backend:ingest', directory, mode || 'cull_edit'),
   getJobStatus: () => ipcRenderer.invoke('backend:job:status'),
   getJobResults: () => ipcRenderer.invoke('backend:job:results'),
 

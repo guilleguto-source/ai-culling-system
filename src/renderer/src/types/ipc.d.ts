@@ -5,7 +5,7 @@ declare global {
       getHardwareInfo: () => Promise<any>;
       sendSettings: (settings: any) => Promise<any>;
       getSettings: () => Promise<any>;
-      ingestMedia: (directory: string) => Promise<{ job_id: string; status: string }>;
+      ingestMedia: (directory: string, mode?: string) => Promise<{ job_id: string; status: string }>;
       getJobStatus: () => Promise<any>;
       getJobResults: () => Promise<any>;
       onBackendLog: (callback: (log: string) => void) => () => void;

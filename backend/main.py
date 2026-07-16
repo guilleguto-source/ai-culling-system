@@ -49,6 +49,7 @@ _thumbnail_cache: dict[str, bytes] = {}
 
 class IngestRequest(BaseModel):
     directory: str
+    mode: str = "cull_edit"   # "cull" (solo selección) | "cull_edit" (selección + edición)
 
 class SettingsUpdateRequest(BaseModel):
     ratings_mapping: dict | None = None
@@ -116,8 +117,9 @@ def start_ingest(data: IngestRequest, background_tasks: BackgroundTasks):
         "error": None,
     }
 
-    background_tasks.add_task(_run_culling_pipeline, data.directory, job_id)
-    return {"job_id": job_id, "status": "started"}
+    _job_state["mode"] = data.mode
+    background_tasks.add_task(_run_culling_pipeline, data.directory, job_id, data.mode)
+    return {"job_id": job_id, "status": "started", "mode": data.mode}
 
 
 @app.get("/status")
@@ -206,9 +208,12 @@ def learn_preference(data: LearnPreferenceRequest):
     from services.export_snapshot import load_snapshot
     from services.preset_manager import load_preset
     snap = load_snapshot(str(Path(data.winner_path).parent))
-    crops = snap.get("crops", {}) if snap else {}
-    develops = snap.get("develops", {}) if snap else {}
-    preset_path = snap.get("preset_path", "") if snap else ""
+    # En modo "solo culling" la edición aún no se aplicó: el duelo re-escribe
+    # solo labels; crop/develop llegarán con /apply_edits.
+    edits_on = bool(snap and snap.get("edits_applied", True))
+    crops = snap.get("crops", {}) if snap and edits_on else {}
+    develops = snap.get("develops", {}) if snap and edits_on else {}
+    preset_path = snap.get("preset_path", "") if snap and edits_on else ""
     preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
 
     rewrite = []
@@ -272,6 +277,60 @@ def use_preset(data: PresetUseRequest):
     pre_updated = register_recent(data.path)
     return {"success": True, "active": pre_updated["preset_path"],
             "recent": pre_updated["recent_presets"]}
+
+
+# --- Endpoint de Aplicar Edición (tras revisar la selección) ---
+
+class ApplyEditsRequest(BaseModel):
+    directory: str
+
+@app.post("/apply_edits")
+def apply_edits(data: ApplyEditsRequest):
+    """
+    Escribe la edición propuesta (crop + preset + WB + exposición) en las
+    fotos actualmente selected/highlighted del snapshot — instantáneo, sin
+    re-analizar. Respeta los duelos hechos después del culling (el snapshot
+    se actualiza con cada 'Elegir esta').
+    """
+    from services.export_snapshot import load_snapshot, set_edits_applied
+    from services.preset_manager import load_preset
+    from services.xmp_exporter import export_results_to_xmp
+
+    snap = load_snapshot(data.directory)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="Este directorio no tiene un culling previo")
+
+    ratings_map = load_settings()["ratings_mapping"]
+    crops = snap.get("crops", {})
+    develops = snap.get("develops", {})
+    preset_path = snap.get("preset_path", "")
+    preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
+
+    rewrite = []
+    for path_str, label in snap["items"].items():
+        if label not in ("selected", "highlighted"):
+            continue
+        m = ratings_map.get(label, {})
+        rewrite.append({
+            "path": path_str,
+            "label": label,
+            "stars": m.get("stars", 0),
+            "color": m.get("color", ""),
+            "crop": crops.get(path_str),
+            "develop": develops.get(path_str),
+        })
+
+    if not rewrite:
+        raise HTTPException(status_code=400, detail="No hay fotos seleccionadas en el snapshot")
+
+    xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True, preset=preset_data)
+    set_edits_applied(data.directory)
+    return {
+        "success": True,
+        "edited": len(rewrite),
+        "preset": preset_data.name if preset_data else None,
+        "xmp": xmp_stats,
+    }
 
 
 # --- Endpoint de Sync desde Lightroom ---
@@ -375,10 +434,14 @@ def shutdown(background_tasks: BackgroundTasks):
 
 # --- Pipeline de Culling (Background Task) ---
 
-def _run_culling_pipeline(directory: str, job_id: str):
+def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
     """
     Ejecuta el pipeline completo de culling en segundo plano.
     Fases: Ingesta → Escena → Clustering → Calidad Técnica → Biométrica → Estética → Resultados
+
+    mode="cull": las propuestas de edición (crop + revelado) se CALCULAN y
+    quedan en el snapshot, pero NO se escriben en los XMP — el usuario revisa
+    la selección y luego las aplica con POST /apply_edits (instantáneo).
     """
     global _job_state, _thumbnail_cache
 
@@ -765,15 +828,24 @@ def _run_culling_pipeline(directory: str, job_id: str):
         # FASE 5: Exportar metadatos a XMP sidecars
         from services.xmp_exporter import export_results_to_xmp
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
-        xmp_stats = export_results_to_xmp(results, ratings_map,
-                                          overwrite=overwrite_xmp, preset=preset_data)
+        if mode == "cull":
+            # Solo selección: labels/estrellas/banderines sí; edición NO
+            # (queda propuesta en el snapshot para /apply_edits).
+            to_export = [{**r, "crop": None, "develop": None} for r in results]
+            xmp_stats = export_results_to_xmp(to_export, ratings_map,
+                                              overwrite=overwrite_xmp)
+        else:
+            xmp_stats = export_results_to_xmp(results, ratings_map,
+                                              overwrite=overwrite_xmp, preset=preset_data)
         _job_state["stats"]["xmp"] = xmp_stats
+        _job_state["stats"]["edits_applied"] = (mode != "cull")
 
         # Persistir qué exportamos: base para el sync desde Lightroom
         # (las diferencias futuras en los XMP = correcciones del usuario).
         from services.export_snapshot import save_snapshot
         save_snapshot(directory, results,
-                      preset_path=preset_data.path if preset_data else "")
+                      preset_path=preset_data.path if preset_data else "",
+                      edits_applied=(mode != "cull"))
 
         _job_state["results"] = results
         _job_state["status"] = "completed"

@@ -13,6 +13,32 @@ interface MainContentProps {
 export default function MainContent({ jobState, jobResults, settings, viewMode, directory }: MainContentProps) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>('');
+  const [applying, setApplying] = useState(false);
+  const [editsApplied, setEditsApplied] = useState(false);
+
+  const handleApplyEdits = async () => {
+    if (!directory) return;
+    setApplying(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('http://127.0.0.1:8000/apply_edits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditsApplied(true);
+        setSyncMsg(`Edición aplicada a ${data.edited} fotos` + (data.preset ? ` · preset ${data.preset}` : ''));
+      } else {
+        setSyncMsg(data.detail || 'Error al aplicar edición');
+      }
+    } catch (e) {
+      setSyncMsg('Error de conexión con el backend');
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const handleLightroomSync = async () => {
     if (!directory) return;
@@ -105,6 +131,16 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
              {syncMsg && (
                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{syncMsg}</span>
+             )}
+             {jobResults.stats?.edits_applied === false && !editsApplied && (
+               <button
+                 className="btn btn-primary"
+                 onClick={handleApplyEdits}
+                 disabled={applying || !directory}
+                 title="Escribe crop + preset + WB + exposición en las fotos seleccionadas (respeta tus duelos)"
+               >
+                 {applying ? 'Aplicando…' : 'Aplicar edición'}
+               </button>
              )}
              <button
                className="btn btn-secondary"

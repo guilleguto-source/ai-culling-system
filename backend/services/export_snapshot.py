@@ -22,7 +22,8 @@ def _snapshot_path(directory: str) -> Path:
     return EXPORTS_DIR / f"{key}.json"
 
 
-def save_snapshot(directory: str, results: list[dict], preset_path: str = "") -> None:
+def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
+                  edits_applied: bool = True) -> None:
     """Guarda {path: label} de lo exportado en el último culling del directorio."""
     items = {
         r["path"]: r["label"]
@@ -32,6 +33,8 @@ def save_snapshot(directory: str, results: list[dict], preset_path: str = "") ->
     data = {
         "directory": str(Path(directory).resolve()),
         "exported_at": datetime.now(timezone.utc).isoformat(),
+        # False = modo "solo culling": crop/develop propuestos pero no escritos
+        "edits_applied": edits_applied,
         "items": items,
         # Crops/develop propuestos: el re-export tras un duelo los reutiliza
         "crops": {
@@ -82,6 +85,15 @@ def update_labels(directory: str, new_labels: dict[str, str]) -> None:
     if data is None:
         return
     data["items"].update(new_labels)
+    _save(directory, data)
+
+
+def set_edits_applied(directory: str) -> None:
+    """Marca que la edición propuesta ya se escribió en los XMP."""
+    data = load_snapshot(directory)
+    if data is None:
+        return
+    data["edits_applied"] = True
     _save(directory, data)
 
 

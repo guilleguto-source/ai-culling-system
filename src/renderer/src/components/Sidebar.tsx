@@ -6,7 +6,7 @@ interface SidebarProps {
   hardwareInfo: any;
   jobState: any;
   onOpenSettings: () => void;
-  onStartIngest: (directory: string) => void;
+  onStartIngest: (directory: string, mode?: string) => void;
   currentView: 'grid' | 'duel';
   onViewChange: (view: 'grid' | 'duel') => void;
   hasResults: boolean;
@@ -24,9 +24,9 @@ export default function Sidebar({
 }: SidebarProps) {
   const [folderInput, setFolderInput] = useState('');
 
-  const handleStart = () => {
+  const handleStart = (mode: string) => {
     if (folderInput.trim()) {
-      onStartIngest(folderInput.trim());
+      onStartIngest(folderInput.trim(), mode);
     }
   };
 
@@ -128,13 +128,22 @@ export default function Sidebar({
             />
           </div>
           
-          <button 
+          <button
             className="btn btn-primary"
-            onClick={handleStart}
+            onClick={() => handleStart('cull_edit')}
             disabled={!folderInput.trim() || backendStatus !== 'running' || jobState?.status === 'running'}
             style={{ width: '100%', padding: '12px' }}
           >
-            {jobState?.status === 'running' ? 'Culling in progress...' : 'Start AI Culling'}
+            {jobState?.status === 'running' ? 'Procesando...' : 'Culling + Edición'}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => handleStart('cull')}
+            disabled={!folderInput.trim() || backendStatus !== 'running' || jobState?.status === 'running'}
+            style={{ width: '100%', padding: '10px' }}
+            title="Solo selecciona (labels/estrellas). Revisas, haces duelos, y aplicas la edición después con un clic."
+          >
+            Solo Culling
           </button>
         </div>
       </div>

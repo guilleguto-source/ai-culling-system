@@ -35,11 +35,11 @@ if (typeof window !== 'undefined' && !window.api) {
       const res = await fetch(`${BACKEND_URL}/settings`);
       return await res.json();
     },
-    ingestMedia: async (directory: string) => {
+    ingestMedia: async (directory: string, mode: string = 'cull_edit') => {
       const res = await fetch(`${BACKEND_URL}/ingest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory })
+        body: JSON.stringify({ directory, mode })
       });
       return await res.json();
     },
@@ -148,9 +148,9 @@ export default function App() {
   }, [backendStatus, jobResults]);
 
   // Actions
-  const handleIngest = async (directory: string) => {
+  const handleIngest = async (directory: string, mode: string = 'cull_edit') => {
     try {
-      await window.api.ingestMedia(directory);
+      await window.api.ingestMedia(directory, mode);
       setLastDirectory(directory);
       setJobResults(null); // Reset results for new job
       setCurrentView('grid'); // Reset view

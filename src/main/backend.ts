@@ -218,7 +218,8 @@ export function setupBackendIpc() {
   ipcMain.handle('backend:settings:get', () => makeGetRequest('/settings'));
   ipcMain.handle('backend:settings:save', (_, settings: any) => makePostRequest('/settings', settings));
   
-  ipcMain.handle('backend:ingest', (_, directory: string) => makePostRequest('/ingest', { directory }));
+  ipcMain.handle('backend:ingest', (_, directory: string, mode: string = 'cull_edit') =>
+    makePostRequest('/ingest', { directory, mode }));
   ipcMain.handle('backend:job:status', () => makeGetRequest('/status'));
   ipcMain.handle('backend:job:results', () => makeGetRequest('/results'));
 }
