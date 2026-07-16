@@ -35,8 +35,8 @@ def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
             "selected": {"stars": 2, "color": "Verde"},
             "highlighted": {"stars": 3, "color": "Azul"},
             "blurry": {"stars": 0, "color": "Roja"},
-            "closed_eyes": {"stars": 0, "color": "Morada"},
-            "duplicates": {"stars": 0, "color": "Morada"},
+            "closed_eyes": {"stars": 0, "color": "Morado"},
+            "duplicates": {"stars": 0, "color": "Morado"},
         },
         "selection_preferences": {},
     }
@@ -46,12 +46,13 @@ def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
 
     s = settings_manager.load_settings()
     rm = s["ratings_mapping"]
-    assert s["settings_version"] == 3
+    assert s["settings_version"] == 4
     assert rm["selected"]["flag"] == "pick"
     assert rm["blurry"]["flag"] == "reject"
+    assert rm["blurry"]["color"] == "Rojo"          # v4: masculino (set real de LR)
     assert rm["duplicates"]["flag"] == "none"
     assert rm["duplicates"]["color"] == ""          # Trash sin color
-    assert rm["closed_eyes"]["color"] == "Morada"   # las demás no cambian
+    assert rm["closed_eyes"]["color"] == "Morado"
 
 
 def test_migracion_completa_desde_v1(tmp_path, monkeypatch):

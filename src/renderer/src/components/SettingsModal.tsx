@@ -197,10 +197,10 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                         {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}
                       </select>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        {(['', 'Roja', 'Amarilla', 'Verde', 'Azul', 'Morada'] as string[]).map(c => {
+                        {(['', 'Rojo', 'Amarillo', 'Verde', 'Azul', 'Morado'] as string[]).map(c => {
                           const hex: Record<string, string> = {
-                            Roja: '#e5484d', Amarilla: '#f0c000', Verde: '#46a758',
-                            Azul: '#0091ff', Morada: '#8e4ec6'
+                            Rojo: '#e5484d', Amarillo: '#f0c000', Verde: '#46a758',
+                            Azul: '#0091ff', Morado: '#8e4ec6'
                           };
                           const active = (r.color || '') === c;
                           return (

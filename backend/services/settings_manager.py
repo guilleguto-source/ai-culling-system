@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS: dict[str, Any] = {
     # Labels de color en español para coincidir con el conjunto de etiquetas
     # del Lightroom del usuario. selected=2★ (elegidas), highlighted=3★
-    # (las top que no pueden faltar), Roja = para borrar.
+    # (las top que no pueden faltar), Rojo = para borrar.
     # flag → banderín XMP (PickStatus): "pick" | "reject" | "none".
     # duplicates (Trash) va SIN color: no ensucia la vista de Lightroom.
-    "settings_version": 3,
+    "settings_version": 4,
     "ratings_mapping": {
         "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
         "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
-        "blurry": {"stars": 0, "color": "Roja", "flag": "reject"},
-        "closed_eyes": {"stars": 0, "color": "Morada", "flag": "reject"},
+        "blurry": {"stars": 0, "color": "Rojo", "flag": "reject"},
+        "closed_eyes": {"stars": 0, "color": "Morado", "flag": "reject"},
         "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
@@ -90,8 +90,8 @@ def load_settings() -> dict[str, Any]:
         # Migración v2: selected pasa a 2★ (highlighted queda como las 3★
         # imprescindibles) y colores al español del set de LR del usuario.
         if data.get("settings_version", 1) < 2 and "ratings_mapping" in data:
-            _COLOR_ES = {"Green": "Verde", "Blue": "Azul", "Red": "Roja",
-                         "Purple": "Morada", "Yellow": "Amarilla"}
+            _COLOR_ES = {"Green": "Verde", "Blue": "Azul", "Red": "Rojo",
+                         "Purple": "Morado", "Yellow": "Amarillo"}
             rm = data["ratings_mapping"]
             for entry in rm.values():
                 entry["color"] = _COLOR_ES.get(entry.get("color"), entry.get("color"))
@@ -110,6 +110,14 @@ def load_settings() -> dict[str, Any]:
             if "duplicates" in rm:
                 rm["duplicates"]["color"] = ""
             data["settings_version"] = 3
+            save_settings(data)
+        # Migración v4: el set de LR del usuario usa masculino (Rojo/Morado);
+        # los nombres femeninos de la v2 NO pintan en Lightroom.
+        if data.get("settings_version", 1) < 4 and "ratings_mapping" in data:
+            _FIX_GENERO = {"Roja": "Rojo", "Morada": "Morado", "Amarilla": "Amarillo"}
+            for entry in data["ratings_mapping"].values():
+                entry["color"] = _FIX_GENERO.get(entry.get("color"), entry.get("color"))
+            data["settings_version"] = 4
             save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)
