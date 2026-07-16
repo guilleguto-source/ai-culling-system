@@ -166,53 +166,103 @@ def _rotation_crop(angle: float) -> float:
     return abs(angle) * ROTATION_CROP_PER_DEG
 
 
-def _faces_inside(window: tuple[float, float, float, float],
-                  face_bboxes: list[list[int]], w: int, h: int) -> bool:
-    """True si todos los rostros (con margen de seguridad) caen dentro del crop."""
-    wl, wt, wr, wb = window
+def _protection_rects(face_bboxes: list[list[int]],
+                      person_bboxes: list[list[int]] | None,
+                      w: int, h: int) -> list[tuple[float, float, float, float]]:
+    """
+    Rectángulos protegidos en fracciones (pueden desbordar [0,1] = persona ya
+    cortada en cámara): margen de rostro + cuerpo estimado desde cada rostro +
+    cuerpos DETECTADOS (YOLOv8: gente de espaldas/perfil sin rostro visible).
+    """
+    rects: list[tuple[float, float, float, float]] = []
     for (x, y, fw, fh) in face_bboxes:
+        # Margen de rostro
         mx, my = fw * FACE_EDGE_MARGIN, fh * FACE_EDGE_MARGIN
-        if ((x - mx) / w < wl or (y - my) / h < wt
-                or (x + fw + mx) / w > wr or (y + fh + my) / h > wb):
-            return False
-    return not _cuts_a_body(window, face_bboxes, w, h)
-
-
-def _cuts_a_body(window: tuple[float, float, float, float],
-                 face_bboxes: list[list[int]], w: int, h: int) -> bool:
-    """
-    True si el crop invade la caja de cuerpo estimada de alguna persona.
-    Bordes donde el cuerpo YA sale del encuadre original (persona cortada en
-    la toma) toleran hasta BODY_EDGE_TOLERANCE — no creamos cortes nuevos en
-    tobillos/muñecas, pero un ajuste de 1-2% sobre un corte existente es ok.
-    """
-    wl, wt, wr, wb = window
-    for (x, y, fw, fh) in face_bboxes:
-        # Caja de cuerpo en fracciones (sin recortar al encuadre todavía)
+        rects.append(((x - mx) / w, (y - my) / h, (x + fw + mx) / w, (y + fh + my) / h))
+        # Cuerpo estimado (proporciones humanas)
         cx = (x + fw / 2.0) / w
         half_bw = (fw * BODY_WIDTH_FACES / 2.0) / w
-        body_l = cx - half_bw
-        body_r = cx + half_bw
-        body_t = (y - fh * BODY_HEAD_MARGIN) / h
-        body_b = (y + fh * BODY_HEIGHT_FACES) / h
+        rects.append((cx - half_bw, (y - fh * BODY_HEAD_MARGIN) / h,
+                      cx + half_bw, (y + fh * BODY_HEIGHT_FACES) / h))
+    for (x, y, pw, ph) in (person_bboxes or []):
+        # Cuerpo detectado, con 2% de aire; si el bbox toca el borde de la
+        # imagen, se extiende más allá → ese borde queda como "ya cortado"
+        margin = 0.02
+        l = x / w - margin
+        t = y / h - margin
+        r = (x + pw) / w + margin
+        b = (y + ph) / h + margin
+        edge_touch = 0.005
+        if x / w <= edge_touch:
+            l = -0.1
+        if y / h <= edge_touch:
+            t = -0.1
+        if (x + pw) / w >= 1.0 - edge_touch:
+            r = 1.1
+        if (y + ph) / h >= 1.0 - edge_touch:
+            b = 1.1
+        rects.append((l, t, r, b))
+    return rects
 
-        # Por borde: si el cuerpo desborda el encuadre original, tolerancia
-        # mínima; si está completo, el crop no puede tocarlo.
-        for body_edge, win_edge, overflow, invades in (
-            (body_l, wl, body_l < 0.0, wl > max(body_l, 0.0)),
-            (body_t, wt, body_t < 0.0, wt > max(body_t, 0.0)),
-            (body_r, wr, body_r > 1.0, wr < min(body_r, 1.0)),
-            (body_b, wb, body_b > 1.0, wb < min(body_b, 1.0)),
+
+def _cuts_protected(window: tuple[float, float, float, float],
+                    rects: list[tuple[float, float, float, float]]) -> bool:
+    """
+    True si el crop invade algún rectángulo protegido. Bordes donde el rect
+    YA desborda el encuadre original (persona cortada en la toma) toleran
+    hasta BODY_EDGE_TOLERANCE — no creamos cortes nuevos, pero un ajuste de
+    1-2% sobre un corte existente es aceptable.
+    """
+    wl, wt, wr, wb = window
+    for (rl, rt, rr, rb) in rects:
+        for rect_edge, win_edge, overflow, invades in (
+            (rl, wl, rl < 0.0, wl > max(rl, 0.0)),
+            (rt, wt, rt < 0.0, wt > max(rt, 0.0)),
+            (rr, wr, rr > 1.0, wr < min(rr, 1.0)),
+            (rb, wb, rb > 1.0, wb < min(rb, 1.0)),
         ):
             if not invades:
                 continue
             if overflow:
-                # Cuerpo ya cortado en cámara: solo ajuste mínimo permitido
-                cut = (win_edge if body_edge < 0.0 else 1.0 - win_edge)
+                cut = (win_edge if rect_edge < 0.0 else 1.0 - win_edge)
                 if cut > BODY_EDGE_TOLERANCE:
                     return True
             else:
                 return True
+    return False
+
+
+# --- Guardia de piel: la línea de corte no atraviesa piel (manos, brazos, nucas) ---
+
+_SKIN_EDGE_FRACTION = 0.08   # % de piel en la banda del borde para invalidar
+_SKIN_BAND_PX = 6
+
+def _skin_mask(img_rgb: np.ndarray) -> np.ndarray:
+    """Máscara binaria de tono piel (rango clásico en YCrCb)."""
+    ycrcb = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)
+    cr, cb = ycrcb[..., 1], ycrcb[..., 2]
+    return ((cr >= 135) & (cr <= 180) & (cb >= 85) & (cb <= 135)).astype(np.uint8)
+
+
+def _cuts_skin(mask: np.ndarray, window: tuple[float, float, float, float]) -> bool:
+    """True si algún borde del crop (que recorta > tolerancia) atraviesa piel."""
+    h, w = mask.shape
+    wl, wt, wr, wb = window
+    x1, y1 = int(wl * w), int(wt * h)
+    x2, y2 = int(wr * w), int(wb * h)
+    half = _SKIN_BAND_PX // 2
+
+    def frac(band: np.ndarray) -> float:
+        return float(band.mean()) if band.size else 0.0
+
+    if wl > BODY_EDGE_TOLERANCE and frac(mask[y1:y2, max(0, x1 - half):x1 + half]) > _SKIN_EDGE_FRACTION:
+        return True
+    if 1.0 - wr > BODY_EDGE_TOLERANCE and frac(mask[y1:y2, x2 - half:min(w, x2 + half)]) > _SKIN_EDGE_FRACTION:
+        return True
+    if wt > BODY_EDGE_TOLERANCE and frac(mask[max(0, y1 - half):y1 + half, x1:x2]) > _SKIN_EDGE_FRACTION:
+        return True
+    if 1.0 - wb > BODY_EDGE_TOLERANCE and frac(mask[y2 - half:min(h, y2 + half), x1:x2]) > _SKIN_EDGE_FRACTION:
+        return True
     return False
 
 
@@ -244,45 +294,35 @@ def _gaze_target_x(dominant_face_landmarks: list[list[int]] | None,
     return THIRDS[1] if offset < 0 else THIRDS[0]  # mira izq → sujeto a la derecha
 
 
-def _edge_limits(face_bboxes: list[list[int]], w: int, h: int
+def _edge_limits(rects: list[tuple[float, float, float, float]]
                  ) -> tuple[float, float, float, float]:
     """
     Recorte máximo permitido por borde (izq, arriba, der, abajo) respetando
-    márgenes de rostro y cajas de cuerpo. Cuerpo que ya desborda el encuadre
-    original → solo BODY_EDGE_TOLERANCE en ese borde.
+    los rectángulos protegidos. Rect que ya desborda el encuadre original →
+    solo BODY_EDGE_TOLERANCE en ese borde.
     """
     max_l = max_t = max_r = max_b = 1.0
-    for (x, y, fw, fh) in face_bboxes:
-        # Margen de rostro
-        max_l = min(max_l, (x - fw * FACE_EDGE_MARGIN) / w)
-        max_t = min(max_t, (y - fh * FACE_EDGE_MARGIN) / h)
-        max_r = min(max_r, 1.0 - (x + fw * (1 + FACE_EDGE_MARGIN)) / w)
-        max_b = min(max_b, 1.0 - (y + fh * (1 + FACE_EDGE_MARGIN)) / h)
-        # Caja de cuerpo
-        cx = (x + fw / 2.0) / w
-        half_bw = (fw * BODY_WIDTH_FACES / 2.0) / w
-        body_l, body_r = cx - half_bw, cx + half_bw
-        body_t = (y - fh * BODY_HEAD_MARGIN) / h
-        body_b = (y + fh * BODY_HEIGHT_FACES) / h
-        max_l = min(max_l, BODY_EDGE_TOLERANCE if body_l < 0.0 else body_l)
-        max_t = min(max_t, BODY_EDGE_TOLERANCE if body_t < 0.0 else body_t)
-        max_r = min(max_r, BODY_EDGE_TOLERANCE if body_r > 1.0 else 1.0 - body_r)
-        max_b = min(max_b, BODY_EDGE_TOLERANCE if body_b > 1.0 else 1.0 - body_b)
+    for (rl, rt, rr, rb) in rects:
+        max_l = min(max_l, BODY_EDGE_TOLERANCE if rl < 0.0 else rl)
+        max_t = min(max_t, BODY_EDGE_TOLERANCE if rt < 0.0 else rt)
+        max_r = min(max_r, BODY_EDGE_TOLERANCE if rr > 1.0 else 1.0 - rr)
+        max_b = min(max_b, BODY_EDGE_TOLERANCE if rb > 1.0 else 1.0 - rb)
     return (max(0.0, max_l), max(0.0, max_t), max(0.0, max_r), max(0.0, max_b))
 
 
 def _recompose(subject: tuple[float, float], target: tuple[float, float],
-               budget: float, face_bboxes: list[list[int]],
-               w: int, h: int) -> tuple[float, float, float, float] | None:
+               budget: float, rects: list[tuple[float, float, float, float]],
+               skin: np.ndarray | None) -> tuple[float, float, float, float] | None:
     """
     Ventana (left, top, right, bottom) que acerca al sujeto al punto objetivo
-    con el menor recorte posible, sin exceder `budget` ni cortar rostros o
-    cuerpos. Si el objetivo exacto es inalcanzable de forma segura, devuelve
-    la mejor aproximación (si mejora de verdad); si no, None.
+    con el menor recorte posible, sin exceder `budget`, sin invadir rects
+    protegidos y sin que la línea de corte atraviese piel. Si el objetivo
+    exacto es inalcanzable de forma segura, devuelve la mejor aproximación
+    (si mejora de verdad); si no, None.
     """
     sx, sy = subject
     tx, ty = target
-    max_l, max_t, max_r, max_b = _edge_limits(face_bboxes, w, h)
+    max_l, max_t, max_r, max_b = _edge_limits(rects)
     d0 = max(abs(sx - tx), abs(sy - ty))
     best: tuple[float, tuple] | None = None
 
@@ -294,7 +334,9 @@ def _recompose(subject: tuple[float, float], target: tuple[float, float],
         wl = float(np.clip(sx - tx * s, max(0.0, c - max_r), min(c, max_l)))
         wt = float(np.clip(sy - ty * s, max(0.0, c - max_b), min(c, max_t)))
         window = (wl, wt, wl + s, wt + s)
-        if not _faces_inside(window, face_bboxes, w, h):
+        if _cuts_protected(window, rects):
+            continue
+        if skin is not None and _cuts_skin(skin, window):
             continue
         ax, ay = (sx - wl) / s, (sy - wt) / s
         d = max(abs(ax - tx), abs(ay - ty))
@@ -317,10 +359,14 @@ def propose_crop(
     img_shape: tuple[int, int],
     level: str,
     horizon_angle: float | None = None,
+    person_bboxes: list[list[int]] | None = None,
+    img_rgb: np.ndarray | None = None,
 ) -> CropProposal | None:
     """
     Propone un reencuadre según el tipo de escena y el nivel configurado.
     Retorna None si no hay mejora que valga la pena o si es inseguro.
+    `person_bboxes`: cuerpos detectados (YOLOv8) — protegen gente sin rostro
+    visible. `img_rgb`: si se pasa, activa la guardia de piel en los bordes.
     """
     if level not in LEVEL_LIMITS:
         return None
@@ -330,14 +376,22 @@ def propose_crop(
 
     angle = _leveling_angle(horizon_angle)
     rot_crop = _rotation_crop(angle)
+    rects = _protection_rects(face_bboxes, person_bboxes, w, h)
+    skin = _skin_mask(img_rgb) if img_rgb is not None and img_rgb.size else None
+
+    def _window_safe(window) -> bool:
+        if _cuts_protected(window, rects):
+            return False
+        return not (skin is not None and _cuts_skin(skin, window))
 
     # --- Grupos: solo nivelado, recorte simétrico mínimo para la rotación ---
-    if len(face_bboxes) >= 3:
+    n_people = max(len(face_bboxes), len(person_bboxes or []))
+    if n_people >= 3:
         if angle == 0.0:
             return None
         half = rot_crop / 2.0
         window = (half, half, 1.0 - half, 1.0 - half)
-        if _cuts_a_body(window, face_bboxes, w, h):
+        if not _window_safe(window):
             return None   # nivelar cortaría a alguien: mejor foto inclinada que pie cortado
         prop = CropProposal(*window, angle, "nivelado (grupo)")
         return prop if prop.is_meaningful() else None
@@ -363,19 +417,22 @@ def propose_crop(
         if angle == 0.0:
             return None
         half = rot_crop / 2.0
-        prop = CropProposal(half, half, 1.0 - half, 1.0 - half, angle, "nivelado")
+        window = (half, half, 1.0 - half, 1.0 - half)
+        if not _window_safe(window):
+            return None
+        prop = CropProposal(*window, angle, "nivelado")
         return prop if prop.is_meaningful() else None
 
     window = None
     if budget >= MIN_CHANGE and (abs(subject[0] - target[0]) > 0.02 or abs(subject[1] - target[1]) > 0.02):
-        window = _recompose(subject, target, budget, face_bboxes, w, h)
+        window = _recompose(subject, target, budget, rects, skin)
 
     if window is None:
         if angle == 0.0:
             return None
         half = rot_crop / 2.0
         window = (half, half, 1.0 - half, 1.0 - half)
-        if _cuts_a_body(window, face_bboxes, w, h):
+        if not _window_safe(window):
             return None
         reason = "nivelado"
     elif rot_crop > 0:

@@ -3,6 +3,14 @@
 #   - yunet.onnx                  (YuNet face detector de OpenCV)
 #   - eye_state.onnx              (clasificador de ojos abiertos/cerrados)
 #   - clip_vit_b32_visual.onnx    (encoder visual CLIP ViT-B/32, embeddings 512-d)
+#   - person_yolov8n.onnx         (detector de personas/cuerpos, protege el auto-crop)
+#
+# YOLOv8n (detector de personas, ~12 MB):
+#     pip install ultralytics
+#     yolo export model=yolov8n.pt format=onnx opset=12
+#     → renombrar yolov8n.onnx a person_yolov8n.onnx y colocarlo aquí.
+#   Sin este archivo el crop protege solo cuerpos derivados de rostros
+#   detectados (gente de espaldas/perfil queda sin protección).
 #
 # Descarga YuNet desde:
 # https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet

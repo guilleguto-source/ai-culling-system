@@ -790,10 +790,15 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 if (label in ("selected", "highlighted") and auto_crop_level in LEVEL_LIMITS
                         and record.thumb_ai is not None):
                     gray = cv2.cvtColor(record.thumb_ai, cv2.COLOR_RGB2GRAY)
+                    # Personas SIN rostro visible (de espaldas, perfil, parciales):
+                    # el detector de cuerpos evita que el crop las corte.
+                    from services import person_detector
+                    persons = person_detector.detect_persons(record.thumb_ai)
                     prop = propose_crop(
                         scene_types[idx], face_bboxes_list[idx], eye_landmarks_list[idx],
                         saliency_regions[idx], record.thumb_ai.shape,
                         auto_crop_level, detect_horizon_angle(gray),
+                        person_bboxes=persons, img_rgb=record.thumb_ai,
                     )
                     if prop is not None:
                         crop_dict = prop.to_dict()

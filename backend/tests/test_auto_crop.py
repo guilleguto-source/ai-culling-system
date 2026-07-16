@@ -124,20 +124,46 @@ def test_nivel_invalido_no_propone():
 
 # --- Cajas de cuerpo: el crop no corta personas ---
 
+def _cuts(window, faces, persons=None):
+    from services.auto_crop import _cuts_protected, _protection_rects
+    return _cuts_protected(window, _protection_rects(faces, persons, W, H))
+
+
 def test_ventana_que_corta_cuerpo_completo_invalida():
-    from services.auto_crop import _cuts_a_body
     # Cara grande arriba-izquierda: cuerpo ocupa x 0.05..0.50, hasta y ~0.9
     face = [int(0.2 * W), int(0.1 * H), 240, 240]
-    assert _cuts_a_body((0.10, 0.0, 1.0, 1.0), [face], W, H)   # corta el cuerpo por la izq
-    assert not _cuts_a_body((0.0, 0.0, 1.0, 1.0), [face], W, H)
+    assert _cuts((0.10, 0.0, 1.0, 1.0), [face])   # corta el cuerpo por la izq
+    assert not _cuts((0.0, 0.0, 1.0, 1.0), [face])
 
 
 def test_cuerpo_ya_cortado_tolera_ajuste_minimo():
-    from services.auto_crop import _cuts_a_body
     # Cara a media altura: el cuerpo estimado desborda el borde inferior
     face = _face(0.5, 0.45, size=200)
-    assert not _cuts_a_body((0.0, 0.0, 1.0, 0.985), [face], W, H)  # 1.5% ok
-    assert _cuts_a_body((0.0, 0.0, 1.0, 0.96), [face], W, H)       # 4% crea corte nuevo
+    assert not _cuts((0.0, 0.0, 1.0, 0.985), [face])  # 1.5% ok
+    assert _cuts((0.0, 0.0, 1.0, 0.96), [face])       # 4% crea corte nuevo
+
+
+def test_persona_sin_rostro_protegida():
+    """Niña de espaldas (sin cara detectable) en la esquina: el detector de
+    cuerpos la protege — un crop que la corta es inválido."""
+    person = [int(0.75 * W), int(0.6 * H), int(0.2 * W), int(0.4 * H)]  # toca borde inferior
+    assert _cuts((0.0, 0.0, 0.8, 1.0), [], [person])       # borde derecho la parte
+    assert not _cuts((0.0, 0.0, 1.0, 1.0), [], [person])   # cuadro completo ok
+    # El bbox toca el borde inferior → ese borde es "ya cortado": 1.5% tolerable
+    assert not _cuts((0.0, 0.0, 1.0, 0.985), [], [person])
+
+
+def test_guardia_de_piel_en_bordes():
+    from services.auto_crop import _skin_mask, _cuts_skin
+    img = np.zeros((400, 600, 3), dtype=np.uint8)
+    img[:] = (40, 90, 40)                      # fondo verde (césped)
+    img[330:400, 0:120] = (205, 150, 120)      # manito piel abajo-izquierda
+    mask = _skin_mask(img)
+    assert mask[350, 50] == 1 and mask[100, 300] == 0
+    # Crop cuyo borde inferior atraviesa la mano → inválido
+    assert _cuts_skin(mask, (0.0, 0.0, 0.9, 0.9))
+    # Crop que no toca la zona de piel → válido
+    assert not _cuts_skin(mask, (0.3, 0.05, 1.0, 1.0))
 
 
 def test_grupo_no_se_nivela_si_cortaria_cuerpos():
