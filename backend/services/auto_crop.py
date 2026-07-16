@@ -35,7 +35,14 @@ GOLDEN = (0.382, 0.618)
 
 # Detección de horizonte
 _HORIZON_MAX_TILT = 15.0   # solo líneas casi horizontales
-_HORIZON_MIN_LEN = 0.25    # longitud mínima relativa al ancho
+_HORIZON_MIN_LEN = 0.30    # longitud mínima relativa al ancho
+_HORIZON_MAX_SPREAD = 1.5  # grados: si las líneas no coinciden entre sí, no es fiable
+_HORIZON_TRIM = 2.5        # grados: outliers respecto a la mediana se excluyen
+
+# Las líneas arquitectónicas (ladrillos, pisos) exageran la inclinación por
+# perspectiva: aplicar solo una fracción del ángulo detectado (calibrado en
+# campo contra el enderezado automático de Lightroom, 2026-07).
+HORIZON_DAMPING = 0.6
 
 
 @dataclass
@@ -98,27 +105,52 @@ def detect_horizon_angle(img_gray: np.ndarray) -> float | None:
 
     if not candidates:
         return None
-    # Mediana ponderada por longitud
-    candidates.sort(key=lambda c: c[0])
-    total = sum(l for _, l in candidates)
+    # Una sola línea solo es fiable si es MUY larga (p.ej. horizonte real)
+    if len(candidates) == 1 and candidates[0][1] < w * 0.5:
+        return None
+
+    med = _weighted_median(candidates)
+    # Excluir outliers (líneas que no son el horizonte: diagonales, sombras)
+    trimmed = [(a, l) for a, l in candidates if abs(a - med) <= _HORIZON_TRIM]
+    if not trimmed:
+        return None
+    med = _weighted_median(trimmed)
+    # Consenso: si las líneas restantes discrepan mucho entre sí (típico de
+    # interiores con perspectiva), el nivelado no es fiable → no tocar.
+    total = sum(l for _, l in trimmed)
+    var = sum(l * (a - med) ** 2 for a, l in trimmed) / total
+    if var ** 0.5 > _HORIZON_MAX_SPREAD:
+        return None
+    return float(med)
+
+
+def _weighted_median(candidates: list[tuple[float, float]]) -> float:
+    """Mediana de ángulos ponderada por longitud de línea."""
+    ordered = sorted(candidates, key=lambda c: c[0])
+    total = sum(l for _, l in ordered)
     acc = 0.0
-    for ang, l in candidates:
+    for ang, l in ordered:
         acc += l
         if acc >= total / 2:
             return float(ang)
-    return float(candidates[-1][0])
+    return float(ordered[-1][0])
 
 
 def _leveling_angle(horizon_angle: float | None) -> float:
-    """Ángulo de corrección aplicable (0 si no procede nivelar)."""
-    if horizon_angle is None or abs(horizon_angle) < MIN_ANGLE:
+    """Ángulo crs:CropAngle aplicable (0 si no procede nivelar)."""
+    if horizon_angle is None:
         return 0.0
     if abs(horizon_angle) > MAX_LEVEL_ANGLE:
         return 0.0
-    if abs(horizon_angle) * ROTATION_CROP_PER_DEG > MAX_ROTATION_CROP:
+    # Convención verificada en campo contra Lightroom (2026-07): crs:CropAngle
+    # lleva el MISMO signo que la inclinación detectada (eje y hacia abajo),
+    # amortiguado porque la perspectiva exagera el ángulo de las líneas.
+    applied = horizon_angle * HORIZON_DAMPING
+    if abs(applied) < MIN_ANGLE:
         return 0.0
-    # Girar en sentido contrario a la inclinación para nivelar
-    return -horizon_angle
+    if abs(applied) * ROTATION_CROP_PER_DEG > MAX_ROTATION_CROP:
+        return 0.0
+    return applied
 
 
 def _rotation_crop(angle: float) -> float:

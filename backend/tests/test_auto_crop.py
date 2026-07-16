@@ -42,7 +42,8 @@ def test_grupo_inclinado_solo_nivela():
     faces = [_face(0.3, 0.5), _face(0.5, 0.5), _face(0.7, 0.5)]
     prop = propose_crop("portrait", faces, [], None, (H, W), "agresivo", horizon_angle=3.0)
     assert prop is not None
-    assert prop.angle == -3.0
+    # Mismo signo que la inclinación, amortiguado (convención LR verificada)
+    assert prop.angle == pytest.approx(1.8)
     # Recorte simétrico y mínimo (solo el que exige la rotación)
     assert prop.left == pytest.approx(1.0 - prop.right, abs=1e-6)
     assert prop.crop_amount <= 0.05
@@ -154,6 +155,15 @@ def test_sin_lineas_devuelve_none():
     noise = rng.integers(0, 255, size=(600, 900), dtype=np.uint8)
     noise = cv2.GaussianBlur(noise, (31, 31), 12)  # sin bordes largos
     assert detect_horizon_angle(noise) is None
+
+
+def test_lineas_en_desacuerdo_devuelve_none():
+    """Interior con líneas divergentes (perspectiva): nivelado no fiable → None."""
+    img = np.zeros((600, 900), dtype=np.uint8)
+    cv2.line(img, (50, 150), (500, 146), 255, 3)    # ~-0.5°
+    cv2.line(img, (50, 300), (500, 312), 255, 3)    # ~+1.5°
+    cv2.line(img, (50, 450), (500, 478), 255, 3)    # ~+3.5°
+    assert detect_horizon_angle(img) is None
 
 
 # --- CropProposal ---
