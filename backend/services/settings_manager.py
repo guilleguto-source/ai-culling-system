@@ -42,7 +42,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "last_import_directory": "",
-    "culling_mode": "assisted",             # "assisted" | "automatic"
 }
 
 # Umbrales de varianza Laplaciana por nivel de sensibilidad de borrosidad

@@ -54,7 +54,6 @@ class IngestRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     ratings_mapping: dict | None = None
     selection_preferences: dict | None = None
-    culling_mode: str | None = None
 
 
 # --- Endpoints de Sistema ---
@@ -84,8 +83,6 @@ def update_settings(data: SettingsUpdateRequest):
         current["ratings_mapping"].update(data.ratings_mapping)
     if data.selection_preferences is not None:
         current["selection_preferences"].update(data.selection_preferences)
-    if data.culling_mode is not None:
-        current["culling_mode"] = data.culling_mode
     ok = save_settings(current)
     if not ok:
         raise HTTPException(status_code=500, detail="Error guardando la configuración")

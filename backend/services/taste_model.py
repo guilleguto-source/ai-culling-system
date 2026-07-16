@@ -2,9 +2,6 @@
 taste_model.py — Aprendizaje de gustos del usuario sobre embeddings visuales.
 Los ejemplos (duelos + correcciones de Lightroom) se persisten en SQLite
 (taste_store) y el scorer es una regresión logística re-entrenada al vuelo.
-
-Nota: el pickle SGD antiguo (user_taste_model.pkl) queda obsoleto y se ignora
-(sus 3 features heurísticas son incompatibles con embeddings de 512 dims).
 """
 import logging
 
