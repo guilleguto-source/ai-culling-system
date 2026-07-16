@@ -62,6 +62,35 @@ def test_roundtrip_jpeg_embebido(tmp_path):
     assert result == {"stars": 4, "color": "Azul"}
 
 
+# --- XMP con crop (crs:Crop*) ---
+
+_CROP = {"left": 0.05, "top": 0.05, "right": 0.95, "bottom": 0.95, "angle": -2.5}
+
+
+def test_packet_con_crop_incluye_crs():
+    packet = _build_xmp_packet(stars=3, color="Verde", label="selected", crop=_CROP)
+    assert b"HasCrop" in packet and b"CropAngle" in packet
+    assert b"-2.5000" in packet
+
+
+def test_crop_no_rompe_lectura_de_rating(tmp_path):
+    """El sync (Fase 4) sigue leyendo stars/color igual con campos crs presentes."""
+    raw = tmp_path / "IMG_C.cr2"
+    raw.write_bytes(b"fake raw")
+    (tmp_path / "IMG_C.xmp").write_bytes(
+        _build_xmp_packet(stars=3, color="Verde", label="selected", crop=_CROP)
+    )
+    assert read_xmp(str(raw)) == {"stars": 3, "color": "Verde"}
+
+
+def test_crop_roundtrip_jpeg(tmp_path):
+    jpg = _minimal_jpeg(tmp_path, "crop.jpg")
+    assert write_xmp(str(jpg), "selected", stars=3, color="Azul", overwrite=True, crop=_CROP)
+    assert read_xmp(str(jpg)) == {"stars": 3, "color": "Azul"}
+    from services.xmp_exporter import _extract_jpeg_xmp
+    assert b"HasCrop" in _extract_jpeg_xmp(jpg.read_bytes())
+
+
 # --- export_snapshot ---
 
 def _use_tmp_exports(tmp_path, monkeypatch):

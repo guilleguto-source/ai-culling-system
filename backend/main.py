@@ -202,6 +202,11 @@ def learn_preference(data: LearnPreferenceRequest):
                     out.append(str(sib))
         return out
 
+    # Conservar el crop propuesto en el culling (está en el snapshot del export)
+    from services.export_snapshot import load_snapshot
+    snap = load_snapshot(str(Path(data.winner_path).parent))
+    crops = snap.get("crops", {}) if snap else {}
+
     rewrite = []
     for label in ("selected", "duplicates"):
         src = data.winner_path if label == "selected" else data.loser_path
@@ -212,6 +217,7 @@ def learn_preference(data: LearnPreferenceRequest):
                 "label": label,
                 "stars": m.get("stars", 0),
                 "color": m.get("color", ""),
+                "crop": crops.get(path_str),
             })
 
     from services.xmp_exporter import export_results_to_xmp
@@ -342,6 +348,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         from services.scene_classifier import classify_scene, compute_saliency_region, SceneType
         from services.clustering import cluster_images, assign_cluster_representatives
         from services.cluster_gates import apply_technical_gates
+        from services.auto_crop import propose_crop, detect_horizon_angle, LEVEL_LIMITS
         from services.technical_quality import evaluate_technical_quality
         from services.aesthetic_assessment import evaluate_aesthetics_fast
         from services.taste_model import taste_model
@@ -387,6 +394,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         face_bboxes_list = []
         closed_flags = []           # ojos cerrados por imagen (solo retratos)
         face_sharpness_list = []    # nitidez Laplaciana por cara, por imagen
+        eye_landmarks_list = []     # landmarks YuNet por imagen (para auto-crop)
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -397,6 +405,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 face_bboxes_list.append([])
                 closed_flags.append(False)
                 face_sharpness_list.append([])
+                eye_landmarks_list.append([])
                 aesthetic_scores.append(0.5)
                 continue
 
@@ -415,6 +424,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
 
             scene_types.append(scene_type)
             face_bboxes_list.append(bboxes)
+            eye_landmarks_list.append(eye_lms)
 
             # Nitidez por cara (para el gate técnico dentro del cluster)
             face_sharpness_list.append(compute_face_sharpness(arr, bboxes) if bboxes else [])
@@ -483,6 +493,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
 
         # FASE 4: Asignar calificaciones
         ratings_map = settings["ratings_mapping"]
+        auto_crop_level = prefs.get("auto_crop", "minimo")
         results = []
 
         for cluster in clusters:
@@ -548,6 +559,19 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     label = "duplicates"
                     stars = ratings_map["duplicates"]["stars"]
 
+                # Auto-crop no destructivo: solo en las elegidas (crs:Crop* en XMP)
+                crop_dict = None
+                if (label == "selected" and auto_crop_level in LEVEL_LIMITS
+                        and record.thumb_ai is not None):
+                    gray = cv2.cvtColor(record.thumb_ai, cv2.COLOR_RGB2GRAY)
+                    prop = propose_crop(
+                        scene_types[idx], face_bboxes_list[idx], eye_landmarks_list[idx],
+                        saliency_regions[idx], record.thumb_ai.shape,
+                        auto_crop_level, detect_horizon_angle(gray),
+                    )
+                    if prop is not None:
+                        crop_dict = prop.to_dict()
+
                 results.append({
                     "path": record.path,
                     "filename": record.filename,
@@ -559,6 +583,8 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     "stars": stars,
                     "color": ratings_map.get(label, {}).get("color", "") if label else "",
                     "blur_score": round(blur_scores[idx], 2) if idx < len(blur_scores) else 0,
+                    "crop": crop_dict,
+                    "has_crop": crop_dict is not None,
                     "error": record.error,
                 })
                 

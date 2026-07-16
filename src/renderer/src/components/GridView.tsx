@@ -26,6 +26,19 @@ export default function GridView({ results }: { results: any[] }) {
                 {img.label.replace('_', ' ')}
               </div>
             )}
+            {/* Crop propuesto (reversible en Lightroom) */}
+            {img.has_crop && (
+              <div
+                title="Reencuadre propuesto — editable en Lightroom"
+                style={{
+                  position: 'absolute', bottom: '6px', right: '6px',
+                  backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: '4px',
+                  padding: '2px 6px', fontSize: '0.75rem',
+                }}
+              >
+                ✂
+              </div>
+            )}
           </div>
           <div style={{ padding: '12px', fontSize: '0.8rem' }}>
             <div style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>

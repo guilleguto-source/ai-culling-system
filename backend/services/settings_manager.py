@@ -27,6 +27,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "blurry_sensitivity": "moderate",   # "lenient" | "moderate" | "strict"
         "detect_closed_eyes": True,
         "overwrite_xmp_ratings": False,
+        "auto_crop": "minimo",              # "off" | "minimo" | "medio" | "agresivo"
     },
     "last_import_directory": "",
     "culling_mode": "assisted",             # "assisted" | "automatic"

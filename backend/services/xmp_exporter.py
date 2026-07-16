@@ -22,6 +22,7 @@ NS = {
     "x":      "adobe:ns:meta/",
     "rdf":    "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
     "xmp":    "http://ns.adobe.com/xap/1.0/",
+    "crs":    "http://ns.adobe.com/camera-raw-settings/1.0/",
 }
 
 # Mapeo de label interno a pick status XMP (extensión Lightroom)
@@ -54,15 +55,20 @@ def _get_xmp_path(image_path: str) -> Path:
     return p.parent / (p.stem + ".xmp")
 
 
-def _build_xmp_packet(stars: int, color: str, label: str) -> bytes:
+def _build_xmp_packet(stars: int, color: str, label: str,
+                      crop: dict | None = None) -> bytes:
     """Construye un paquete XMP completo (con envoltura xpacket) listo para
-    sidecar o para embeber en APP1. El color se escribe tal cual venga de settings."""
+    sidecar o para embeber en APP1. El color se escribe tal cual venga de settings.
+    `crop`: dict {left, top, right, bottom, angle} en fracciones/grados —
+    reencuadre NO destructivo (crs:Crop*) que Lightroom aplica como recorte
+    editable; los píxeles nunca se modifican."""
     xmpmeta = etree.Element(f"{{{NS['x']}}}xmpmeta", nsmap={"x": NS["x"]})
     xmpmeta.set(f"{{{NS['x']}}}xmptk", "AI Culling System 1.0")
 
     rdf = etree.SubElement(xmpmeta, f"{{{NS['rdf']}}}RDF", nsmap={"rdf": NS["rdf"]})
     desc = etree.SubElement(
-        rdf, f"{{{NS['rdf']}}}Description", nsmap={"rdf": NS["rdf"], "xmp": NS["xmp"]})
+        rdf, f"{{{NS['rdf']}}}Description",
+        nsmap={"rdf": NS["rdf"], "xmp": NS["xmp"], "crs": NS["crs"]})
     desc.set(f"{{{NS['rdf']}}}about", "")
 
     rating_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Rating")
@@ -74,6 +80,20 @@ def _build_xmp_packet(stars: int, color: str, label: str) -> bytes:
 
     pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}PickStatus")
     pick_el.text = PICK_STATUS_MAP.get(label, "0")
+
+    if crop:
+        crs_fields = {
+            "HasCrop": "True",
+            "CropLeft": f"{crop['left']:.6f}",
+            "CropTop": f"{crop['top']:.6f}",
+            "CropRight": f"{crop['right']:.6f}",
+            "CropBottom": f"{crop['bottom']:.6f}",
+            "CropAngle": f"{crop.get('angle', 0.0):.4f}",
+            "CropConstrainToWarp": "0",
+        }
+        for name, value in crs_fields.items():
+            el = etree.SubElement(desc, f"{{{NS['crs']}}}{name}")
+            el.text = value
 
     body = etree.tostring(xmpmeta, encoding="utf-8", xml_declaration=False)
     return _XPACKET_OPEN + body + _XPACKET_CLOSE
@@ -170,11 +190,11 @@ def _sidecar_has_rating(xmp_path: Path) -> bool:
 # --- API pública ---
 
 def write_xmp(image_path: str, label: str, stars: int, color: str,
-              overwrite: bool = False) -> bool:
+              overwrite: bool = False, crop: dict | None = None) -> bool:
     """Escribe el rating/etiqueta. RAW -> sidecar; JPEG -> embebido. Respeta overwrite."""
     p = Path(image_path)
     try:
-        packet = _build_xmp_packet(stars, color, label)
+        packet = _build_xmp_packet(stars, color, label, crop=crop)
         if _is_raw(p):
             xmp_path = _get_xmp_path(image_path)
             if xmp_path.exists() and not overwrite and _sidecar_has_rating(xmp_path):
@@ -212,6 +232,7 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             stars=mapping.get("stars", 0),
             color=mapping.get("color", ""),
             overwrite=overwrite,
+            crop=result.get("crop"),
         )
         written += ok
         skipped += (not ok)

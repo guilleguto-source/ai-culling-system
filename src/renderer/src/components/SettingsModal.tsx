@@ -82,10 +82,27 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
             </select>
           </div>
 
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 500 }}>Auto-encuadre</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Recorte propuesto (reversible en Lightroom). Grupos: solo nivelado.</div>
+            </div>
+            <select
+              value={prefs.auto_crop || 'minimo'}
+              onChange={(e) => handlePrefChange('auto_crop', e.target.value)}
+              style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
+            >
+              <option value="off">Desactivado</option>
+              <option value="minimo">Mínimo (10%)</option>
+              <option value="medio">Medio (20%)</option>
+              <option value="agresivo">Agresivo (35%)</option>
+            </select>
+          </div>
+
           <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-            <input 
-              type="checkbox" 
-              checked={prefs.detect_duplicates !== false} 
+            <input
+              type="checkbox"
+              checked={prefs.detect_duplicates !== false}
               onChange={(e) => handlePrefChange('detect_duplicates', e.target.checked)}
               style={{ width: '16px', height: '16px' }}
             />

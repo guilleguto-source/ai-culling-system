@@ -16,6 +16,8 @@ export default function DuelView({ results }: { results: any[] }) {
   }, [results]);
 
   const [currentClusterIdx, setCurrentClusterIdx] = useState(0);
+  const [learnedOverrides, setLearnedOverrides] = useState<Record<number, string>>({});
+  const [isLearning, setIsLearning] = useState(false);
 
   if (clusters.length === 0) {
     return (
@@ -26,8 +28,35 @@ export default function DuelView({ results }: { results: any[] }) {
   }
 
   const currentGroup = clusters[currentClusterIdx];
-  const representative = currentGroup.find(img => img.is_cluster_representative) || currentGroup[0];
-  const alternatives = currentGroup.filter(img => img !== representative);
+  const clusterId = currentGroup[0].cluster_id;
+  
+  const representative = currentGroup.find(img => img.path === learnedOverrides[clusterId])
+    || currentGroup.find(img => img.is_cluster_representative)
+    || currentGroup[0];
+
+  // Mostrar la elegida primero, luego el resto, todas al mismo tamaño para comparar.
+  const ordered = [representative, ...currentGroup.filter(img => img !== representative)];
+
+  const handleLearnPreference = async (alt: any) => {
+    setIsLearning(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/learn_preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          winner_path: alt.path,
+          loser_path: representative.path
+        })
+      });
+      if (res.ok) {
+        setLearnedOverrides(prev => ({ ...prev, [clusterId]: alt.path }));
+      }
+    } catch (e) {
+      console.error("Error learning preference:", e);
+    } finally {
+      setIsLearning(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
@@ -56,51 +85,66 @@ export default function DuelView({ results }: { results: any[] }) {
         </div>
       </div>
 
-      {/* Duel Arena */}
-      <div style={{ display: 'flex', gap: '16px', flex: 1, overflow: 'hidden' }}>
-        
-        {/* Representative Image (Selected) */}
-        <div className="glass-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--status-selected-text)' }}>
-            <strong>AI Selected</strong> (Best score)
-          </div>
-          <div style={{ flex: 1, position: 'relative', backgroundColor: '#000' }}>
-            <img 
-              src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(representative.path)}`} 
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              alt={representative.filename}
-            />
-          </div>
-          <div style={{ padding: '12px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            Blur Score: {representative.blur_score}
-          </div>
-        </div>
-
-        {/* Alternatives List */}
-        <div className="glass-panel" style={{ width: '350px', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>
-            <strong>Alternatives</strong> ({alternatives.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', backgroundColor: 'var(--border-subtle)' }}>
-            {alternatives.map((alt, i) => (
-              <div key={i} style={{ display: 'flex', backgroundColor: 'var(--bg-elevated)', padding: '8px' }}>
-                 <div style={{ width: '100px', height: '70px', flexShrink: 0, backgroundColor: '#000', marginRight: '12px' }}>
-                   <img 
-                      src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(alt.path)}`} 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      alt={alt.filename}
-                    />
-                 </div>
-                 <div style={{ flex: 1, fontSize: '0.8rem', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ color: 'var(--text-primary)', marginBottom: '4px' }}>{alt.filename}</div>
-                    <div style={{ color: 'var(--status-blurry-text)' }}>Blur: {alt.blur_score}</div>
-                    {alt.label === 'blurry' && <div style={{ color: 'var(--status-blurry-text)' }}>Marked Blurry</div>}
-                 </div>
+      {/* Duel Arena — todas las fotos del cluster lado a lado para comparar */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${Math.min(ordered.length, 3)}, 1fr)`,
+        gap: '16px',
+        flex: 1,
+        overflow: 'auto',
+      }}>
+        {ordered.map((img, i) => {
+          const isSelected = img === representative;
+          return (
+            <div
+              key={img.path}
+              className="glass-panel"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                border: isSelected ? '2px solid var(--status-selected-text)' : '2px solid transparent',
+              }}
+            >
+              <div style={{
+                padding: '12px',
+                borderBottom: '1px solid var(--border-subtle)',
+                color: isSelected ? 'var(--status-selected-text)' : 'var(--text-primary)',
+              }}>
+                {isSelected ? <strong>AI Selected (Best score)</strong> : <strong>Alternativa {i}</strong>}
               </div>
-            ))}
-          </div>
-        </div>
-
+              <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
+                <img
+                  src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  alt={img.filename}
+                />
+              </div>
+              <div className="flex-between" style={{ padding: '12px', fontSize: '0.85rem' }}>
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  <div style={{ color: 'var(--text-primary)' }}>
+                    {img.filename}
+                    {img.has_crop && <span title="Reencuadre propuesto — editable en Lightroom"> ✂</span>}
+                  </div>
+                  <div>Blur: {img.blur_score}</div>
+                  {img.label === 'blurry' && <div style={{ color: 'var(--status-blurry-text)' }}>Marked Blurry</div>}
+                </div>
+                {isSelected ? (
+                  <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem' }}>✓ Elegida</span>
+                ) : (
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                    onClick={() => handleLearnPreference(img)}
+                    disabled={isLearning}
+                  >
+                    Elegir esta
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

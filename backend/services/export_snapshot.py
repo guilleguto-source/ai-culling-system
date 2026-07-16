@@ -33,6 +33,12 @@ def save_snapshot(directory: str, results: list[dict]) -> None:
         "directory": str(Path(directory).resolve()),
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "items": items,
+        # Crops propuestos: el re-export tras un duelo los reutiliza tal cual
+        "crops": {
+            r["path"]: r["crop"]
+            for r in results
+            if r.get("crop") and not r.get("error")
+        },
     }
     try:
         EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
