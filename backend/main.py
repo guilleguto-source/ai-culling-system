@@ -394,7 +394,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         from services.auto_crop import propose_crop, detect_horizon_angle, LEVEL_LIMITS
         from services import pre_edit
         from services.preset_manager import load_preset
-        from services.technical_quality import evaluate_technical_quality
+        from services.technical_quality import evaluate_technical_quality, max_region_sharpness
         from services.aesthetic_assessment import evaluate_aesthetics_fast
         from services.taste_model import taste_model
         from services.settings_manager import get_blur_threshold, get_dbscan_epsilon
@@ -446,6 +446,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         pre_edit_prefs = prefs.get("pre_edit", {})
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
         pre_skin, pre_global, pre_clip, pre_wb = [], [], [], []
+        sharp_anywhere = []         # nitidez del mejor bloque (enfoque selectivo)
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -462,6 +463,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 pre_global.append(pre_edit.TARGET_MID)
                 pre_clip.append(0.0)
                 pre_wb.append(None)
+                sharp_anywhere.append(0.0)
                 continue
 
             arr = record.thumb_ai
@@ -500,6 +502,9 @@ def _run_culling_pipeline(directory: str, job_id: str):
             tq = evaluate_technical_quality(arr, scene_type, bboxes, saliency, blur_threshold)
             blur_scores.append(tq.blur_score)
             blur_flags.append(tq.is_blurry)
+            # ¿Hay ALGO nítido en el cuadro? (enfoque selectivo: ramo/manos
+            # nítidos con rostros suaves NO es un error de toma)
+            sharp_anywhere.append(max_region_sharpness(arr) if tq.is_blurry else tq.blur_score)
 
             # Análisis estético heurístico (el gusto aprendido se aplica en el
             # ranking dentro del cluster, sobre embeddings — FASE 4)
@@ -632,9 +637,14 @@ def _run_culling_pipeline(directory: str, job_id: str):
         # desenfoque severo (muy por debajo del umbral, no "algo blanda") o
         # exposición extrema (disparo al piso, lavada, casi negra). El blur
         # leve no se marca: solo penaliza el score y pierde duelos/poda.
+        # Enfoque selectivo: si el mejor bloque del cuadro es nítido, los
+        # rostros suaves son una decisión del fotógrafo (ramo, anillos), no
+        # un error — nunca basura.
         SEVERE_BLUR_FACTOR = 0.35
         trash_flags = [
-            (blur_flags[i] and blur_scores[i] < blur_threshold * SEVERE_BLUR_FACTOR)
+            (blur_flags[i]
+             and blur_scores[i] < blur_threshold * SEVERE_BLUR_FACTOR
+             and sharp_anywhere[i] < blur_threshold)
             or pre_edit.is_trash_exposure(pre_global[i], pre_clip[i])
             for i in range(len(records))
         ]

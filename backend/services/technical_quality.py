@@ -31,6 +31,28 @@ def _laplacian_variance(gray: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
+def max_region_sharpness(img_rgb: np.ndarray, grid: int = 5) -> float:
+    """
+    Nitidez del bloque MÁS nítido de la imagen (rejilla grid x grid).
+    Distingue el enfoque selectivo (rostros suaves pero ramo/manos nítidos →
+    hay un bloque con alta varianza) del verdadero error de toma (nada nítido
+    en ningún bloque: movida, disparo accidental).
+    """
+    if img_rgb is None or img_rgb.size == 0:
+        return 0.0
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    lap = cv2.Laplacian(gray, cv2.CV_64F)
+    h, w = lap.shape
+    best = 0.0
+    for i in range(grid):
+        for j in range(grid):
+            block = lap[i * h // grid:(i + 1) * h // grid,
+                        j * w // grid:(j + 1) * w // grid]
+            if block.size:
+                best = max(best, float(block.var()))
+    return best
+
+
 def analyze_sharpness(
     img_rgb: np.ndarray,
     region_bbox: tuple[int, int, int, int] | None,
