@@ -95,8 +95,13 @@ def analyze_photo(
     # Atributos faciales (ojos / mirada / sonrisa) con MediaPipe sobre cada
     # recorte de cara. Reemplaza a eye_state.onnx, que era ruido sobre estas
     # fotos (97% de falsos "cerrado"). Si MediaPipe no está, no se marca nada.
+    #
+    # Se miden SIEMPRE (no dependen de `detect_closed_eyes`): el análisis
+    # recoge hechos y la decisión aplica la política. Condicionarlo a la
+    # preferencia dejaba a la calibración sin datos, y obligaba a re-analizar
+    # el evento entero solo por activar la casilla. Cuesta ~47 ms/foto.
     analysis.face_count = len(analysis.face_bboxes)
-    if analysis.face_bboxes and detect_closed_eyes and face_mesh.is_available():
+    if analysis.face_bboxes and face_mesh.is_available():
         attrs = face_mesh.analyze_faces(arr, analysis.face_bboxes)
         analysis.face_attrs = [face_mesh.to_dict(a) for a in attrs]
         validas = [a for a in attrs if a.valid]

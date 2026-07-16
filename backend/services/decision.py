@@ -68,9 +68,15 @@ def apply_decision_logic(
             # lado, así que un criterio absoluto pintaría casi todo el evento.
             # Se marca la perdedora que tiene MÁS caras con problema (ojos
             # cerrados o virada) que la ganadora — "la peor de la grupal".
+            # La política vive aquí (el análisis solo mide): apagar la casilla
+            # no descarta el análisis, así que activarla es una re-selección
+            # instantánea en vez de re-analizar el evento entero.
             rep = analyses[cluster.representative_index] if cluster.representative_index < len(analyses) else None
             a = analyses[idx] if idx < len(analyses) else None
-            has_closed = bool(a and rep and _bad_faces(a) > _bad_faces(rep))
+            has_closed = bool(
+                prefs.get("detect_closed_eyes", True)
+                and a and rep and _bad_faces(a) > _bad_faces(rep)
+            )
 
             if record.error:
                 label = None

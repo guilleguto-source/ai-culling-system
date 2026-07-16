@@ -40,16 +40,26 @@ SETTINGS = {"ratings_mapping": {
 PREFS = {"selectivity_target": "standard", "detect_blurry": True, "detect_highlights": False}
 
 
-def _run(analyses, rep_idx):
+def _run(analyses, rep_idx, prefs=None):
     idxs = [a.index for a in analyses]
     cluster = ImageCluster(0, "portrait", idxs, rep_idx)
     records = [_rec(i) for i in idxs]
     results, *_ = apply_decision_logic(
         records=records, analyses=analyses, clusters=[cluster],
         rep_scores={rep_idx: 1.0}, trash_flags=[False] * len(idxs),
-        prefs=PREFS, settings=SETTINGS, develop_by_idx={},
+        prefs=prefs or PREFS, settings=SETTINGS, develop_by_idx={},
     )
     return {r["filename"]: r["label"] for r in results}
+
+
+def test_preferencia_apagada_no_marca():
+    """La política vive en la decisión: con la casilla apagada no se marca,
+    aunque el análisis SÍ midió los ojos (por eso activarla es instantáneo)."""
+    analyses = [_an(0, closed=0), _an(1, closed=3)]
+    off = {**PREFS, "detect_closed_eyes": False}
+    assert _run(analyses, 0, prefs=off)["IMG_1.jpg"] == "duplicates"
+    # la misma data, con la casilla encendida, sí marca
+    assert _run(analyses, 0)["IMG_1.jpg"] == "closed_eyes"
 
 
 def test_peor_del_grupo_se_marca_rojo():
