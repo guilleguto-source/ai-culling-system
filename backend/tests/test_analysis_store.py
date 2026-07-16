@@ -68,6 +68,47 @@ def test_atributos_de_mediapipe_persisten(tmp_path):
     assert l.smiling_count == 4
 
 
+def test_esquema_viejo_se_recrea(tmp_path):
+    """Regresión: `CREATE TABLE IF NOT EXISTS` no agrega columnas a una tabla
+    que ya existe. Al añadir campos, las bases de eventos ya analizados
+    quedaban con el esquema viejo y el INSERT reventaba en producción
+    ('table photo_analysis has no column named closed_eyes_count').
+    ANALYSIS_VERSION invalida las FILAS, no el ESQUEMA."""
+    import sqlite3
+    from services import analysis_store
+
+    analysis_store.ANALYSIS_DIR = tmp_path
+    db = analysis_store._get_db_path(str(tmp_path))
+
+    # base "vieja": tabla con solo un puñado de columnas
+    old = sqlite3.connect(str(db))
+    old.execute("CREATE TABLE photo_analysis (path TEXT PRIMARY KEY, mtime REAL, version INTEGER)")
+    old.commit()
+    old.close()
+
+    # init_store debe detectar el desajuste y recrear
+    conn = analysis_store.init_store(str(tmp_path))
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(photo_analysis)")}
+    assert "closed_eyes_count" in cols and "face_attrs" in cols
+
+    # y ahora guardar funciona
+    save_analysis(conn, PhotoAnalysis(index=0, path="x.jpg", closed_eyes_count=2), 1.0)
+    assert load_analysis(conn, "x.jpg", 1.0).closed_eyes_count == 2
+
+
+def test_esquema_al_dia_no_borra_el_cache(tmp_path):
+    """Si el esquema coincide, el caché se conserva (no re-analizar de gratis)."""
+    from services import analysis_store
+    analysis_store.ANALYSIS_DIR = tmp_path
+
+    conn = analysis_store.init_store(str(tmp_path))
+    save_analysis(conn, PhotoAnalysis(index=0, path="y.jpg"), 2.0)
+    conn.close()
+
+    conn2 = analysis_store.init_store(str(tmp_path))
+    assert load_analysis(conn2, "y.jpg", 2.0) is not None
+
+
 def test_refresh_mtimes_tras_escribir_xmp(tmp_path):
     """Regresión: el pipeline escribe el XMP DENTRO del JPG al terminar, lo que
     cambia el mtime e invalidaba el análisis recién guardado — el caché nunca

@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import json
 import hashlib
@@ -7,6 +8,8 @@ from typing import Optional
 import os
 
 from services.analysis import PhotoAnalysis
+
+logger = logging.getLogger(__name__)
 
 # v3: closed_eyes_count / face_count (conteo, no solo el booleano)
 # v4: atributos de MediaPipe (caras válidas, mirada, sonrisa)
@@ -23,9 +26,41 @@ def _get_db_path(directory: str) -> Path:
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     return ANALYSIS_DIR / f"{dir_hash}.db"
 
+def _schema_columns() -> list[str]:
+    """Columnas que el código espera (se derivan del propio CREATE TABLE)."""
+    return [
+        "path", "mtime", "version", "index_val", "scene_type", "face_bboxes",
+        "eye_landmarks", "face_sharpness", "any_closed_eyes", "closed_eyes_count",
+        "face_count", "valid_face_count", "looking_away_count", "smiling_count",
+        "face_attrs", "phash", "exif_datetime", "blur_score", "blur_flag",
+        "sharp_anywhere", "aesthetic_score", "saliency_region", "pre_skin_lum",
+        "pre_global_lum", "pre_clip_frac", "pre_wb", "error",
+    ]
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """
+    Recrea la tabla si su esquema no coincide con el que espera el código.
+
+    `CREATE TABLE IF NOT EXISTS` NO agrega columnas a una tabla que ya existe:
+    al añadir campos nuevos, una base vieja seguía con el esquema antiguo y el
+    INSERT fallaba ("no column named ..."). ANALYSIS_VERSION invalida las
+    FILAS, no el ESQUEMA. Como esto es un caché, recrear es seguro: se
+    regenera analizando.
+    """
+    existentes = [r[1] for r in conn.execute("PRAGMA table_info(photo_analysis)")]
+    if not existentes:
+        return                                  # tabla nueva: nada que migrar
+    if set(existentes) != set(_schema_columns()):
+        logger.info("Esquema de análisis desactualizado: se recrea el caché.")
+        conn.execute("DROP TABLE photo_analysis")
+        conn.commit()
+
+
 def init_store(directory: str) -> sqlite3.Connection:
     db_path = _get_db_path(directory)
     conn = sqlite3.connect(str(db_path))
+    _ensure_schema(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS photo_analysis (
             path TEXT PRIMARY KEY,
