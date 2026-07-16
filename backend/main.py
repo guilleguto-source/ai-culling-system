@@ -445,7 +445,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         # también duplicadas/descartadas; solo se escribe en las selected)
         pre_edit_prefs = prefs.get("pre_edit", {})
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
-        pre_stops, pre_wb, pre_ev = [], [], []
+        pre_skin, pre_global, pre_wb = [], [], []
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -458,9 +458,9 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 face_sharpness_list.append([])
                 eye_landmarks_list.append([])
                 aesthetic_scores.append(0.5)
-                pre_stops.append(0.0)
+                pre_skin.append(None)
+                pre_global.append(pre_edit.TARGET_MID)
                 pre_wb.append(None)
-                pre_ev.append(0.0)
                 continue
 
             arr = record.thumb_ai
@@ -504,15 +504,16 @@ def _run_culling_pipeline(directory: str, job_id: str):
             # ranking dentro del cluster, sobre embeddings — FASE 4)
             aesthetic_scores.append(evaluate_aesthetics_fast(arr))
 
-            # Firma de luz para pre-edición (exposición, WB, luminancia)
+            # Firma de luz para pre-edición (piel, global, WB)
             if pre_edit_enabled:
-                pre_stops.append(pre_edit.estimate_exposure(arr, bboxes))
+                skin_lum, global_lum = pre_edit.measure_luminance(arr, bboxes)
+                pre_skin.append(skin_lum)
+                pre_global.append(global_lum)
                 pre_wb.append(pre_edit.estimate_wb(arr, bboxes))
-                pre_ev.append(pre_edit.luminance_ev(arr))
             else:
-                pre_stops.append(0.0)
+                pre_skin.append(None)
+                pre_global.append(pre_edit.TARGET_MID)
                 pre_wb.append(None)
-                pre_ev.append(0.0)
 
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
 
@@ -570,12 +571,12 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     index=i,
                     has_people=bool(face_bboxes_list[i]),
                     wb=pre_wb[i],
-                    lum_ev=pre_ev[i],
+                    skin_lum=pre_skin[i],
+                    global_lum=pre_global[i],
                 ) for i in order
             ]
             develop_by_idx = pre_edit.compute_pre_edits(
                 signatures,
-                [pre_stops[i] for i in order],
                 bias=float(pre_edit_prefs.get("exposure_bias", 0.3)),
                 preset_wb_bias=preset_data.wb_bias if preset_data else (0.0, 0.0),
             )
@@ -584,10 +585,15 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 "photos": len(develop_by_idx),
             }
 
-        # FASE 4: Asignar calificaciones
+        # FASE 4a: elegir representative por cluster y calcular su score
         ratings_map = settings["ratings_mapping"]
         auto_crop_level = prefs.get("auto_crop", "minimo")
         results = []
+
+        SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
+        use_taste = taste_model.is_trained and embedding_service.is_available()
+        rep_scores: dict[int, float] = {}
+        singleton_reps: list[int] = []
 
         for cluster in clusters:
             if not cluster.image_indices:
@@ -604,8 +610,6 @@ def _run_culling_pipeline(directory: str, job_id: str):
             # - Con gusto entrenado (≥ MIN_EXAMPLES) → score del taste model
             #   sobre el embedding (los supervivientes ya son técnicamente OK).
             # - Fallback frío → combinado blur+heurísticas, ambos en 0..1.
-            SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
-            use_taste = taste_model.is_trained and embedding_service.is_available()
             cluster_scores = []
             for idx in candidates:
                 blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
@@ -618,13 +622,52 @@ def _run_culling_pipeline(directory: str, job_id: str):
                         score = taste_model.predict_score(emb)
                 cluster_scores.append((score, idx))
 
-            # Sort ascending (worst to best)
             cluster_scores.sort(key=lambda x: x[0])
-            sorted_indices = [x[1] for x in cluster_scores]
-
-            best_idx = sorted_indices[-1]
+            best_score, best_idx = cluster_scores[-1]
             cluster.representative_index = best_idx
+            rep_scores[best_idx] = best_score
+            if len(cluster.image_indices) == 1:
+                singleton_reps.append(best_idx)
 
+        # FASE 4b: Selectividad — barra de calidad final según el modo.
+        # Los representatives de clusters >1 ganaron un duelo y son intocables;
+        # la poda es SOLO entre singletons (fotos sueltas: transiciones,
+        # relleno) rankeados por score. "few" = agresivo.
+        KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
+        HIGHLIGHT_FRACTION = 0.10   # top-top (3★, no pueden faltar)
+
+        def _selectable(idx: int) -> bool:
+            if records[idx].error:
+                return False
+            if blur_flags[idx] and prefs.get("detect_blurry", True):
+                return False
+            return True
+
+        pool = sorted((i for i in singleton_reps if _selectable(i)),
+                      key=lambda i: rep_scores[i], reverse=True)
+        keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.65)
+        keep_n = max(1, int(round(len(pool) * keep_frac))) if pool else 0
+        demoted = set(pool[keep_n:])
+
+        final_selected = sorted(
+            (i for i in rep_scores if _selectable(i) and i not in demoted),
+            key=lambda i: rep_scores[i], reverse=True)
+        highlights: set[int] = set()
+        if prefs.get("detect_highlights", True) and final_selected:
+            top_n = max(1, int(round(len(final_selected) * HIGHLIGHT_FRACTION)))
+            highlights = set(final_selected[:top_n])
+
+        _job_state["stats"]["selectivity"] = {
+            "mode": prefs.get("selectivity_target", "standard"),
+            "singletons_demoted": len(demoted),
+            "selected": len(final_selected),
+            "highlighted": len(highlights),
+        }
+
+        # FASE 4c: Asignar calificaciones
+        for cluster in clusters:
+            if not cluster.image_indices:
+                continue
             for idx in cluster.image_indices:
                 if idx >= len(records):
                     continue
@@ -645,6 +688,13 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 elif has_closed and not is_representative:
                     label = "closed_eyes"
                     stars = ratings_map["closed_eyes"]["stars"]
+                elif is_representative and idx in demoted:
+                    # Singleton flojo podado por la barra de selectividad
+                    label = "duplicates"
+                    stars = ratings_map["duplicates"]["stars"]
+                elif is_representative and idx in highlights:
+                    label = "highlighted"
+                    stars = ratings_map["highlighted"]["stars"]
                 elif is_representative:
                     label = "selected"
                     stars = ratings_map["selected"]["stars"]
@@ -654,7 +704,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
 
                 # Auto-crop no destructivo: solo en las elegidas (crs:Crop* en XMP)
                 crop_dict = None
-                if (label == "selected" and auto_crop_level in LEVEL_LIMITS
+                if (label in ("selected", "highlighted") and auto_crop_level in LEVEL_LIMITS
                         and record.thumb_ai is not None):
                     gray = cv2.cvtColor(record.thumb_ai, cv2.COLOR_RGB2GRAY)
                     prop = propose_crop(
@@ -678,7 +728,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     "blur_score": round(blur_scores[idx], 2) if idx < len(blur_scores) else 0,
                     "crop": crop_dict,
                     "has_crop": crop_dict is not None,
-                    "develop": develop_by_idx.get(idx) if label == "selected" else None,
+                    "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,
                     "error": record.error,
                 })
                 

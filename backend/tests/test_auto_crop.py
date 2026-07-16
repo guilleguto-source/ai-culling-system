@@ -122,6 +122,37 @@ def test_nivel_invalido_no_propone():
     assert propose_crop("portrait", [face], [_lms(face)], None, (H, W), "off") is None
 
 
+# --- Cajas de cuerpo: el crop no corta personas ---
+
+def test_ventana_que_corta_cuerpo_completo_invalida():
+    from services.auto_crop import _cuts_a_body
+    # Cara grande arriba-izquierda: cuerpo ocupa x 0.05..0.50, hasta y ~0.9
+    face = [int(0.2 * W), int(0.1 * H), 240, 240]
+    assert _cuts_a_body((0.10, 0.0, 1.0, 1.0), [face], W, H)   # corta el cuerpo por la izq
+    assert not _cuts_a_body((0.0, 0.0, 1.0, 1.0), [face], W, H)
+
+
+def test_cuerpo_ya_cortado_tolera_ajuste_minimo():
+    from services.auto_crop import _cuts_a_body
+    # Cara a media altura: el cuerpo estimado desborda el borde inferior
+    face = _face(0.5, 0.45, size=200)
+    assert not _cuts_a_body((0.0, 0.0, 1.0, 0.985), [face], W, H)  # 1.5% ok
+    assert _cuts_a_body((0.0, 0.0, 1.0, 0.96), [face], W, H)       # 4% crea corte nuevo
+
+
+def test_grupo_no_se_nivela_si_cortaria_cuerpos():
+    # 3 caras a media altura (cuerpos desbordan abajo) y ángulo grande:
+    # el recorte de rotación (>2%) crearía cortes → sin propuesta.
+    faces = [_face(0.3, 0.45, 200), _face(0.5, 0.45, 200), _face(0.7, 0.45, 200)]
+    assert propose_crop("portrait", faces, [], None, (H, W), "medio", horizon_angle=5.0) is None
+
+
+def test_grupo_nivelado_suave_si_no_corta():
+    faces = [_face(0.3, 0.45, 200), _face(0.5, 0.45, 200), _face(0.7, 0.45, 200)]
+    prop = propose_crop("portrait", faces, [], None, (H, W), "medio", horizon_angle=2.0)
+    assert prop is not None       # 2° → recorte ~1.5% por lado ≤ tolerancia
+
+
 # --- Horizonte ---
 
 def _horizon_image(angle_deg: float) -> np.ndarray:

@@ -8,8 +8,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.pre_edit import (
-    estimate_exposure, estimate_wb, segment_light_sessions, compute_pre_edits,
+    measure_luminance, estimate_wb, segment_light_sessions, compute_pre_edits,
     PhotoSignature, MAX_EXPOSURE, MAX_WB, SESSION_EXPOSURE_BAND, BREAK_RUN,
+    SKIN_TARGET_MIN, TARGET_MID,
 )
 
 
@@ -27,35 +28,54 @@ def _with_face(bg: tuple, skin: tuple) -> tuple[np.ndarray, list[list[int]]]:
     return img, [bbox]
 
 
-# --- Exposición ---
+# --- Medición de luminancia ---
 
-def test_piel_oscura_sube_exposicion():
-    img, bboxes = _with_face(bg=(30, 30, 30), skin=(90, 70, 60))   # piel subexpuesta
-    stops = estimate_exposure(img, bboxes)
-    assert stops > 0.5
-
-
-def test_piel_quemada_baja_exposicion():
-    img, bboxes = _with_face(bg=(200, 200, 200), skin=(250, 235, 225))
-    stops = estimate_exposure(img, bboxes)
-    assert stops < -0.3
+def test_medicion_piel_y_global():
+    img, bboxes = _with_face(bg=(30, 30, 30), skin=(190, 150, 128))
+    skin, glob = measure_luminance(img, bboxes)
+    assert skin is not None and skin > glob   # la piel es más clara que el fondo
 
 
-def test_exposicion_ignora_fondo_si_hay_cara():
-    # Fondo negro no debe subir la exposición si la piel está bien
-    img_ok, bboxes = _with_face(bg=(5, 5, 5), skin=(185, 150, 130))  # piel ~correcta
-    stops = estimate_exposure(img_ok, bboxes)
-    assert abs(stops) < 0.4
+def test_medicion_sin_caras():
+    skin, glob = measure_luminance(_img((128, 128, 128)), [])
+    assert skin is None and 0.1 < glob < 0.35
 
 
-def test_exposicion_clamp():
-    img, bboxes = _with_face(bg=(0, 0, 0), skin=(6, 5, 5))
-    assert estimate_exposure(img, bboxes) == MAX_EXPOSURE
+def _sig_lum(i, skin, glob=0.18, people=True):
+    return PhotoSignature(index=i, has_people=people, wb=(0.0, 0.0),
+                          skin_lum=skin, global_lum=glob)
+
+
+def test_piel_oscura_no_se_aclara():
+    """Sesión de piel oscura bien expuesta (lum lineal ~0.07): el objetivo es
+    la mediana de la sesión, no un target de piel clara → corrección ≈ 0."""
+    sigs = [_sig_lum(i, 0.07) for i in range(8)]
+    edits = compute_pre_edits(sigs, bias=0.0)
+    assert all(abs(edits[i]["Exposure2012"]) <= 0.05 for i in range(8))
+
+
+def test_foto_subexpuesta_en_sesion_oscura_se_corrige():
+    sigs = [_sig_lum(i, 0.07) for i in range(8)]
+    sigs.append(_sig_lum(8, 0.02))    # misma gente, foto subexpuesta
+    edits = compute_pre_edits(sigs, bias=0.0)
+    assert edits[8]["Exposure2012"] > 0.4          # se sube hacia la sesión
+    assert edits[8]["Exposure2012"] <= SESSION_EXPOSURE_BAND + 0.01
+
+
+def test_sesion_entera_subexpuesta_se_levanta_al_minimo_sano():
+    """Piel bajo SKIN_TARGET_MIN: ahí sí es subexposición, no tono de piel."""
+    sigs = [_sig_lum(i, 0.02) for i in range(6)]
+    edits = compute_pre_edits(sigs, bias=0.0)
+    import math
+    expected = math.log2(SKIN_TARGET_MIN / 0.02)
+    assert edits[0]["Exposure2012"] == pytest.approx(expected, abs=0.1)
 
 
 def test_sin_caras_usa_global():
-    oscuro = _img((25, 25, 25))
-    assert estimate_exposure(oscuro, []) > 0.5
+    sigs = [PhotoSignature(index=i, has_people=False, wb=(0.0, 0.0),
+                           skin_lum=None, global_lum=0.05) for i in range(6)]
+    edits = compute_pre_edits(sigs, bias=0.0)
+    assert edits[0]["Exposure2012"] > 0.5          # global oscuro → sube a tono medio
 
 
 # --- WB ---
@@ -90,7 +110,8 @@ def test_wb_piel_neutra_correccion_pequena():
 # --- Sesiones de luz ---
 
 def _sig(i, wb, ev=0.0, people=True):
-    return PhotoSignature(index=i, has_people=people, wb=wb, lum_ev=ev)
+    return PhotoSignature(index=i, has_people=people, wb=wb,
+                          skin_lum=None, global_lum=TARGET_MID * (2.0 ** ev))
 
 
 def test_detalles_no_rompen_sesion():
@@ -131,7 +152,7 @@ def test_pieles_mandan_el_wb_de_sesion():
     # desviación < umbral de corte): la sesión aplica el de las pieles.
     sigs = [_sig(i, (6.0, 2.0), people=True) for i in range(6)]
     sigs += [_sig(6 + i, (14.0, 10.0), people=False) for i in range(5)]
-    edits = compute_pre_edits(sigs, [0.0] * len(sigs), bias=0.0)
+    edits = compute_pre_edits(sigs, bias=0.0)
     assert edits[0]["IncrementalTemperature"] == pytest.approx(6.0)
     assert edits[0]["IncrementalTint"] == pytest.approx(2.0)
 
@@ -139,15 +160,15 @@ def test_pieles_mandan_el_wb_de_sesion():
 def test_detalle_con_luz_distinta_se_edita_aparte():
     sigs = [_sig(i, (2.0, 1.0), people=True) for i in range(8)]
     sigs.append(_sig(8, (14.5, 1.0), people=False))   # detalle: +12.5 de desvío
-    edits = compute_pre_edits(sigs, [0.0] * 9, bias=0.0)
+    edits = compute_pre_edits(sigs, bias=0.0)
     assert edits[8]["IncrementalTemperature"] == pytest.approx(14.5)
     assert edits[0]["IncrementalTemperature"] == pytest.approx(2.0)
 
 
 def test_exposicion_bias_y_banda_de_sesion():
-    sigs = [_sig(i, (0.0, 0.0)) for i in range(7)]
-    stops = [0.0, 0.1, -0.1, 0.0, 0.05, 0.0, 1.4]   # la última se dispara
-    edits = compute_pre_edits(sigs, stops, bias=0.3)
+    sigs = [_sig(i, (0.0, 0.0)) for i in range(6)]
+    sigs.append(_sig(6, (0.0, 0.0), ev=-1.4))   # foto muy oscura (necesita +1.4)
+    edits = compute_pre_edits(sigs, bias=0.3)
     assert edits[0]["Exposure2012"] == pytest.approx(0.3)
     # La disparada queda acotada a mediana(0.0) + 0.7 + bias 0.3 = 1.0
     assert edits[6]["Exposure2012"] == pytest.approx(SESSION_EXPOSURE_BAND + 0.3)
@@ -155,7 +176,7 @@ def test_exposicion_bias_y_banda_de_sesion():
 
 def test_wb_clamp_final_con_sesgo_de_preset():
     sigs = [_sig(i, (13.0, -13.0)) for i in range(6)]
-    edits = compute_pre_edits(sigs, [0.0] * 6, bias=0.0, preset_wb_bias=(5.0, 5.0))
+    edits = compute_pre_edits(sigs, bias=0.0, preset_wb_bias=(5.0, 5.0))
     assert edits[0]["IncrementalTemperature"] == MAX_WB          # 18 → clamp 15
     assert edits[0]["IncrementalTint"] == pytest.approx(-8.0)    # -13+5
 
@@ -163,6 +184,6 @@ def test_wb_clamp_final_con_sesgo_de_preset():
 def test_sesion_chica_hereda_de_vecina():
     sigs = [_sig(i, (6.0, 2.0)) for i in range(10)]
     sigs += [_sig(10 + i, (-20.0, 12.0)) for i in range(BREAK_RUN)]  # sesión nueva de 4 (<5 votos)
-    edits = compute_pre_edits(sigs, [0.0] * len(sigs), bias=0.0)
+    edits = compute_pre_edits(sigs, bias=0.0)
     # La sesión chica hereda el WB de la grande
     assert edits[12]["IncrementalTemperature"] == pytest.approx(6.0)

@@ -19,7 +19,12 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # --- Exposición ---
-TARGET_SKIN = 0.42     # luminancia lineal objetivo para piel bien expuesta (calibrar en campo)
+# El objetivo de piel NO es absoluto: la referencia es la mediana de piel de
+# la sesión (las mismas personas), acotada a un rango sano. Así piel oscura
+# queda correctamente oscura y piel clara correctamente clara — el sistema
+# uniformiza la luz del bloque sin imponer un tono de piel.
+SKIN_TARGET_MIN = 0.05  # luminancia lineal — por debajo, cualquier piel está subexpuesta
+SKIN_TARGET_MAX = 0.45  # por encima, cualquier piel está sobreexpuesta
 TARGET_MID = 0.18      # tono medio para fotos sin personas
 MAX_EXPOSURE = 1.5     # stops máximos de corrección medida
 SESSION_EXPOSURE_BAND = 0.7  # la corrección no se aleja más de esto de la mediana de sesión
@@ -71,32 +76,21 @@ def _skin_patches(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> np.ndarr
 
 # ---------------------------------------------------------------- exposición
 
-def estimate_exposure(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> float:
+def measure_luminance(img_rgb: np.ndarray, face_bboxes: list[list[int]]
+                      ) -> tuple[float | None, float]:
     """
-    Stops de corrección (sin bias) para exponer bien la foto.
-    Con rostros: mediana de luminancia de piel → TARGET_SKIN.
-    Sin rostros: mediana global → TARGET_MID.
+    Mediciones de luminancia lineal para la firma de luz:
+    (piel mediana o None si no hay rostros útiles, global mediana).
+    Los stops se calculan después, contra el objetivo de SU sesión.
     """
     if img_rgb is None or img_rgb.size == 0:
-        return 0.0
+        return None, TARGET_MID
+    global_lum = float(np.median(_linear_luminance(img_rgb)))
     skin = _skin_patches(img_rgb, face_bboxes) if face_bboxes else None
+    skin_lum = None
     if skin is not None and len(skin) > 50:
-        lum = _linear_luminance(skin.reshape(1, -1, 3)).ravel()
-        target = TARGET_SKIN
-    else:
-        lum = _linear_luminance(img_rgb).ravel()
-        target = TARGET_MID
-    measured = float(np.median(lum))
-    stops = math.log2(target / max(measured, 1e-4))
-    return float(np.clip(stops, -MAX_EXPOSURE, MAX_EXPOSURE))
-
-
-def luminance_ev(img_rgb: np.ndarray) -> float:
-    """Luminancia mediana de la foto en EV relativos al tono medio (firma de luz)."""
-    if img_rgb is None or img_rgb.size == 0:
-        return 0.0
-    lum = float(np.median(_linear_luminance(img_rgb)))
-    return math.log2(max(lum, 1e-4) / TARGET_MID)
+        skin_lum = float(np.median(_linear_luminance(skin.reshape(1, -1, 3)).ravel()))
+    return skin_lum, global_lum
 
 
 # ------------------------------------------------------------------------ WB
@@ -145,7 +139,13 @@ class PhotoSignature:
     index: int                 # índice en la lista global de records
     has_people: bool
     wb: tuple[float, float] | None   # estimación propia (None = no vota)
-    lum_ev: float                    # log2(luminancia mediana / 0.18)
+    skin_lum: float | None = None    # luminancia lineal mediana de piel
+    global_lum: float = TARGET_MID   # luminancia lineal mediana global
+
+    @property
+    def lum_ev(self) -> float:
+        """EV relativos al tono medio (para detectar cambios de escena)."""
+        return math.log2(max(self.global_lum, 1e-4) / TARGET_MID)
 
 
 @dataclass
@@ -211,17 +211,18 @@ def segment_light_sessions(signatures: list[PhotoSignature]) -> list[list[int]]:
 
 def compute_pre_edits(
     signatures: list[PhotoSignature],
-    exposure_stops: list[float],
     bias: float,
     preset_wb_bias: tuple[float, float] = (0.0, 0.0),
 ) -> dict[int, dict]:
     """
     Calcula los ajustes finales por foto (keyed por PhotoSignature.index).
-    `signatures` y `exposure_stops` van en el mismo orden temporal.
+    `signatures` va en orden temporal.
 
     WB: mediana de sesión (pieles mandan) + sesgo del preset, clamp ±MAX_WB.
-    Exposición: propia, acotada a mediana de sesión ±SESSION_EXPOSURE_BAND,
-    + bias, redondeada a EXPOSURE_STEP.
+    Exposición: la referencia de piel es la MEDIANA DE PIEL DE LA SESIÓN
+    (acotada a [SKIN_TARGET_MIN, SKIN_TARGET_MAX]) — respeta el tono real de
+    piel de los sujetos; corrección propia acotada a la mediana de sesión
+    ±SESSION_EXPOSURE_BAND, + bias, redondeada a EXPOSURE_STEP.
     """
     sessions = segment_light_sessions(signatures)
     results: dict[int, dict] = {}
@@ -253,7 +254,24 @@ def compute_pre_edits(
 
     for s_idx, positions in enumerate(sessions):
         wb_t, wb_i = session_wbs[s_idx]
-        exp_med = sorted(exposure_stops[p] for p in positions)[len(positions) // 2]
+
+        # Objetivo de piel de la sesión: mediana de las pieles del bloque
+        skins = sorted(signatures[p].skin_lum for p in positions
+                       if signatures[p].skin_lum is not None)
+        skin_target = None
+        if skins:
+            skin_target = float(np.clip(skins[len(skins) // 2],
+                                        SKIN_TARGET_MIN, SKIN_TARGET_MAX))
+
+        def _stops(sig: PhotoSignature) -> float:
+            if sig.skin_lum is not None and skin_target is not None:
+                raw = math.log2(skin_target / max(sig.skin_lum, 1e-4))
+            else:
+                raw = math.log2(TARGET_MID / max(sig.global_lum, 1e-4))
+            return float(np.clip(raw, -MAX_EXPOSURE, MAX_EXPOSURE))
+
+        stops_session = sorted(_stops(signatures[p]) for p in positions)
+        exp_med = stops_session[len(stops_session) // 2]
 
         for p in positions:
             sig = signatures[p]
@@ -267,7 +285,7 @@ def compute_pre_edits(
             i = float(np.clip(i + preset_wb_bias[1], -MAX_WB, MAX_WB))
 
             # Exposición: propia acotada a la sesión, + bias
-            e = float(np.clip(exposure_stops[p],
+            e = float(np.clip(_stops(sig),
                               exp_med - SESSION_EXPOSURE_BAND,
                               exp_med + SESSION_EXPOSURE_BAND))
             e = round((e + bias) / EXPOSURE_STEP) * EXPOSURE_STEP

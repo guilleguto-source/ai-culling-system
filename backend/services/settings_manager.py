@@ -12,12 +12,16 @@ logger = logging.getLogger(__name__)
 
 # Configuración por defecto del sistema, según las preferencias del fotógrafo
 DEFAULT_SETTINGS: dict[str, Any] = {
+    # Labels de color en español para coincidir con el conjunto de etiquetas
+    # del Lightroom del usuario. selected=2★ (elegidas), highlighted=3★
+    # (las top que no pueden faltar), Roja = para borrar.
+    "settings_version": 2,
     "ratings_mapping": {
-        "selected": {"stars": 3, "color": "Green"},
-        "highlighted": {"stars": 3, "color": "Blue"},
-        "blurry": {"stars": 0, "color": "Red"},
-        "closed_eyes": {"stars": 0, "color": "Purple"},
-        "duplicates": {"stars": 0, "color": "Purple"},
+        "selected": {"stars": 2, "color": "Verde"},
+        "highlighted": {"stars": 3, "color": "Azul"},
+        "blurry": {"stars": 0, "color": "Roja"},
+        "closed_eyes": {"stars": 0, "color": "Morada"},
+        "duplicates": {"stars": 0, "color": "Morada"},
     },
     "selection_preferences": {
         "selectivity_target": "standard",   # "few" | "standard" | "more"
@@ -81,6 +85,18 @@ def load_settings() -> dict[str, Any]:
             if data["ratings_mapping"]["duplicates"].get("color") in ("Yellow", "Red"):
                 data["ratings_mapping"]["duplicates"]["color"] = "Purple"
                 save_settings(data) # Persist the migrated settings
+        # Migración v2: selected pasa a 2★ (highlighted queda como las 3★
+        # imprescindibles) y colores al español del set de LR del usuario.
+        if data.get("settings_version", 1) < 2 and "ratings_mapping" in data:
+            _COLOR_ES = {"Green": "Verde", "Blue": "Azul", "Red": "Roja",
+                         "Purple": "Morada", "Yellow": "Amarilla"}
+            rm = data["ratings_mapping"]
+            for entry in rm.values():
+                entry["color"] = _COLOR_ES.get(entry.get("color"), entry.get("color"))
+            if rm.get("selected", {}).get("stars") == 3:
+                rm["selected"]["stars"] = 2
+            data["settings_version"] = 2
+            save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)
         return merged
