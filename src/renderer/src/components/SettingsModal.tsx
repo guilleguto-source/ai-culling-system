@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface SettingsModalProps {
   settings: any;
@@ -9,6 +9,37 @@ interface SettingsModalProps {
 export default function SettingsModal({ settings, onClose, onSave }: SettingsModalProps) {
   // Use a local copy of settings for editing
   const [localSettings, setLocalSettings] = useState(() => JSON.parse(JSON.stringify(settings || {})));
+  const [cachedProjects, setCachedProjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('http://127.0.0.1:8000/cache/projects')
+      .then(res => res.json())
+      .then(data => setCachedProjects(data))
+      .catch(err => console.error("Error fetching cache projects:", err));
+  }, []);
+
+  const handleClearCache = async (directory: string) => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/cache/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory })
+      });
+      if (res.ok) {
+        setCachedProjects(prev => prev.filter(p => p.directory !== directory));
+      }
+    } catch (e) {
+      console.error("Error clearing cache:", e);
+    }
+  };
+
+  const handleOpenCacheFolder = async () => {
+    try {
+      await fetch('http://127.0.0.1:8000/cache/open', { method: 'POST' });
+    } catch (e) {
+      console.error("Error opening cache folder:", e);
+    }
+  };
 
   const handleSave = () => {
     onSave(localSettings);
@@ -342,6 +373,40 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Warning: This will overwrite existing Lightroom ratings</div>
             </div>
           </label>
+
+          <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '16px 0' }} />
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>Administración de Caché e Historial</div>
+            <button className="btn btn-secondary" onClick={handleOpenCacheFolder} style={{ padding: '4px 8px', fontSize: '0.65rem' }}>
+              Abrir Carpeta de Caché
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+            {cachedProjects.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No hay proyectos en caché.</div>
+            ) : (
+              cachedProjects.map((proj) => (
+                <div key={proj.directory} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '8px' }}>
+                    <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }} title={proj.directory}>
+                      {proj.directory.split(/[/\\]/).pop() || proj.directory}
+                    </div>
+                    <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                      {new Date(proj.last_accessed * 1000).toLocaleDateString()} • {proj.size_mb} MB
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleClearCache(proj.directory)}
+                    style={{ background: 'transparent', border: '1px solid var(--status-error-border)', color: 'var(--status-error-text)', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.65rem' }}
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
 
         </div>
 

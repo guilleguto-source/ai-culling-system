@@ -115,7 +115,7 @@ export default function DuelView({ results }: { results: any[] }) {
               </div>
               <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
                 <img
-                  src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}`}
+                  src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}&size=duel`}
                   style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   alt={img.filename}
                 />

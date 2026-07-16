@@ -37,9 +37,12 @@ CLIP_GUARD_FRACTION = 0.03   # >3% de pixeles quemados → prohibido subir expos
 
 # Basura real (label Roja/rechazada): solo exposiciones EXTREMAS — errores de
 # toma, no fotos mejorables. Sobre: lavada Y con gran área quemada. Sub: casi negra.
-TRASH_OVER_EV = 2.0
-TRASH_OVER_CLIP = 0.25
-TRASH_UNDER_EV = -2.5
+# OJO: la luminancia lineal está acotada a 1.0 → el EV máximo alcanzable es
+# log2(1.0/0.18) = +2.47. Un TRASH_OVER_EV por encima de eso vuelve la rama
+# de sobreexposición inalcanzable (ni una foto 100% blanca se marcaría).
+TRASH_OVER_EV = 2.0    # +2 EV (lavada: mediana > 0.72 lineal); tope real 2.47
+TRASH_OVER_CLIP = 0.85 # y además 85% del cuadro completamente quemado
+TRASH_UNDER_EV = -4.5  # -4.5 EV (prácticamente negra, flash que no disparó)
 
 # --- WB (escala incremental de LR para no-RAW: -100..100) ---
 K_TEMP = 100.0         # ganancia (B/R) → unidades incremental

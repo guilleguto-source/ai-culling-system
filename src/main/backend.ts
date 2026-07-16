@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
-import { app, ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import http from 'http';
 import kill from 'tree-kill';
 
@@ -222,4 +222,15 @@ export function setupBackendIpc() {
     makePostRequest('/ingest', { directory, mode }));
   ipcMain.handle('backend:job:status', () => makeGetRequest('/status'));
   ipcMain.handle('backend:job:results', () => makeGetRequest('/results'));
+  
+  ipcMain.handle('backend:select-folder', async (_, defaultPath?: string) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      defaultPath: defaultPath || '\\\\MYCLOUDEX2ULTRA\\Public\\Guto Gutierrez\\'
+    });
+    if (result.canceled) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
 }

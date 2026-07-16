@@ -29,6 +29,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def startup_event():
+    from services.thumbnail_store import auto_cleanup_cache
+    try:
+        auto_cleanup_cache(30)
+        logger.info("Caché de miniaturas de más de 30 días limpiada de forma automática.")
+    except Exception as e:
+        logger.error(f"Error en auto-limpieza de caché: {e}")
+
 # Estado global del job de culling en curso
 _job_state: dict[str, Any] = {
     "job_id": None,
@@ -43,6 +52,7 @@ _job_state: dict[str, Any] = {
 
 # Cache de thumbnails en memoria (path → bytes)
 _thumbnail_cache: dict[str, bytes] = {}
+_thumbnail_duel_cache: dict[str, bytes] = {}
 
 
 # --- Schemas ---
@@ -91,9 +101,7 @@ def update_settings(data: SettingsUpdateRequest):
 
 # --- Endpoints de Ingesta y Procesamiento ---
 
-@app.post("/ingest")
-def start_ingest(data: IngestRequest, background_tasks: BackgroundTasks):
-    """Inicia el proceso de culling sobre un directorio de imágenes."""
+def _start_pipeline_job(data: IngestRequest, background_tasks: BackgroundTasks, mode: str):
     global _job_state
 
     if _job_state["status"] == "running":
@@ -114,9 +122,26 @@ def start_ingest(data: IngestRequest, background_tasks: BackgroundTasks):
         "error": None,
     }
 
-    _job_state["mode"] = data.mode
-    background_tasks.add_task(_run_culling_pipeline, data.directory, job_id, data.mode)
-    return {"job_id": job_id, "status": "started", "mode": data.mode}
+    _job_state["mode"] = mode
+    background_tasks.add_task(_run_culling_pipeline, data.directory, job_id, mode)
+    return {"job_id": job_id, "status": "started", "mode": mode}
+
+@app.post("/cull")
+def start_culling(request: IngestRequest, background_tasks: BackgroundTasks):
+    """Inicia un trabajo de culling en segundo plano."""
+    return _start_pipeline_job(request, background_tasks, "cull")
+
+@app.post("/reselect")
+def start_reselect(request: IngestRequest, background_tasks: BackgroundTasks):
+    """Re-evalúa selectividad (Fase C) usando la caché de análisis (instantáneo)."""
+    return _start_pipeline_job(request, background_tasks, "cull")
+
+@app.post("/ingest")
+def start_ingest(data: IngestRequest, background_tasks: BackgroundTasks):
+    """Inicia el proceso de culling sobre un directorio de imágenes."""
+    return _start_pipeline_job(data, background_tasks, data.mode)
+
+
 
 
 @app.get("/status")
@@ -132,6 +157,44 @@ def get_status():
         "error": _job_state["error"],
     }
 
+@app.get("/debug/overlay")
+def get_debug_overlay(path: str):
+    """Retorna la imagen con overlays de depuración dibujados en OpenCV (Fase F)."""
+    if not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        
+    # Cargar imagen física en tamaño AI
+    p = Path(path)
+    from services.ingester import _extract_raw_preview, _load_jpg, THUMB_AI_SIZE, RAW_EXTENSIONS
+    from PIL import Image
+    import numpy as np
+    try:
+        arr = _extract_raw_preview(p) if p.suffix.lower() in RAW_EXTENSIONS else _load_jpg(p)
+        if arr is None:
+            raise HTTPException(status_code=400, detail="No se pudo cargar la imagen")
+        img_pil = Image.fromarray(arr)
+        img_pil.thumbnail(THUMB_AI_SIZE, Image.LANCZOS)
+        img_rgb = np.array(img_pil)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cargando imagen: {e}")
+        
+    # Intentar cargar análisis de DB
+    from services.analysis_store import init_store, load_analysis
+    conn = init_store(str(p.parent))
+    current_mtime = os.path.getmtime(path)
+    analysis = load_analysis(conn, path, current_mtime)
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="El análisis no está en base de datos. Escanee la carpeta primero.")
+        
+    import cv2
+    from services.debug_overlay import draw_debug_overlay
+    img_res = draw_debug_overlay(img_rgb, analysis)
+    
+    # Codificar a WebP
+    _, encoded = cv2.imencode(".webp", cv2.cvtColor(img_res, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_WEBP_QUALITY, 85])
+    return Response(content=encoded.tobytes(), media_type="image/webp")
+
 
 @app.get("/results")
 def get_results():
@@ -145,11 +208,106 @@ def get_results():
 
 
 @app.get("/thumbnail")
-def get_thumbnail(path: str):
-    """Retorna el thumbnail JPEG de una imagen por su ruta de archivo."""
+def get_thumbnail(path: str, size: str = "ui"):
+    """Retorna el thumbnail WebP de una imagen por su ruta de archivo y tamaño (Fase E/Disco)."""
+    from services.thumbnail_store import read_thumbnail_from_disk
+    data = read_thumbnail_from_disk(path, size)
+    if data:
+        return Response(content=data, media_type="image/webp")
+        
+    # Fallback por si la caché en RAM tiene algo (compatibilidad / desarrollo)
+    if size == "duel" and path in _thumbnail_duel_cache:
+        return Response(content=_thumbnail_duel_cache[path], media_type="image/webp")
     if path in _thumbnail_cache:
-        return Response(content=_thumbnail_cache[path], media_type="image/jpeg")
+        return Response(content=_thumbnail_cache[path], media_type="image/webp")
+        
     raise HTTPException(status_code=404, detail="Thumbnail no encontrado")
+
+@app.get("/cache/projects")
+def get_cached_projects():
+    """Retorna una lista de proyectos con caché de miniaturas y análisis en disco."""
+    import sqlite3
+    db_dir = Path("backend/models/analysis")
+    if not db_dir.exists():
+        return []
+        
+    projects = []
+    from services.thumbnail_store import CACHE_ROOT
+    
+    for db_path in db_dir.glob("*.db"):
+        if db_path.name == "taste_examples.db":
+            continue
+            
+        mtime = db_path.stat().st_mtime
+        size = db_path.stat().st_size
+        
+        directory = ""
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute("SELECT path FROM photo_analysis LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                directory = str(Path(row[0]).parent)
+            conn.close()
+        except Exception:
+            pass
+            
+        if not directory:
+            continue
+            
+        dir_hash = db_path.stem
+        proj_cache_dir = CACHE_ROOT / dir_hash
+        if proj_cache_dir.exists():
+            for root, _, files in os.walk(proj_cache_dir):
+                for f in files:
+                    size += os.path.getsize(os.path.join(root, f))
+                    
+        size_mb = round(size / (1024 * 1024), 2)
+        
+        projects.append({
+            "directory": directory,
+            "last_accessed": mtime,
+            "size_mb": size_mb,
+            "db_hash": dir_hash
+        })
+        
+    projects.sort(key=lambda p: p["last_accessed"], reverse=True)
+    return projects
+
+@app.post("/cache/open")
+def open_cache_folder():
+    """Abre la carpeta del caché de miniaturas en el explorador de Windows."""
+    import os
+    from services.thumbnail_store import CACHE_ROOT
+    if not CACHE_ROOT.exists():
+        CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        os.startfile(str(CACHE_ROOT))
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo abrir la carpeta: {e}")
+
+class ClearCacheRequest(BaseModel):
+    directory: str
+
+@app.post("/cache/clear")
+def clear_cache(request: ClearCacheRequest):
+    """Borra manualmente la caché de miniaturas y la base de datos de un proyecto."""
+    from services.thumbnail_store import clear_project_cache
+    from services.analysis_store import _get_db_path
+    
+    # 1. Borrar miniaturas
+    clear_project_cache(request.directory)
+    
+    # 2. Borrar base de datos de análisis
+    db_path = _get_db_path(request.directory)
+    if db_path.exists():
+        try:
+            os.remove(db_path)
+        except Exception as e:
+            logger.error(f"Error al borrar DB de análisis en limpieza manual: {e}")
+            
+    return {"success": True}
 
 
 # --- Endpoint de Aprendizaje de Gustos ---
@@ -481,119 +639,133 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             import onnxruntime as ort
             eye_session = ort.InferenceSession(str(eye_path), providers=["CPUExecutionProvider"])
 
-        # FASE 1: Ingesta
-        def progress_cb(done, total):
-            _job_state["processed"] = done
-            _job_state["total"] = total
-            _job_state["progress"] = round(done / total * 40, 1)  # 0-40%
+        # FASE 1 & 2: Ingesta y análisis técnico / semántico por lotes
+        from services.ingester import get_ingest_tasks, process_single_image
+        from services.analysis import analyze_photo, PhotoAnalysis
+        from services.analysis_store import init_store, load_analysis, save_analysis
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import os
+        import time
 
-        records, ingest_stats = ingest_directory(directory, progress_callback=progress_cb)
-        _thumbnail_cache = {r.path: r.thumb_ui for r in records if r.thumb_ui}
-        _job_state["stats"]["ingest"] = ingest_stats
+        t0_ingest = time.time()
+        tasks = get_ingest_tasks(directory)
+        total = len(tasks)
+        
+        # Inicializar cachés globales
+        global _thumbnail_cache, _thumbnail_duel_cache
+        _thumbnail_cache.clear()
+        _thumbnail_duel_cache.clear()
 
-        # FASE 2: Clasificación de escena y análisis técnico
-        from services.scene_classifier import classify_scene
-        from services.face_assessment import evaluate_eyes_onnx, evaluate_eyes_fast, compute_face_sharpness
-        scene_types, blur_scores, saliency_regions, aesthetic_scores = [], [], [], []
-        blur_flags = []
-        face_bboxes_list = []
-        closed_flags = []           # ojos cerrados por imagen (solo retratos)
-        face_sharpness_list = []    # nitidez Laplaciana por cara, por imagen
-        eye_landmarks_list = []     # landmarks YuNet por imagen (para auto-crop)
-
-        # Pre-edición: firmas de luz de TODAS las fotos (el consenso usa
-        # también duplicadas/descartadas; solo se escribe en las selected)
         pre_edit_prefs = prefs.get("pre_edit", {})
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
-        pre_skin, pre_global, pre_clip, pre_wb = [], [], [], []
-        sharp_anywhere = []         # nitidez del mejor bloque (enfoque selectivo)
 
-        for i, record in enumerate(records):
-            if record.error or record.thumb_ai is None:
-                scene_types.append("detail")
-                blur_scores.append(0.0)
-                blur_flags.append(False)
-                saliency_regions.append(None)
-                face_bboxes_list.append([])
-                closed_flags.append(False)
-                face_sharpness_list.append([])
-                eye_landmarks_list.append([])
-                aesthetic_scores.append(0.5)
-                pre_skin.append(None)
-                pre_global.append(pre_edit.TARGET_MID)
-                pre_clip.append(0.0)
-                pre_wb.append(None)
-                sharp_anywhere.append(0.0)
-                continue
+        records = []
+        analyses: list[PhotoAnalysis] = []
+        conn = init_store(directory)
 
-            arr = record.thumb_ai
+        BATCH_SIZE = 200
+        errors = 0
 
-            # Clasificar escena (siempre que haya detector; la pref solo aplica a ojos)
-            if face_detector is not None:
-                scene_result = classify_scene(arr, face_detector)
-                scene_type = scene_result.scene_type.value
-                bboxes = scene_result.face_bboxes
-                eye_lms = scene_result.eye_landmarks
-            else:
-                scene_type = "detail"
-                bboxes = []
-                eye_lms = []
+        for batch_start in range(0, total, BATCH_SIZE):
+            batch_tasks = tasks[batch_start:batch_start + BATCH_SIZE]
+            batch_records = []
 
-            scene_types.append(scene_type)
-            face_bboxes_list.append(bboxes)
-            eye_landmarks_list.append(eye_lms)
+            # Verificar si están en la caché de análisis SQLite y tienen miniaturas en disco
+            from services.thumbnail_store import get_thumbnail_cache_paths
+            to_process = []
+            
+            for path, linked_raw in batch_tasks:
+                current_mtime = os.path.getmtime(path)
+                ans = load_analysis(conn, str(path), current_mtime)
+                ui_path, duel_path = get_thumbnail_cache_paths(str(path))
+                if ans and ui_path.exists() and duel_path.exists():
+                    from services.ingester import ImageRecord, RAW_EXTENSIONS
+                    rec = ImageRecord(
+                        path=str(path),
+                        filename=path.name,
+                        is_raw=path.suffix.lower() in RAW_EXTENSIONS,
+                        linked_raw_path=linked_raw,
+                        phash=ans.phash,
+                        exif_datetime=ans.exif_datetime
+                    )
+                    batch_records.append(rec)
+                else:
+                    to_process.append((path, linked_raw))
 
-            # Nitidez por cara (para el gate técnico dentro del cluster)
-            face_sharpness_list.append(compute_face_sharpness(arr, bboxes) if bboxes else [])
+            # Ingestar lote de forma concurrente solo para lo que no esté en caché
+            if to_process:
+                with ThreadPoolExecutor(max_workers=None) as executor:
+                    futures = {executor.submit(process_single_image, p, lr): p for p, lr in to_process}
+                    for future in as_completed(futures):
+                        rec = future.result()
+                        batch_records.append(rec)
+                        if rec.error:
+                            errors += 1
 
-            # Ojos cerrados (solo retratos, OCEC si está, EAR si no)
-            closed = False
-            if scene_type == "portrait" and eye_lms and prefs.get("detect_closed_eyes", True):
-                fa = (evaluate_eyes_onnx(arr, eye_lms, eye_session) if eye_session is not None
-                      else evaluate_eyes_fast(arr, eye_lms))
-                closed = fa.any_closed_eyes
-            closed_flags.append(closed)
+            # El orden de as_completed no es determinista, ordenamos por path
+            batch_records.sort(key=lambda r: r.path)
 
-            # Región de saliencia para detalles
-            saliency = compute_saliency_region(arr) if scene_type == "detail" else None
-            saliency_regions.append(saliency)
+            # Analizar el lote e ir liberando memoria
+            for record in batch_records:
+                global_idx = len(records)
+                
+                current_mtime = os.path.getmtime(record.path) if not record.error else 0.0
+                ans = load_analysis(conn, record.path, current_mtime)
+                
+                if record.error:
+                    ans = analyze_photo(global_idx, record, face_detector, eye_session, blur_threshold, prefs.get("detect_closed_eyes", True), pre_edit_enabled)
+                    analyses.append(ans)
+                    records.append(record)
+                    continue
 
-            # Análisis técnico
-            tq = evaluate_technical_quality(arr, scene_type, bboxes, saliency, blur_threshold)
-            blur_scores.append(tq.blur_score)
-            blur_flags.append(tq.is_blurry)
-            # ¿Hay ALGO nítido en el cuadro? (enfoque selectivo: ramo/manos
-            # nítidos con rostros suaves NO es un error de toma)
-            sharp_anywhere.append(max_region_sharpness(arr) if tq.is_blurry else tq.blur_score)
+                if not ans:
+                    # Si no está en DB (se procesó en este paso)
+                    ans = analyze_photo(
+                        index=global_idx,
+                        record=record,
+                        face_detector=face_detector,
+                        eye_session=eye_session,
+                        blur_threshold=blur_threshold,
+                        detect_closed_eyes=prefs.get("detect_closed_eyes", True),
+                        pre_edit_enabled=pre_edit_enabled,
+                    )
+                    save_analysis(conn, ans, current_mtime)
+                else:
+                    ans.index = global_idx
 
-            # Análisis estético heurístico (el gusto aprendido se aplica en el
-            # ranking dentro del cluster, sobre embeddings — FASE 4)
-            aesthetic_scores.append(evaluate_aesthetics_fast(arr))
+                # Liberar RAM pesada: el array numpy del lote procesado ya no se necesita en RAM
+                record.thumb_ai = None
 
-            # Firma de luz (piel, global, quemados): también detecta basura
-            # por exposición extrema, así que se mide siempre.
-            skin_lum, global_lum, clip_frac = pre_edit.measure_luminance(arr, bboxes)
-            pre_skin.append(skin_lum)
-            pre_global.append(global_lum)
-            pre_clip.append(clip_frac)
-            pre_wb.append(pre_edit.estimate_wb(arr, bboxes) if pre_edit_enabled else None)
+                analyses.append(ans)
+                records.append(record)
 
-            _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
+                _job_state["processed"] = len(records)
+                _job_state["total"] = total
+                _job_state["progress"] = round(len(records) / total * 70, 1)  # 0-70% combinados!
+
+        elapsed = time.time() - t0_ingest
+        _job_state["stats"]["ingest"] = {
+            "total": total,
+            "success": total - errors,
+            "errors": errors,
+            "elapsed_seconds": round(elapsed, 1),
+            "images_per_second": round(total / elapsed, 1) if elapsed > 0 else 0,
+        }
 
         # FASE 3: Clustering
         if prefs.get("detect_duplicates", True):
             clusters = cluster_images(
                 [r.phash for r in records],
                 [r.exif_datetime for r in records],
-                scene_types,
+                [a.scene_type for a in analyses],
                 epsilon_hash=dbscan_epsilon,
             )
-            clusters = assign_cluster_representatives(clusters, blur_scores, aesthetic_scores)
+            clusters = assign_cluster_representatives(clusters, [a.blur_score for a in analyses], [a.aesthetic_score for a in analyses])
         else:
             # Sin agrupamiento: cada foto es su propio cluster
             from services.clustering import ImageCluster
             clusters = [
-                ImageCluster(i, scene_types[i], [i], i)
+                ImageCluster(i, analyses[i].scene_type, [i], i)
                 for i in range(len(records))
             ]
 
@@ -609,10 +781,26 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             embedded = 0
             for n, idx in enumerate(multi_indices):
                 rec = records[idx]
-                if rec.error or rec.thumb_ai is None:
+                if rec.error:
                     continue
-                if embedding_service.embed_path(rec.path, rec.thumb_ai) is not None:
-                    embedded += 1
+                
+                # Recargar temporalmente thumb_ai desde disco para calcular embedding
+                thumb_ai = None
+                from services.ingester import _extract_raw_preview, _load_jpg, THUMB_AI_SIZE
+                from PIL import Image
+                try:
+                    p = Path(rec.path)
+                    arr = _extract_raw_preview(p) if rec.is_raw else _load_jpg(p)
+                    if arr is not None:
+                        img = Image.fromarray(arr)
+                        img.thumbnail(THUMB_AI_SIZE, Image.LANCZOS)
+                        thumb_ai = np.array(img)
+                except Exception as e:
+                    logger.error(f"Error recargando thumb_ai temporal para embedding: {e}")
+
+                if thumb_ai is not None:
+                    if embedding_service.embed_path(rec.path, thumb_ai) is not None:
+                        embedded += 1
                 _job_state["progress"] = 80.0 + round(n / max(1, len(multi_indices)) * 10, 1)  # 80-90%
             _job_state["stats"]["embeddings"] = {"computed": embedded, "candidates": len(multi_indices)}
             logger.info(f"Embeddings listos: {embedded}/{len(multi_indices)} fotos en clusters.")
@@ -632,11 +820,11 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             signatures = [
                 pre_edit.PhotoSignature(
                     index=i,
-                    has_people=bool(face_bboxes_list[i]),
-                    wb=pre_wb[i],
-                    skin_lum=pre_skin[i],
-                    global_lum=pre_global[i],
-                    clip_frac=pre_clip[i],
+                    has_people=bool(analyses[i].face_bboxes),
+                    wb=analyses[i].pre_wb,
+                    skin_lum=analyses[i].pre_skin_lum,
+                    global_lum=analyses[i].pre_global_lum,
+                    clip_frac=analyses[i].pre_clip_frac,
                 ) for i in order
             ]
             develop_by_idx = pre_edit.compute_pre_edits(
@@ -667,7 +855,9 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             # sin defectos técnicos relativos (ojos cerrados, cara borrosa),
             # si es que existe al menos una alternativa limpia en el cluster.
             candidates = apply_technical_gates(
-                cluster.image_indices, closed_flags, face_sharpness_list
+                cluster.image_indices, 
+                [a.any_closed_eyes for a in analyses], 
+                [a.face_sharpness for a in analyses]
             )
 
             # Ranking entre candidatos:
@@ -676,10 +866,9 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             # - Fallback frío → combinado blur+heurísticas, ambos en 0..1.
             cluster_scores = []
             for idx in candidates:
-                blur = blur_scores[idx] if idx < len(blur_scores) else 0.0
-                aesthetic = aesthetic_scores[idx] if idx < len(aesthetic_scores) else 0.0
-                blur_norm = min(1.0, blur / SHARP_REF)
-                score = 0.6 * blur_norm + 0.4 * aesthetic
+                a = analyses[idx]
+                blur_norm = min(1.0, a.blur_score / SHARP_REF)
+                score = 0.6 * blur_norm + 0.4 * a.aesthetic_score
                 if use_taste and len(candidates) > 1:
                     emb = embedding_service.embed_path(records[idx].path, records[idx].thumb_ai)
                     if emb is not None:
@@ -702,40 +891,25 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         # un error — nunca basura.
         SEVERE_BLUR_FACTOR = 0.35
         trash_flags = [
-            (blur_flags[i]
-             and blur_scores[i] < blur_threshold * SEVERE_BLUR_FACTOR
-             and sharp_anywhere[i] < blur_threshold)
-            or pre_edit.is_trash_exposure(pre_global[i], pre_clip[i])
-            for i in range(len(records))
+            (a.blur_flag
+             and a.blur_score < blur_threshold * SEVERE_BLUR_FACTOR
+             and a.sharp_anywhere < blur_threshold)
+            or pre_edit.is_trash_exposure(a.pre_global_lum, a.pre_clip_frac)
+            for a in analyses
         ]
 
-        # FASE 4b: Selectividad — barra de calidad final según el modo.
-        # Los representatives de clusters >1 ganaron un duelo y son intocables;
-        # la poda es SOLO entre singletons (fotos sueltas: transiciones,
-        # relleno) rankeados por score. "few" = agresivo.
-        KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
-        HIGHLIGHT_FRACTION = 0.10   # top-top (3★, no pueden faltar)
-
-        def _selectable(idx: int) -> bool:
-            if records[idx].error:
-                return False
-            if trash_flags[idx] and prefs.get("detect_blurry", True):
-                return False
-            return True
-
-        pool = sorted((i for i in singleton_reps if _selectable(i)),
-                      key=lambda i: rep_scores[i], reverse=True)
-        keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.65)
-        keep_n = max(1, int(round(len(pool) * keep_frac))) if pool else 0
-        demoted = set(pool[keep_n:])
-
-        final_selected = sorted(
-            (i for i in rep_scores if _selectable(i) and i not in demoted),
-            key=lambda i: rep_scores[i], reverse=True)
-        highlights: set[int] = set()
-        if prefs.get("detect_highlights", True) and final_selected:
-            top_n = max(1, int(round(len(final_selected) * HIGHLIGHT_FRACTION)))
-            highlights = set(final_selected[:top_n])
+        # FASE 4b & 4c: Selectividad y Calificaciones
+        from services.decision import apply_decision_logic
+        results, demoted, final_selected, highlights = apply_decision_logic(
+            records=records,
+            analyses=analyses,
+            clusters=clusters,
+            rep_scores=rep_scores,
+            trash_flags=trash_flags,
+            prefs=prefs,
+            settings=settings,
+            develop_by_idx=develop_by_idx
+        )
 
         _job_state["stats"]["selectivity"] = {
             "mode": prefs.get("selectivity_target", "standard"),
@@ -743,89 +917,6 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             "selected": len(final_selected),
             "highlighted": len(highlights),
         }
-
-        # FASE 4c: Asignar calificaciones
-        for cluster in clusters:
-            if not cluster.image_indices:
-                continue
-            for idx in cluster.image_indices:
-                if idx >= len(records):
-                    continue
-                record = records[idx]
-                is_representative = (idx == cluster.representative_index)
-                is_trash = trash_flags[idx] if idx < len(trash_flags) else False
-                has_closed = closed_flags[idx] if idx < len(closed_flags) else False
-
-                # Prioridad: error > basura > ojos cerrados > seleccionada > duplicado.
-                # "blurry" (Roja/rechazada) es solo para basura real: desenfoque
-                # severo o exposición extrema. El blur leve va por score.
-                if record.error:
-                    label = None
-                    stars = 0
-                elif is_trash and prefs.get("detect_blurry", True):
-                    label = "blurry"
-                    stars = ratings_map["blurry"]["stars"]
-                elif has_closed and not is_representative:
-                    label = "closed_eyes"
-                    stars = ratings_map["closed_eyes"]["stars"]
-                elif is_representative and idx in demoted:
-                    # Singleton flojo podado por la barra de selectividad
-                    label = "duplicates"
-                    stars = ratings_map["duplicates"]["stars"]
-                elif is_representative and idx in highlights:
-                    label = "highlighted"
-                    stars = ratings_map["highlighted"]["stars"]
-                elif is_representative:
-                    label = "selected"
-                    stars = ratings_map["selected"]["stars"]
-                else:
-                    label = "duplicates"
-                    stars = ratings_map["duplicates"]["stars"]
-
-                # Auto-crop no destructivo: solo en las elegidas (crs:Crop* en XMP)
-                crop_dict = None
-                if (label in ("selected", "highlighted") and auto_crop_level in LEVEL_LIMITS
-                        and record.thumb_ai is not None):
-                    gray = cv2.cvtColor(record.thumb_ai, cv2.COLOR_RGB2GRAY)
-                    # Personas SIN rostro visible (de espaldas, perfil, parciales):
-                    # el detector de cuerpos evita que el crop las corte.
-                    from services import person_detector
-                    persons = person_detector.detect_persons(record.thumb_ai)
-                    prop = propose_crop(
-                        scene_types[idx], face_bboxes_list[idx], eye_landmarks_list[idx],
-                        saliency_regions[idx], record.thumb_ai.shape,
-                        auto_crop_level, detect_horizon_angle(gray),
-                        person_bboxes=persons, img_rgb=record.thumb_ai,
-                    )
-                    if prop is not None:
-                        crop_dict = prop.to_dict()
-
-                results.append({
-                    "path": record.path,
-                    "filename": record.filename,
-                    "is_raw": record.is_raw,
-                    "scene_type": scene_types[idx] if idx < len(scene_types) else "detail",
-                    "cluster_id": cluster.cluster_id,
-                    "is_cluster_representative": is_representative,
-                    "label": label,
-                    "stars": stars,
-                    "color": ratings_map.get(label, {}).get("color", "") if label else "",
-                    "blur_score": round(blur_scores[idx], 2) if idx < len(blur_scores) else 0,
-                    "crop": crop_dict,
-                    "has_crop": crop_dict is not None,
-                    "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,
-                    "error": record.error,
-                })
-                
-                # Si este JPG tenía un RAW emparejado, inyectar otra entrada en los resultados
-                # para que también se escriba el metadato XMP sidecar para el RAW.
-                if getattr(record, "linked_raw_path", None):
-                    import copy
-                    raw_res = copy.deepcopy(results[-1])
-                    raw_res["path"] = record.linked_raw_path
-                    raw_res["filename"] = Path(record.linked_raw_path).name
-                    raw_res["is_raw"] = True
-                    results.append(raw_res)
 
         # FASE 5: Exportar metadatos a XMP sidecars
         from services.xmp_exporter import export_results_to_xmp

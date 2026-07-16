@@ -141,12 +141,23 @@ def test_wb_piel_neutra_correccion_pequena():
 
 def test_trash_exposure_solo_extremos():
     from services.pre_edit import is_trash_exposure
-    assert is_trash_exposure(0.9, 0.4)          # lavada + área quemada enorme
-    assert is_trash_exposure(0.008, 0.0)        # prácticamente negra
+    assert is_trash_exposure(0.95, 0.9)         # lavada + casi todo quemado
+    assert is_trash_exposure(0.005, 0.0)        # prácticamente negra
     assert not is_trash_exposure(0.5, 0.05)     # clara pero recuperable
-    assert not is_trash_exposure(0.9, 0.1)      # muy clara pero poco quemado
+    assert not is_trash_exposure(0.9, 0.4)      # muy clara, 40% quemado: recuperable
     assert not is_trash_exposure(0.04, 0.0)     # oscura pero recuperable
     assert not is_trash_exposure(0.18, 0.0)     # normal
+
+
+def test_trash_over_ev_es_alcanzable():
+    """Regresión: la luminancia lineal tope es 1.0 → EV máximo +2.47. Un
+    TRASH_OVER_EV mayor dejaría la rama de sobreexposición muerta."""
+    import math
+    from services.pre_edit import TARGET_MID, TRASH_OVER_EV, is_trash_exposure
+    ev_max = math.log2(1.0 / TARGET_MID)
+    assert TRASH_OVER_EV < ev_max, f"umbral {TRASH_OVER_EV} > tope físico {ev_max:.2f}"
+    # Una foto 100% blanca y quemada DEBE marcarse como basura
+    assert is_trash_exposure(1.0, 1.0)
 
 
 # --- Sesiones de luz ---

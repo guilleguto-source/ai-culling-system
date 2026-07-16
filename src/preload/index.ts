@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
   ingestMedia: (directory: string, mode?: string) => ipcRenderer.invoke('backend:ingest', directory, mode || 'cull_edit'),
   getJobStatus: () => ipcRenderer.invoke('backend:job:status'),
   getJobResults: () => ipcRenderer.invoke('backend:job:results'),
+  
+  selectFolder: (defaultPath?: string) => ipcRenderer.invoke('backend:select-folder', defaultPath),
 
   onBackendLog: (callback: (log: string) => void) => {
     const subscription = (_: any, log: string) => callback(log);

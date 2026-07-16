@@ -51,6 +51,9 @@ if (typeof window !== 'undefined' && !window.api) {
       const res = await fetch(`${BACKEND_URL}/results`);
       return await res.json();
     },
+    selectFolder: async (defaultPath?: string) => {
+      return null;
+    },
     onBackendLog: (cb: any) => {
       return () => {};
     },

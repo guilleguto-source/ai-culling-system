@@ -8,6 +8,7 @@ declare global {
       ingestMedia: (directory: string, mode?: string) => Promise<{ job_id: string; status: string }>;
       getJobStatus: () => Promise<any>;
       getJobResults: () => Promise<any>;
+      selectFolder: (defaultPath?: string) => Promise<string | null>;
       onBackendLog: (callback: (log: string) => void) => () => void;
       onBackendStatusChange: (callback: (status: string) => void) => () => void;
     };

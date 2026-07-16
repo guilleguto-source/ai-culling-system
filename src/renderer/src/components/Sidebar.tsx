@@ -22,7 +22,16 @@ export default function Sidebar({
   onViewChange,
   hasResults
 }: SidebarProps) {
-  const [folderInput, setFolderInput] = useState('');
+  const [folderInput, setFolderInput] = useState('\\\\MYCLOUDEX2ULTRA\\Public\\Guto Gutierrez\\');
+
+  const handleSelectFolder = async () => {
+    if (window.api.selectFolder) {
+      const selected = await window.api.selectFolder(folderInput || undefined);
+      if (selected) {
+        setFolderInput(selected);
+      }
+    }
+  };
 
   const handleStart = (mode: string) => {
     if (folderInput.trim()) {
@@ -111,7 +120,20 @@ export default function Sidebar({
             padding: '8px 12px',
             gap: '8px'
           }}>
-            <IconFolder size={16} className="text-muted" style={{ color: 'var(--text-muted)' }} />
+            <div 
+              onClick={handleSelectFolder}
+              style={{ 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                padding: '4px',
+                borderRadius: '4px'
+              }}
+              className="hover-bg-secondary"
+              title="Browse Folder"
+            >
+              <IconFolder size={18} className="text-primary" style={{ color: 'var(--accent-primary)' }} />
+            </div>
             <input 
               type="text" 
               placeholder="C:\Photos\Wedding..."

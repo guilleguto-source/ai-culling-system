@@ -6,3 +6,12 @@ __pycache__/
 backend/models/*.onnx
 .pytest_cache/
 *.log
+
+# Datos generados en runtime (no versionar)
+backend/models/cache/
+backend/models/analysis/
+backend/models/exports/
+backend/models/emb_cache/
+backend/models/*.db
+backend/models/*.db.bak
+backend/models/*.pkl
