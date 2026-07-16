@@ -5,6 +5,13 @@ from services.analysis import PhotoAnalysis
 from services.clustering import ImageCluster
 from services.auto_crop import LEVEL_LIMITS, propose_crop, detect_horizon_angle
 
+def _bad_faces(a: PhotoAnalysis) -> int:
+    """Caras con problema según el criterio del fotógrafo: ojos cerrados o
+    cara virada (no mira a cámara). Solo cuenta sobre caras que MediaPipe
+    validó — las detecciones basura de YuNet (decoración) no suman."""
+    return a.closed_eyes_count + a.looking_away_count
+
+
 def apply_decision_logic(
     records: list[Any],
     analyses: list[PhotoAnalysis],
@@ -56,16 +63,14 @@ def apply_decision_logic(
             is_representative = (idx == cluster.representative_index)
             is_trash = trash_flags[idx] if idx < len(trash_flags) else False
 
-            # "Ojos cerrados" es RELATIVO a la ganadora de su ráfaga: en una
-            # grupal casi siempre hay alguien parpadeando, así que marcar
-            # cualquier foto con >=1 ojo cerrado pintaría el 97% del evento.
-            # Solo se marca la perdedora que tiene MÁS caras con ojos cerrados
-            # que la ganadora — la peor del grupo, que es lo que se descarta.
+            # Descarte por caras: RELATIVO a la ganadora de su ráfaga. En una
+            # grupal casi siempre hay alguien parpadeando o mirando a otro
+            # lado, así que un criterio absoluto pintaría casi todo el evento.
+            # Se marca la perdedora que tiene MÁS caras con problema (ojos
+            # cerrados o virada) que la ganadora — "la peor de la grupal".
             rep = analyses[cluster.representative_index] if cluster.representative_index < len(analyses) else None
             a = analyses[idx] if idx < len(analyses) else None
-            has_closed = bool(
-                a and rep and a.closed_eyes_count > rep.closed_eyes_count
-            )
+            has_closed = bool(a and rep and _bad_faces(a) > _bad_faces(rep))
 
             if record.error:
                 label = None

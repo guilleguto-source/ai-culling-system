@@ -45,3 +45,39 @@ def test_analysis_store_roundtrip(tmp_path):
     # Load with wrong mtime
     loaded_wrong = load_analysis(conn, "test.jpg", 99999.0)
     assert loaded_wrong is None
+
+
+def test_atributos_de_mediapipe_persisten(tmp_path):
+    """Regresión: los conteos de caras deciden los descartes; si no se
+    persisten, al leer del caché toda foto parece sin problemas."""
+    conn = init_store(str(tmp_path))
+    a = PhotoAnalysis(
+        index=3, path="grupal.jpg", scene_type="portrait",
+        face_bboxes=[[0, 0, 10, 10]] * 43,   # YuNet ve 43 (incluye decoración)
+        face_count=43, valid_face_count=7,   # MediaPipe valida 7
+        closed_eyes_count=2, looking_away_count=3, smiling_count=4,
+        any_closed_eyes=True,
+    )
+    save_analysis(conn, a, 111.0)
+    l = load_analysis(conn, "grupal.jpg", 111.0)
+
+    assert l.face_count == 43
+    assert l.valid_face_count == 7
+    assert l.closed_eyes_count == 2
+    assert l.looking_away_count == 3
+    assert l.smiling_count == 4
+
+
+def test_version_vieja_invalida_el_cache(tmp_path):
+    """Un análisis guardado con un esquema anterior no debe reusarse."""
+    from services import analysis_store
+    conn = init_store(str(tmp_path))
+    save_analysis(conn, PhotoAnalysis(index=0, path="x.jpg"), 5.0)
+    assert load_analysis(conn, "x.jpg", 5.0) is not None
+
+    original = analysis_store.ANALYSIS_VERSION
+    try:
+        analysis_store.ANALYSIS_VERSION = original + 1
+        assert load_analysis(conn, "x.jpg", 5.0) is None
+    finally:
+        analysis_store.ANALYSIS_VERSION = original

@@ -25,9 +25,10 @@ def _rec(i):
                            is_raw=False, error="", thumb_ai=None, linked_raw_path=None)
 
 
-def _an(i, closed=0, faces=3):
+def _an(i, closed=0, faces=3, away=0):
     return PhotoAnalysis(index=i, path=f"C:/ev/IMG_{i}.jpg", scene_type="portrait",
                          closed_eyes_count=closed, face_count=faces,
+                         valid_face_count=faces, looking_away_count=away,
                          any_closed_eyes=closed > 0, blur_score=500.0)
 
 
@@ -81,3 +82,22 @@ def test_ganadora_nunca_se_marca_por_ojos():
 def test_sin_caras_no_aplica():
     labels = _run([_an(0, closed=0, faces=0), _an(1, closed=0, faces=0)], rep_idx=0)
     assert labels["IMG_1.jpg"] == "duplicates"
+
+
+def test_cara_virada_tambien_descarta():
+    """El fotógrafo descarta 'la peor: ojos cerrados O caras viradas'."""
+    labels = _run([_an(0, away=0), _an(1, away=2)], rep_idx=0)
+    assert labels["IMG_1.jpg"] == "closed_eyes"
+
+
+def test_ojos_y_mirada_suman():
+    """1 ojo cerrado + 1 virada es peor que la ganadora con 1 virada sola."""
+    labels = _run([_an(0, closed=0, away=1), _an(1, closed=1, away=1)], rep_idx=0)
+    assert labels["IMG_1.jpg"] == "closed_eyes"
+
+
+def test_todas_viradas_por_igual_no_pinta():
+    """Si en toda la ráfaga miran para otro lado, ninguna es 'la peor'."""
+    labels = _run([_an(0, away=2), _an(1, away=2), _an(2, away=2)], rep_idx=0)
+    assert labels["IMG_1.jpg"] == "duplicates"
+    assert labels["IMG_2.jpg"] == "duplicates"

@@ -4,7 +4,8 @@ from typing import Any
 import numpy as np
 from services.ingester import ImageRecord
 from services.scene_classifier import classify_scene, compute_saliency_region
-from services.face_assessment import evaluate_eyes_onnx, evaluate_eyes_fast, compute_face_sharpness
+from services.face_assessment import compute_face_sharpness
+from services import face_mesh
 from services.technical_quality import evaluate_technical_quality, max_region_sharpness
 from services.aesthetic_assessment import evaluate_aesthetics_fast
 from services.pre_edit import measure_luminance, estimate_wb, TARGET_MID
@@ -25,7 +26,13 @@ class PhotoAnalysis:
     # el booleano: la comparación útil es RELATIVA dentro de la ráfaga
     # (la peor del grupo), no absoluta.
     closed_eyes_count: int = 0
-    face_count: int = 0
+    face_count: int = 0                # lo que detectó YuNet (incluye basura)
+    # MediaPipe confirma cuáles son caras de verdad: en una foto YuNet detectó
+    # 43 "caras" (decoración) y solo 7 lo eran. valid_face_count es el conteo
+    # fiable; los atributos solo se miden sobre esas.
+    valid_face_count: int = 0
+    looking_away_count: int = 0        # "caras viradas": no miran a cámara
+    smiling_count: int = 0
     phash: str = ""
     exif_datetime: str = ""
     
@@ -81,13 +88,18 @@ def analyze_photo(
     analysis.phash = record.phash
     analysis.exif_datetime = record.exif_datetime
 
-    # Ojos cerrados
+    # Atributos faciales (ojos / mirada / sonrisa) con MediaPipe sobre cada
+    # recorte de cara. Reemplaza a eye_state.onnx, que era ruido sobre estas
+    # fotos (97% de falsos "cerrado"). Si MediaPipe no está, no se marca nada.
     analysis.face_count = len(analysis.face_bboxes)
-    if analysis.scene_type == "portrait" and analysis.eye_landmarks and detect_closed_eyes:
-        fa = (evaluate_eyes_onnx(arr, analysis.eye_landmarks, eye_session) if eye_session is not None
-              else evaluate_eyes_fast(arr, analysis.eye_landmarks))
-        analysis.any_closed_eyes = fa.any_closed_eyes
-        analysis.closed_eyes_count = sum(1 for f in fa.face_results if f.has_closed_eyes)
+    if analysis.face_bboxes and detect_closed_eyes and face_mesh.is_available():
+        attrs = face_mesh.analyze_faces(arr, analysis.face_bboxes)
+        validas = [a for a in attrs if a.valid]
+        analysis.valid_face_count = len(validas)
+        analysis.closed_eyes_count = sum(1 for a in validas if a.eyes_closed)
+        analysis.looking_away_count = sum(1 for a in validas if a.looking_away)
+        analysis.smiling_count = sum(1 for a in validas if a.smiling)
+        analysis.any_closed_eyes = analysis.closed_eyes_count > 0
 
     # Saliencia para detalles
     if analysis.scene_type == "detail":

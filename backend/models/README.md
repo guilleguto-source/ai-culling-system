@@ -1,9 +1,26 @@
-# models/ — Directorio para modelos ONNX locales
-# Coloca aquí los archivos .onnx descargados:
-#   - yunet.onnx                  (YuNet face detector de OpenCV)
-#   - eye_state.onnx              (clasificador de ojos abiertos/cerrados)
+# models/ — Directorio para modelos locales
+# Coloca aquí los archivos descargados:
+#   - yunet.onnx                  (YuNet face detector de OpenCV: ENCUENTRA las caras)
+#   - face_landmarker.task        (MediaPipe: ANALIZA cada cara — ojos/mirada/sonrisa)
 #   - clip_vit_b32_visual.onnx    (encoder visual CLIP ViT-B/32, embeddings 512-d)
 #   - person_yolov8n.onnx         (detector de personas/cuerpos, protege el auto-crop)
+#
+# NOTA: eye_state.onnx quedó OBSOLETO (2026-07-16). Medido sobre el evento
+# real: 97% de falsos "ojos cerrados"; el mismo ojo devolvía 0.00 u 0.87 según
+# el recorte; ni a 4000px acertaba. Lo reemplaza face_landmarker.task.
+#
+# MediaPipe FaceLandmarker (3.6 MB) — atributos faciales:
+#     pip install mediapipe
+#     python -c "import truststore; truststore.inject_into_ssl(); \
+#       import urllib.request; urllib.request.urlretrieve( \
+#       'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', \
+#       'face_landmarker.task')"
+#   Arquitectura: MediaPipe NO ve las caras chicas sobre la foto completa
+#   (reescala a 192px), así que YuNet las encuentra y MediaPipe analiza cada
+#   RECORTE ampliado. Bonus: si MediaPipe no halla cara en el recorte, la
+#   detección de YuNet era basura (decoración) → filtro de validez gratis
+#   (medido: en una foto YuNet vio 43 "caras" y solo 7 lo eran).
+#   Coste: ~47 ms/foto (~1 min por evento de 1000).
 #
 # YOLOv8n (detector de personas, ~12 MB):
 #     pip install ultralytics
