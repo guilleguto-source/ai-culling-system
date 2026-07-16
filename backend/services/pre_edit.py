@@ -29,6 +29,11 @@ TARGET_MID = 0.18      # tono medio para fotos sin personas
 MAX_EXPOSURE = 1.5     # stops máximos de corrección medida
 SESSION_EXPOSURE_BAND = 0.7  # la corrección no se aleja más de esto de la mediana de sesión
 EXPOSURE_STEP = 0.05
+# El bias es un DESTINO de luminosidad (+0.3 ≈ histograma 1/3 a la derecha),
+# no un aumento incondicional: la luminosidad global final no debe superar
+# bias + headroom, y una foto con altas luces quemadas nunca se sube.
+GLOBAL_EV_HEADROOM = 0.5
+CLIP_GUARD_FRACTION = 0.03   # >3% de pixeles quemados → prohibido subir exposición
 
 # --- WB (escala incremental de LR para no-RAW: -100..100) ---
 K_TEMP = 100.0         # ganancia (B/R) → unidades incremental
@@ -77,20 +82,21 @@ def _skin_patches(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> np.ndarr
 # ---------------------------------------------------------------- exposición
 
 def measure_luminance(img_rgb: np.ndarray, face_bboxes: list[list[int]]
-                      ) -> tuple[float | None, float]:
+                      ) -> tuple[float | None, float, float]:
     """
-    Mediciones de luminancia lineal para la firma de luz:
-    (piel mediana o None si no hay rostros útiles, global mediana).
-    Los stops se calculan después, contra el objetivo de SU sesión.
+    Mediciones para la firma de luz: (piel mediana o None, global mediana,
+    fracción de pixeles quemados). Los stops se calculan después, contra el
+    objetivo de SU sesión y con protección de altas luces.
     """
     if img_rgb is None or img_rgb.size == 0:
-        return None, TARGET_MID
+        return None, TARGET_MID, 0.0
     global_lum = float(np.median(_linear_luminance(img_rgb)))
+    clip_frac = float(np.mean(img_rgb.max(axis=-1) >= 250))
     skin = _skin_patches(img_rgb, face_bboxes) if face_bboxes else None
     skin_lum = None
     if skin is not None and len(skin) > 50:
         skin_lum = float(np.median(_linear_luminance(skin.reshape(1, -1, 3)).ravel()))
-    return skin_lum, global_lum
+    return skin_lum, global_lum, clip_frac
 
 
 # ------------------------------------------------------------------------ WB
@@ -141,6 +147,7 @@ class PhotoSignature:
     wb: tuple[float, float] | None   # estimación propia (None = no vota)
     skin_lum: float | None = None    # luminancia lineal mediana de piel
     global_lum: float = TARGET_MID   # luminancia lineal mediana global
+    clip_frac: float = 0.0           # fracción de pixeles quemados (altas luces)
 
     @property
     def lum_ev(self) -> float:
@@ -284,11 +291,21 @@ def compute_pre_edits(
             t = float(np.clip(t + preset_wb_bias[0], -MAX_WB, MAX_WB))
             i = float(np.clip(i + preset_wb_bias[1], -MAX_WB, MAX_WB))
 
-            # Exposición: propia acotada a la sesión, + bias
+            # Exposición: propia acotada a la sesión, + bias como DESTINO
             e = float(np.clip(_stops(sig),
                               exp_med - SESSION_EXPOSURE_BAND,
-                              exp_med + SESSION_EXPOSURE_BAND))
-            e = round((e + bias) / EXPOSURE_STEP) * EXPOSURE_STEP
+                              exp_med + SESSION_EXPOSURE_BAND)) + bias
+            # Techo de luminosidad global: el histograma final no debe pasar
+            # de bias + headroom (una foto ya clara se BAJA, no se sube más)
+            final_ev = sig.lum_ev + e
+            cap = bias + GLOBAL_EV_HEADROOM
+            if final_ev > cap:
+                e -= final_ev - cap
+            # Protección de altas luces: con pixeles quemados no se sube nada
+            if sig.clip_frac > CLIP_GUARD_FRACTION and e > 0:
+                e = 0.0
+            e = float(np.clip(e, -MAX_EXPOSURE, MAX_EXPOSURE))
+            e = round(e / EXPOSURE_STEP) * EXPOSURE_STEP
 
             results[sig.index] = {
                 "Exposure2012": round(e, 2),

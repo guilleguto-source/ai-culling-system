@@ -32,18 +32,21 @@ def _with_face(bg: tuple, skin: tuple) -> tuple[np.ndarray, list[list[int]]]:
 
 def test_medicion_piel_y_global():
     img, bboxes = _with_face(bg=(30, 30, 30), skin=(190, 150, 128))
-    skin, glob = measure_luminance(img, bboxes)
+    skin, glob, clip = measure_luminance(img, bboxes)
     assert skin is not None and skin > glob   # la piel es más clara que el fondo
+    assert clip < 0.01
 
 
-def test_medicion_sin_caras():
-    skin, glob = measure_luminance(_img((128, 128, 128)), [])
-    assert skin is None and 0.1 < glob < 0.35
+def test_medicion_sin_caras_y_quemados():
+    img = _img((128, 128, 128))
+    img[:100, :] = (255, 255, 255)            # franja quemada
+    skin, glob, clip = measure_luminance(img, [])
+    assert skin is None and clip > 0.2
 
 
-def _sig_lum(i, skin, glob=0.18, people=True):
+def _sig_lum(i, skin, glob=0.18, people=True, clip=0.0):
     return PhotoSignature(index=i, has_people=people, wb=(0.0, 0.0),
-                          skin_lum=skin, global_lum=glob)
+                          skin_lum=skin, global_lum=glob, clip_frac=clip)
 
 
 def test_piel_oscura_no_se_aclara():
@@ -55,8 +58,8 @@ def test_piel_oscura_no_se_aclara():
 
 
 def test_foto_subexpuesta_en_sesion_oscura_se_corrige():
-    sigs = [_sig_lum(i, 0.07) for i in range(8)]
-    sigs.append(_sig_lum(8, 0.02))    # misma gente, foto subexpuesta
+    sigs = [_sig_lum(i, 0.07, glob=0.15) for i in range(8)]
+    sigs.append(_sig_lum(8, 0.02, glob=0.05))    # misma gente, foto subexpuesta
     edits = compute_pre_edits(sigs, bias=0.0)
     assert edits[8]["Exposure2012"] > 0.4          # se sube hacia la sesión
     assert edits[8]["Exposure2012"] <= SESSION_EXPOSURE_BAND + 0.01
@@ -64,11 +67,38 @@ def test_foto_subexpuesta_en_sesion_oscura_se_corrige():
 
 def test_sesion_entera_subexpuesta_se_levanta_al_minimo_sano():
     """Piel bajo SKIN_TARGET_MIN: ahí sí es subexposición, no tono de piel."""
-    sigs = [_sig_lum(i, 0.02) for i in range(6)]
+    sigs = [_sig_lum(i, 0.02, glob=0.05) for i in range(6)]
     edits = compute_pre_edits(sigs, bias=0.0)
     import math
     expected = math.log2(SKIN_TARGET_MIN / 0.02)
     assert edits[0]["Exposure2012"] == pytest.approx(expected, abs=0.1)
+
+
+def test_techo_de_luminosidad_baja_foto_ya_clara():
+    """Piel oscura pero foto globalmente clarísima (contraluz lavado): el
+    techo de luminosidad manda — se BAJA en vez de subir más."""
+    sigs = [_sig_lum(i, 0.07, glob=0.18) for i in range(7)]
+    sigs.append(_sig_lum(7, 0.03, glob=0.45))   # lavada
+    edits = compute_pre_edits(sigs, bias=0.0)
+    assert edits[7]["Exposure2012"] < 0
+
+
+def test_quemada_nunca_se_sube():
+    sigs = [_sig_lum(i, 0.07, glob=0.18) for i in range(7)]
+    sigs.append(_sig_lum(7, 0.03, glob=0.18, clip=0.2))  # quemada + piel oscura
+    edits = compute_pre_edits(sigs, bias=0.3)
+    assert edits[7]["Exposure2012"] <= 0.0
+
+
+def test_bias_es_destino_no_incremento():
+    """Foto que ya está en +0.3 EV global: el bias no la sube otra vez más
+    allá del headroom."""
+    sigs = [PhotoSignature(index=i, has_people=False, wb=(0.0, 0.0),
+                           skin_lum=None, global_lum=0.18 * (2 ** 0.9))
+            for i in range(6)]
+    edits = compute_pre_edits(sigs, bias=0.3)
+    # base = -0.9 (a tono medio) + 0.3 → -0.6; final_ev = 0.3 ≤ 0.8 ✓
+    assert edits[0]["Exposure2012"] == pytest.approx(-0.6, abs=0.05)
 
 
 def test_sin_caras_usa_global():

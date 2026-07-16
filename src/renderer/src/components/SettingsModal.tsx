@@ -77,31 +77,31 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
       zIndex: 50,
       backdropFilter: 'blur(4px)'
     }}>
-      <div className="glass-panel" style={{ width: '500px', backgroundColor: 'var(--bg-secondary)', padding: '0' }}>
-        
+      <div className="glass-panel" style={{ width: '460px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-secondary)', padding: '0', fontSize: '0.62rem' }}>
+
         {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Culling Preferences</h2>
-          <button 
-            onClick={onClose} 
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <h2 style={{ margin: 0, fontSize: '0.95rem' }}>Culling Preferences</h2>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.95rem' }}
           >
             ×
           </button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', flex: 1 }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontWeight: 500 }}>Selectivity Target</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>How aggressively should the AI cull?</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>How aggressively should the AI cull?</div>
             </div>
             <select 
               value={prefs.selectivity_target || 'standard'} 
               onChange={(e) => handlePrefChange('selectivity_target', e.target.value)}
-              style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
+              style={{ padding: '4px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
             >
               <option value="few">Few (Aggressive)</option>
               <option value="standard">Standard</option>
@@ -112,12 +112,12 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontWeight: 500 }}>Blurry Sensitivity</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Tolerance for out of focus shots</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Tolerance for out of focus shots</div>
             </div>
             <select 
               value={prefs.blurry_sensitivity || 'moderate'} 
               onChange={(e) => handlePrefChange('blurry_sensitivity', e.target.value)}
-              style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
+              style={{ padding: '4px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
             >
               <option value="lenient">Lenient</option>
               <option value="moderate">Moderate</option>
@@ -128,12 +128,12 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontWeight: 500 }}>Auto-encuadre</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Recorte propuesto (reversible en Lightroom). Grupos: solo nivelado.</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Recorte propuesto (reversible en Lightroom). Grupos: solo nivelado.</div>
             </div>
             <select
               value={prefs.auto_crop || 'minimo'}
               onChange={(e) => handlePrefChange('auto_crop', e.target.value)}
-              style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
+              style={{ padding: '4px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' }}
             >
               <option value="off">Desactivado</option>
               <option value="minimo">Mínimo (10%)</option>
@@ -147,11 +147,11 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               type="checkbox"
               checked={prefs.detect_duplicates !== false}
               onChange={(e) => handlePrefChange('detect_duplicates', e.target.checked)}
-              style={{ width: '16px', height: '16px' }}
+              style={{ width: '13px', height: '13px' }}
             />
             <div>
               <div style={{ fontWeight: 500 }}>Detect Duplicates</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Group similar photos and select the best</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Group similar photos and select the best</div>
             </div>
           </label>
 
@@ -160,17 +160,17 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               type="checkbox" 
               checked={prefs.detect_closed_eyes !== false} 
               onChange={(e) => handlePrefChange('detect_closed_eyes', e.target.checked)}
-              style={{ width: '16px', height: '16px' }}
+              style={{ width: '13px', height: '13px' }}
             />
             <div>
               <div style={{ fontWeight: 500 }}>Detect Closed Eyes</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Flag portraits with closed eyes</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Flag portraits with closed eyes</div>
             </div>
           </label>
           
           {/* --- Calificación de estrellas, colores y banderines --- */}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '12px' }}>Calificación de estrellas y colores</div>
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px' }}>Calificación de estrellas y colores</div>
             {([
               ['Selecciones de IA', [
                 ['selected', 'Seleccionadas'],
@@ -182,13 +182,13 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                 ['duplicates', 'Trash'],
               ]],
             ] as [string, [string, string][]][]).map(([groupTitle, rows]) => (
-              <div key={groupTitle} style={{ marginBottom: '12px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+              <div key={groupTitle} style={{ marginBottom: '8px' }}>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
                   {groupTitle}
                 </div>
                 {rows.map(([label, name]) => {
                   const r = ratings[label] || { stars: 0, color: '', flag: 'none' };
-                  const selStyle = { padding: '6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' };
+                  const selStyle = { padding: '3px 5px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' };
                   return (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                       <span style={{ flex: 1 }}>{name}</span>
@@ -196,12 +196,31 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                         onChange={(e) => handleRatingChange(label, 'stars', parseInt(e.target.value))}>
                         {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}
                       </select>
-                      <select value={r.color || ''} style={selStyle}
-                        onChange={(e) => handleRatingChange(label, 'color', e.target.value)}>
-                        <option value="">Sin color</option>
-                        {['Roja', 'Amarilla', 'Verde', 'Azul', 'Morada'].map(c =>
-                          <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        {(['', 'Roja', 'Amarilla', 'Verde', 'Azul', 'Morada'] as string[]).map(c => {
+                          const hex: Record<string, string> = {
+                            Roja: '#e5484d', Amarilla: '#f0c000', Verde: '#46a758',
+                            Azul: '#0091ff', Morada: '#8e4ec6'
+                          };
+                          const active = (r.color || '') === c;
+                          return (
+                            <div
+                              key={c || 'none'}
+                              title={c || 'Sin color'}
+                              onClick={() => handleRatingChange(label, 'color', c)}
+                              style={{
+                                width: '14px', height: '14px', borderRadius: '50%',
+                                cursor: 'pointer', boxSizing: 'border-box',
+                                background: c
+                                  ? hex[c]
+                                  : 'linear-gradient(135deg, transparent 42%, #888 42%, #888 58%, transparent 58%)',
+                                border: active ? '2px solid white' : '1px solid var(--border-strong)',
+                                transform: active ? 'scale(1.2)' : 'none',
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
                       <select value={r.flag || 'none'} style={selStyle}
                         onChange={(e) => handleRatingChange(label, 'flag', e.target.value)}>
                         <option value="none">Sin banderín</option>
@@ -213,23 +232,23 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                 })}
               </div>
             ))}
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
               El color debe coincidir exactamente con tu conjunto de etiquetas de Lightroom.
             </div>
           </div>
 
           {/* --- Pre-edición --- */}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={preEdit.enabled !== false}
                 onChange={(e) => handlePreEditChange('enabled', e.target.checked)}
-                style={{ width: '16px', height: '16px' }}
+                style={{ width: '13px', height: '13px' }}
               />
               <div>
                 <div style={{ fontWeight: 500 }}>Pre-edición (preset + WB + exposición)</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                   Escribe ajustes de revelado reversibles en el XMP de las fotos elegidas
                 </div>
               </div>
@@ -244,7 +263,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                     const f = e.dataTransfer.files?.[0] as any;
                     if (f?.path) usePresetFile(f.path);
                   }}
-                  style={{ border: '1px dashed var(--border-strong)', borderRadius: '6px', padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}
+                  style={{ border: '1px dashed var(--border-strong)', borderRadius: '6px', padding: '8px', textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)' }}
                 >
                   Arrastra aquí tu preset .xmp de Lightroom, o{' '}
                   <label style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}>
@@ -260,7 +279,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                       }}
                     />
                   </label>
-                  <div style={{ marginTop: '4px', fontSize: '0.75rem' }}>
+                  <div style={{ marginTop: '4px', fontSize: '0.62rem' }}>
                     Nota: las máscaras IA del preset pueden pedir "Actualizar ajustes de IA" en Lightroom
                   </div>
                 </div>
@@ -277,7 +296,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                         usePresetFile(e.target.value);
                       }
                     }}
-                    style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)', maxWidth: '260px' }}
+                    style={{ padding: '4px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)', maxWidth: '260px' }}
                   >
                     <option value="">Ninguno (solo WB + exposición)</option>
                     {(preEdit.recent_presets || []).map((p: any) => (
@@ -289,7 +308,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontWeight: 500 }}>Sesgo de exposición</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                       Se suma a la exposición medida en las personas
                     </div>
                   </div>
@@ -316,11 +335,11 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               type="checkbox"
               checked={prefs.overwrite_xmp_ratings === true}
               onChange={(e) => handlePrefChange('overwrite_xmp_ratings', e.target.checked)}
-              style={{ width: '16px', height: '16px' }}
+              style={{ width: '13px', height: '13px' }}
             />
             <div>
               <div style={{ fontWeight: 500 }}>Overwrite XMP Ratings</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Warning: This will overwrite existing Lightroom ratings</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Warning: This will overwrite existing Lightroom ratings</div>
             </div>
           </label>
 

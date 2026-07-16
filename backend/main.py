@@ -445,7 +445,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         # también duplicadas/descartadas; solo se escribe en las selected)
         pre_edit_prefs = prefs.get("pre_edit", {})
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
-        pre_skin, pre_global, pre_wb = [], [], []
+        pre_skin, pre_global, pre_clip, pre_wb = [], [], [], []
 
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
@@ -460,6 +460,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 aesthetic_scores.append(0.5)
                 pre_skin.append(None)
                 pre_global.append(pre_edit.TARGET_MID)
+                pre_clip.append(0.0)
                 pre_wb.append(None)
                 continue
 
@@ -504,15 +505,17 @@ def _run_culling_pipeline(directory: str, job_id: str):
             # ranking dentro del cluster, sobre embeddings — FASE 4)
             aesthetic_scores.append(evaluate_aesthetics_fast(arr))
 
-            # Firma de luz para pre-edición (piel, global, WB)
+            # Firma de luz para pre-edición (piel, global, quemados, WB)
             if pre_edit_enabled:
-                skin_lum, global_lum = pre_edit.measure_luminance(arr, bboxes)
+                skin_lum, global_lum, clip_frac = pre_edit.measure_luminance(arr, bboxes)
                 pre_skin.append(skin_lum)
                 pre_global.append(global_lum)
+                pre_clip.append(clip_frac)
                 pre_wb.append(pre_edit.estimate_wb(arr, bboxes))
             else:
                 pre_skin.append(None)
                 pre_global.append(pre_edit.TARGET_MID)
+                pre_clip.append(0.0)
                 pre_wb.append(None)
 
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
@@ -573,6 +576,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     wb=pre_wb[i],
                     skin_lum=pre_skin[i],
                     global_lum=pre_global[i],
+                    clip_frac=pre_clip[i],
                 ) for i in order
             ]
             develop_by_idx = pre_edit.compute_pre_edits(
