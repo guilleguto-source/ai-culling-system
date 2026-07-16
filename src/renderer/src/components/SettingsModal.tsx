@@ -61,7 +61,11 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
   const handleRatingChange = (label: string, field: string, value: any) => {
     if (label === 'duplicates' && field === 'flag' && value === 'reject') {
-      if (!window.confirm('¿Marcar las fotos Trash como RECHAZADAS (banderín negro) en Lightroom?')) {
+      if (!window.confirm(
+        'Ojo: las "Duplicadas" son fotos BUENAS que solo perdieron contra una hermana ' +
+        'mejor de la misma ráfaga — no son basura. ¿Marcarlas igual como RECHAZADAS ' +
+        '(banderín negro) en Lightroom?'
+      )) {
         return;
       }
     }
@@ -204,25 +208,28 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
             <div style={{ fontWeight: 600, marginBottom: '8px' }}>Calificación de estrellas y colores</div>
             {([
               ['Selecciones de IA', [
-                ['selected', 'Seleccionadas'],
-                ['highlighted', 'Destacadas'],
+                ['selected', 'Seleccionadas', 'La mejor de cada grupo similar'],
+                ['highlighted', 'Destacadas', 'El top 10% de las seleccionadas'],
               ]],
-              ['Para revisión', [
-                ['blurry', 'Borrosas'],
-                ['closed_eyes', 'Ojos cerrados'],
-                ['duplicates', 'Trash'],
+              ['Descartes', [
+                ['blurry', 'Pérdida total', 'Quemada, negra o movida sin NADA enfocado — para borrar'],
+                ['closed_eyes', 'Ojos cerrados', 'Retrato con ojos cerrados que no ganó su grupo'],
+                ['duplicates', 'Duplicadas', 'Fotos BUENAS que perdieron contra una hermana mejor'],
               ]],
-            ] as [string, [string, string][]][]).map(([groupTitle, rows]) => (
+            ] as [string, [string, string, string][]][]).map(([groupTitle, rows]) => (
               <div key={groupTitle} style={{ marginBottom: '8px' }}>
                 <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
                   {groupTitle}
                 </div>
-                {rows.map(([label, name]) => {
+                {rows.map(([label, name, hint]) => {
                   const r = ratings[label] || { stars: 0, color: '', flag: 'none' };
                   const selStyle = { padding: '3px 5px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' };
                   return (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <span style={{ flex: 1 }}>{name}</span>
+                      <span style={{ flex: 1 }} title={hint}>
+                        {name}
+                        <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)', lineHeight: 1.25 }}>{hint}</div>
+                      </span>
                       <select value={r.stars ?? 0} style={selStyle}
                         onChange={(e) => handleRatingChange(label, 'stars', parseInt(e.target.value))}>
                         {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}

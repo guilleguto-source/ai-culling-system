@@ -55,6 +55,34 @@ def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
     assert rm["closed_eyes"]["color"] == "Morado"
 
 
+def test_normalize_colors_canoniza_genero_e_idioma():
+    """El set de LR del usuario es masculino; femenino o inglés no pinta.
+    save_settings normaliza siempre, pase lo que pase en el frontend."""
+    s = {"ratings_mapping": {
+        "a": {"color": "Roja"}, "b": {"color": "Morada"}, "c": {"color": "Amarilla"},
+        "d": {"color": "Green"}, "e": {"color": "azul"}, "f": {"color": ""},
+    }}
+    settings_manager.normalize_colors(s)
+    rm = s["ratings_mapping"]
+    assert rm["a"]["color"] == "Rojo"
+    assert rm["b"]["color"] == "Morado"
+    assert rm["c"]["color"] == "Amarillo"
+    assert rm["d"]["color"] == "Verde"
+    assert rm["e"]["color"] == "Azul"
+    assert rm["f"]["color"] == ""          # sin color se respeta
+
+
+def test_save_settings_normaliza(tmp_path, monkeypatch):
+    sp = tmp_path / "settings.json"
+    monkeypatch.setattr(settings_manager, "_get_settings_path", lambda: sp)
+    settings_manager.save_settings({
+        "ratings_mapping": {"duplicates": {"stars": 0, "color": "Roja", "flag": "reject"}},
+        "selection_preferences": {},
+    })
+    saved = json.loads(sp.read_text(encoding="utf-8"))
+    assert saved["ratings_mapping"]["duplicates"]["color"] == "Rojo"
+
+
 def test_migracion_completa_desde_v1(tmp_path, monkeypatch):
     old = {
         "ratings_mapping": {

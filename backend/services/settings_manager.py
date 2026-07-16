@@ -126,10 +126,32 @@ def load_settings() -> dict[str, Any]:
         return DEFAULT_SETTINGS.copy()
 
 
+# El set de etiquetas de Lightroom del usuario está en español MASCULINO.
+# Un nombre en femenino o inglés NO pinta el color: se normaliza siempre al
+# guardar, para que un frontend viejo o un JSON editado a mano no lo rompan.
+COLOR_CANONICO = {
+    "roja": "Rojo", "rojo": "Rojo", "red": "Rojo",
+    "amarilla": "Amarillo", "amarillo": "Amarillo", "yellow": "Amarillo",
+    "verde": "Verde", "green": "Verde",
+    "azul": "Azul", "blue": "Azul",
+    "morada": "Morado", "morado": "Morado", "purple": "Morado",
+}
+
+
+def normalize_colors(settings: dict[str, Any]) -> dict[str, Any]:
+    """Canoniza los nombres de color del ratings_mapping (in-place)."""
+    for entry in settings.get("ratings_mapping", {}).values():
+        color = (entry.get("color") or "").strip()
+        if color:
+            entry["color"] = COLOR_CANONICO.get(color.lower(), color)
+    return settings
+
+
 def save_settings(settings: dict[str, Any]) -> bool:
     """Guarda la configuración en settings.json."""
     path = _get_settings_path()
     try:
+        normalize_colors(settings)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2, ensure_ascii=False)
         logger.info(f"Configuración guardada en {path}")
