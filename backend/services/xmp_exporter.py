@@ -83,6 +83,11 @@ def _build_xmp_packet(stars: int, color: str, label: str,
 
     if crop:
         crs_fields = {
+            # Sin ProcessVersion + AlreadyApplied=False, Camera Raw ignora el
+            # bloque crs en JPEGs (asume que los ajustes ya están aplicados).
+            "Version": "15.4",
+            "ProcessVersion": "11.0",
+            "AlreadyApplied": "False",
             "HasCrop": "True",
             "CropLeft": f"{crop['left']:.6f}",
             "CropTop": f"{crop['top']:.6f}",

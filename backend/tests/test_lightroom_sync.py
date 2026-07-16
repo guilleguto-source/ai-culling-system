@@ -71,6 +71,8 @@ def test_packet_con_crop_incluye_crs():
     packet = _build_xmp_packet(stars=3, color="Verde", label="selected", crop=_CROP)
     assert b"HasCrop" in packet and b"CropAngle" in packet
     assert b"-2.5000" in packet
+    # Requeridos por Camera Raw para aplicar el bloque crs en JPEG
+    assert b"AlreadyApplied" in packet and b"ProcessVersion" in packet
 
 
 def test_crop_no_rompe_lectura_de_rating(tmp_path):
