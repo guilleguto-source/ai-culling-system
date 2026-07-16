@@ -66,6 +66,17 @@ por foto → crop (fase 5)**. Los campos calculados pisan a los del preset.
 - La dominante RGB se convierte a `IncrementalTemperature` (eje azul-ámbar)
   e `IncrementalTint` (eje verde-magenta), escala −100..100.
 
+### Prioridad de personas (regla del usuario)
+- La mediana de una sesión se calcula SOLO con las estimaciones de piel
+  (fotos con personas) cuando la sesión tiene ≥3 de ellas; las estimaciones
+  por blancos no votan en sesiones con gente — las pieles mandan siempre.
+- Fotos de detalle/sin personas dentro de una sesión con gente: reciben por
+  defecto el WB de la sesión (continuidad), SALVO que su propia estimación
+  por blancos se desvíe fuerte de la mediana (> `DETAIL_OVERRIDE_DELTA`,
+  inicial 10 unidades) — luz genuinamente distinta (ventana, flash) → se
+  editan aparte con su estimación propia, clamp ±15.
+- Sesiones enteras sin personas: mediana por blancos, como estaba.
+
 ### Sesiones de luz (histéresis)
 - Firma por foto: (temp_est, tint_est, luminancia mediana), orden por hora
   EXIF (sin EXIF: orden de archivo).
