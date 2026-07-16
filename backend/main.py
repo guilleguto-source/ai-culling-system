@@ -460,17 +460,34 @@ def calibration_label(data: LabelRequest):
             face_bbox=data.face_bbox, embedding=emb,
         )
         guardadas += 1
+
+    # Hay etiquetas nuevas: el clasificador aprendido debe re-entrenarse
+    from services.face_classifier import face_classifier
+    face_classifier.invalidate()
     return {"success": True, "guardadas": guardadas, "total": store.count()}
 
 @app.get("/calibration/stats")
 def calibration_stats():
-    """Precisión REAL del detector sobre las fotos del usuario."""
+    """
+    Precisión REAL sobre las fotos del usuario: la de la geometría (G1) medida
+    contra sus etiquetas, y la del clasificador aprendido (G3) en validación
+    cruzada. Así se ve con números cuál conviene para cada atributo.
+    """
     from services.calibration_store import CalibrationStore, ATTRIBUTES
+    from services.face_classifier import face_classifier, MIN_EXAMPLES
+
     store = CalibrationStore()
-    return {
-        "total": store.count(),
-        "por_atributo": {at: store.agreement(at) for at in ATTRIBUTES},
-    }
+    out = {}
+    for at in ATTRIBUTES:
+        geo = store.agreement(at)
+        aprendido = face_classifier.cross_val_accuracy(at)
+        out[at] = {
+            **geo,
+            "geometria": geo["precision"],
+            "aprendido": aprendido,
+            "faltan": max(0, MIN_EXAMPLES - store.count(at)),
+        }
+    return {"total": store.count(), "por_atributo": out}
 
 
 # --- Endpoints de Presets (pre-edición) ---

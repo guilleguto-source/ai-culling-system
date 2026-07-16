@@ -132,13 +132,20 @@ export default function CalibrationView({ directory }: { directory?: string }) {
             Enseña tu criterio: 1 cara a la vez. Ya marcamos lo que cree el detector — corrige solo lo que esté mal.
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem' }}>
+        <div style={{ display: 'flex', gap: '18px', fontSize: '0.75rem' }}>
           {stats && Object.entries(OPCIONES).map(([attr, o]) => {
             const a = stats.por_atributo?.[attr];
-            const pct = a?.precision != null ? `${Math.round(a.precision * 100)}%` : '—';
+            const geo = a?.geometria != null ? `${Math.round(a.geometria * 100)}%` : '—';
+            const apr = a?.aprendido != null ? `${Math.round(a.aprendido * 100)}%` : null;
             return (
-              <span key={attr} style={{ color: 'var(--text-secondary)' }}>
-                {o.titulo}: <strong style={{ color: 'var(--accent-primary)' }}>{pct}</strong>
+              <span key={attr} style={{ color: 'var(--text-secondary)' }} title={
+                'Geometría = precisión del detector actual contra tus etiquetas.\n' +
+                'Aprendido = clasificador entrenado con tus etiquetas (validación cruzada).' +
+                (a?.faltan ? `\nFaltan ${a.faltan} etiquetas para entrenar.` : '')
+              }>
+                {o.titulo}:{' '}
+                <strong style={{ color: 'var(--accent-primary)' }}>{geo}</strong>
+                {apr && <> · aprendido <strong style={{ color: 'var(--status-selected-text)' }}>{apr}</strong></>}
                 <span style={{ color: 'var(--text-muted)' }}> ({a?.total || 0})</span>
               </span>
             );
