@@ -56,12 +56,18 @@ def _get_xmp_path(image_path: str) -> Path:
 
 
 def _build_xmp_packet(stars: int, color: str, label: str,
-                      crop: dict | None = None) -> bytes:
+                      crop: dict | None = None,
+                      develop: dict | None = None,
+                      preset=None) -> bytes:
     """Construye un paquete XMP completo (con envoltura xpacket) listo para
     sidecar o para embeber en APP1. El color se escribe tal cual venga de settings.
-    `crop`: dict {left, top, right, bottom, angle} en fracciones/grados —
-    reencuadre NO destructivo (crs:Crop*) que Lightroom aplica como recorte
-    editable; los píxeles nunca se modifican."""
+    `crop`: dict {left, top, right, bottom, angle} — reencuadre NO destructivo.
+    `develop`: dict con ajustes crs calculados (Exposure2012,
+    IncrementalTemperature, IncrementalTint) — pre-edición por foto.
+    `preset`: PresetData (preset_manager) — el "look" del usuario; sus campos
+    se escriben primero y los calculados los pisan."""
+    import copy as _copy
+
     xmpmeta = etree.Element(f"{{{NS['x']}}}xmpmeta", nsmap={"x": NS["x"]})
     xmpmeta.set(f"{{{NS['x']}}}xmptk", "AI Culling System 1.0")
 
@@ -81,13 +87,23 @@ def _build_xmp_packet(stars: int, color: str, label: str,
     pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}PickStatus")
     pick_el.text = PICK_STATUS_MAP.get(label, "0")
 
+    crs_fields: dict[str, str] = {}
+
+    # 1. Preset del usuario (look): sus ajustes van primero
+    if preset is not None:
+        crs_fields.update(preset.settings)
+
+    # 2. Pre-edición calculada (exposición/WB): pisa al preset
+    if develop:
+        for key in ("Exposure2012", "IncrementalTemperature", "IncrementalTint"):
+            if develop.get(key) is not None:
+                crs_fields[key] = f"{develop[key]:+.2f}"
+        if "IncrementalTemperature" in crs_fields or "IncrementalTint" in crs_fields:
+            crs_fields.setdefault("WhiteBalance", "Custom")
+
+    # 3. Crop (fase 5): manda sobre todo
     if crop:
-        crs_fields = {
-            # Sin ProcessVersion + AlreadyApplied=False, Camera Raw ignora el
-            # bloque crs en JPEGs (asume que los ajustes ya están aplicados).
-            "Version": "15.4",
-            "ProcessVersion": "11.0",
-            "AlreadyApplied": "False",
+        crs_fields.update({
             "HasCrop": "True",
             "CropLeft": f"{crop['left']:.6f}",
             "CropTop": f"{crop['top']:.6f}",
@@ -95,10 +111,22 @@ def _build_xmp_packet(stars: int, color: str, label: str,
             "CropBottom": f"{crop['bottom']:.6f}",
             "CropAngle": f"{crop.get('angle', 0.0):.4f}",
             "CropConstrainToWarp": "0",
-        }
+        })
+
+    if crs_fields:
+        # Sin ProcessVersion + AlreadyApplied=False, Camera Raw ignora el
+        # bloque crs en JPEGs (asume que los ajustes ya están aplicados).
+        crs_fields.setdefault("Version", "15.4")
+        crs_fields.setdefault("ProcessVersion", "15.4")
+        crs_fields["AlreadyApplied"] = "False"
+        crs_fields.setdefault("HasSettings", "True")
         for name, value in crs_fields.items():
             el = etree.SubElement(desc, f"{{{NS['crs']}}}{name}")
             el.text = value
+        # Bloques XML del preset (curvas, HSL point colors, máscaras IA)
+        if preset is not None:
+            for element in preset.elements:
+                desc.append(_copy.deepcopy(element))
 
     body = etree.tostring(xmpmeta, encoding="utf-8", xml_declaration=False)
     return _XPACKET_OPEN + body + _XPACKET_CLOSE
@@ -195,11 +223,17 @@ def _sidecar_has_rating(xmp_path: Path) -> bool:
 # --- API pública ---
 
 def write_xmp(image_path: str, label: str, stars: int, color: str,
-              overwrite: bool = False, crop: dict | None = None) -> bool:
+              overwrite: bool = False, crop: dict | None = None,
+              develop: dict | None = None, preset=None) -> bool:
     """Escribe el rating/etiqueta. RAW -> sidecar; JPEG -> embebido. Respeta overwrite."""
     p = Path(image_path)
     try:
-        packet = _build_xmp_packet(stars, color, label, crop=crop)
+        if develop and _is_raw(p):
+            # Incremental WB no existe para RAW (usa Kelvin): solo exposición
+            develop = {k: v for k, v in develop.items()
+                       if k not in ("IncrementalTemperature", "IncrementalTint")}
+        packet = _build_xmp_packet(stars, color, label, crop=crop,
+                                   develop=develop, preset=preset)
         if _is_raw(p):
             xmp_path = _get_xmp_path(image_path)
             if xmp_path.exists() and not overwrite and _sidecar_has_rating(xmp_path):
@@ -219,8 +253,9 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
 
 
 def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
-                          overwrite: bool = False) -> dict:
-    """Exporta todos los resultados. Devuelve {written, skipped, errors, total}."""
+                          overwrite: bool = False, preset=None) -> dict:
+    """Exporta todos los resultados. Devuelve {written, skipped, errors, total}.
+    `preset` (PresetData) solo se aplica a fotos que traen `develop`."""
     written = skipped = errors = 0
     for result in results:
         if result.get("error"):
@@ -231,6 +266,7 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             skipped += 1
             continue
         mapping = ratings_mapping.get(label, {})
+        develop = result.get("develop")
         ok = write_xmp(
             image_path=result["path"],
             label=label,
@@ -238,6 +274,8 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             color=mapping.get("color", ""),
             overwrite=overwrite,
             crop=result.get("crop"),
+            develop=develop,
+            preset=preset if develop else None,
         )
         written += ok
         skipped += (not ok)

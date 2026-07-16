@@ -28,6 +28,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "detect_closed_eyes": True,
         "overwrite_xmp_ratings": False,
         "auto_crop": "minimo",              # "off" | "minimo" | "medio" | "agresivo"
+        "pre_edit": {
+            "enabled": True,
+            "preset_path": "",              # .xmp de LR activo ("" = sin preset)
+            "exposure_bias": 0.3,           # -0.5 .. +0.5
+            "recent_presets": [],           # [{name, path}] MRU máx 5
+        },
     },
     "last_import_directory": "",
     "culling_mode": "assisted",             # "assisted" | "automatic"

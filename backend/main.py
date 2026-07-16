@@ -202,10 +202,14 @@ def learn_preference(data: LearnPreferenceRequest):
                     out.append(str(sib))
         return out
 
-    # Conservar el crop propuesto en el culling (está en el snapshot del export)
+    # Conservar el crop y la pre-edición del culling (snapshot del export)
     from services.export_snapshot import load_snapshot
+    from services.preset_manager import load_preset
     snap = load_snapshot(str(Path(data.winner_path).parent))
     crops = snap.get("crops", {}) if snap else {}
+    develops = snap.get("develops", {}) if snap else {}
+    preset_path = snap.get("preset_path", "") if snap else ""
+    preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
 
     rewrite = []
     for label in ("selected", "duplicates"):
@@ -218,17 +222,56 @@ def learn_preference(data: LearnPreferenceRequest):
                 "stars": m.get("stars", 0),
                 "color": m.get("color", ""),
                 "crop": crops.get(path_str),
+                # La nueva ganadora hereda el develop de su hermana si no tenía
+                "develop": develops.get(path_str) or (
+                    develops.get(data.loser_path) if label == "selected" else None
+                ),
             })
 
     from services.xmp_exporter import export_results_to_xmp
     from services.export_snapshot import update_labels
-    xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True)
+    xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True,
+                                      preset=preset_data)
     # Mantener el snapshot al día: el cambio vino de un duelo, no de Lightroom.
     update_labels(
         str(Path(data.winner_path).parent),
         {r["path"]: r["label"] for r in rewrite},
     )
     return {"success": True, "learned": learned, "xmp": xmp_stats}
+
+
+# --- Endpoints de Presets (pre-edición) ---
+
+class PresetUseRequest(BaseModel):
+    path: str = ""   # "" = desactivar preset
+
+@app.get("/presets")
+def get_presets():
+    pre = load_settings()["selection_preferences"].get("pre_edit", {})
+    return {
+        "active": pre.get("preset_path", ""),
+        "recent": pre.get("recent_presets", []),
+        "exposure_bias": pre.get("exposure_bias", 0.3),
+        "enabled": pre.get("enabled", True),
+    }
+
+@app.post("/presets/use")
+def use_preset(data: PresetUseRequest):
+    settings = load_settings()
+    pre = settings["selection_preferences"].setdefault("pre_edit", {})
+    if not data.path:
+        pre["preset_path"] = ""
+        save_settings(settings)
+        return {"success": True, "active": "", "recent": pre.get("recent_presets", [])}
+
+    from services.preset_manager import load_preset, register_recent
+    if not Path(data.path).exists():
+        raise HTTPException(status_code=404, detail=f"No existe: {data.path}")
+    if load_preset(data.path) is None:
+        raise HTTPException(status_code=400, detail="No es un preset .xmp válido de Lightroom")
+    pre_updated = register_recent(data.path)
+    return {"success": True, "active": pre_updated["preset_path"],
+            "recent": pre_updated["recent_presets"]}
 
 
 # --- Endpoint de Sync desde Lightroom ---
@@ -349,6 +392,8 @@ def _run_culling_pipeline(directory: str, job_id: str):
         from services.clustering import cluster_images, assign_cluster_representatives
         from services.cluster_gates import apply_technical_gates
         from services.auto_crop import propose_crop, detect_horizon_angle, LEVEL_LIMITS
+        from services import pre_edit
+        from services.preset_manager import load_preset
         from services.technical_quality import evaluate_technical_quality
         from services.aesthetic_assessment import evaluate_aesthetics_fast
         from services.taste_model import taste_model
@@ -396,6 +441,12 @@ def _run_culling_pipeline(directory: str, job_id: str):
         face_sharpness_list = []    # nitidez Laplaciana por cara, por imagen
         eye_landmarks_list = []     # landmarks YuNet por imagen (para auto-crop)
 
+        # Pre-edición: firmas de luz de TODAS las fotos (el consenso usa
+        # también duplicadas/descartadas; solo se escribe en las selected)
+        pre_edit_prefs = prefs.get("pre_edit", {})
+        pre_edit_enabled = pre_edit_prefs.get("enabled", True)
+        pre_stops, pre_wb, pre_ev = [], [], []
+
         for i, record in enumerate(records):
             if record.error or record.thumb_ai is None:
                 scene_types.append("detail")
@@ -407,6 +458,9 @@ def _run_culling_pipeline(directory: str, job_id: str):
                 face_sharpness_list.append([])
                 eye_landmarks_list.append([])
                 aesthetic_scores.append(0.5)
+                pre_stops.append(0.0)
+                pre_wb.append(None)
+                pre_ev.append(0.0)
                 continue
 
             arr = record.thumb_ai
@@ -450,6 +504,16 @@ def _run_culling_pipeline(directory: str, job_id: str):
             # ranking dentro del cluster, sobre embeddings — FASE 4)
             aesthetic_scores.append(evaluate_aesthetics_fast(arr))
 
+            # Firma de luz para pre-edición (exposición, WB, luminancia)
+            if pre_edit_enabled:
+                pre_stops.append(pre_edit.estimate_exposure(arr, bboxes))
+                pre_wb.append(pre_edit.estimate_wb(arr, bboxes))
+                pre_ev.append(pre_edit.luminance_ev(arr))
+            else:
+                pre_stops.append(0.0)
+                pre_wb.append(None)
+                pre_ev.append(0.0)
+
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
 
         # FASE 3: Clustering
@@ -490,6 +554,35 @@ def _run_culling_pipeline(directory: str, job_id: str):
             logger.info(f"Embeddings listos: {embedded}/{len(multi_indices)} fotos en clusters.")
 
         _job_state["progress"] = 90.0
+
+        # FASE 3c: Pre-edición — sesiones de luz y ajustes por foto.
+        # Analiza todas las fotos en orden temporal; se aplica solo a selected.
+        develop_by_idx: dict[int, dict] = {}
+        preset_data = None
+        if pre_edit_enabled:
+            preset_path = pre_edit_prefs.get("preset_path") or ""
+            if preset_path and Path(preset_path).exists():
+                preset_data = load_preset(preset_path)
+            order = sorted(range(len(records)),
+                           key=lambda i: (records[i].exif_datetime or "~", i))
+            signatures = [
+                pre_edit.PhotoSignature(
+                    index=i,
+                    has_people=bool(face_bboxes_list[i]),
+                    wb=pre_wb[i],
+                    lum_ev=pre_ev[i],
+                ) for i in order
+            ]
+            develop_by_idx = pre_edit.compute_pre_edits(
+                signatures,
+                [pre_stops[i] for i in order],
+                bias=float(pre_edit_prefs.get("exposure_bias", 0.3)),
+                preset_wb_bias=preset_data.wb_bias if preset_data else (0.0, 0.0),
+            )
+            _job_state["stats"]["pre_edit"] = {
+                "preset": preset_data.name if preset_data else None,
+                "photos": len(develop_by_idx),
+            }
 
         # FASE 4: Asignar calificaciones
         ratings_map = settings["ratings_mapping"]
@@ -585,6 +678,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     "blur_score": round(blur_scores[idx], 2) if idx < len(blur_scores) else 0,
                     "crop": crop_dict,
                     "has_crop": crop_dict is not None,
+                    "develop": develop_by_idx.get(idx) if label == "selected" else None,
                     "error": record.error,
                 })
                 
@@ -601,13 +695,15 @@ def _run_culling_pipeline(directory: str, job_id: str):
         # FASE 5: Exportar metadatos a XMP sidecars
         from services.xmp_exporter import export_results_to_xmp
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
-        xmp_stats = export_results_to_xmp(results, ratings_map, overwrite=overwrite_xmp)
+        xmp_stats = export_results_to_xmp(results, ratings_map,
+                                          overwrite=overwrite_xmp, preset=preset_data)
         _job_state["stats"]["xmp"] = xmp_stats
 
         # Persistir qué exportamos: base para el sync desde Lightroom
         # (las diferencias futuras en los XMP = correcciones del usuario).
         from services.export_snapshot import save_snapshot
-        save_snapshot(directory, results)
+        save_snapshot(directory, results,
+                      preset_path=preset_data.path if preset_data else "")
 
         _job_state["results"] = results
         _job_state["status"] = "completed"

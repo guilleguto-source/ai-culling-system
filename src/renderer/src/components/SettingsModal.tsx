@@ -25,6 +25,33 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
   };
 
   const prefs = localSettings?.selection_preferences || {};
+  const preEdit = prefs.pre_edit || { enabled: true, preset_path: '', exposure_bias: 0.3, recent_presets: [] };
+
+  const handlePreEditChange = (key: string, value: any) => {
+    handlePrefChange('pre_edit', { ...preEdit, [key]: value });
+  };
+
+  const usePresetFile = async (path: string) => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/presets/use', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        handlePrefChange('pre_edit', {
+          ...preEdit,
+          preset_path: data.active,
+          recent_presets: data.recent
+        });
+      } else {
+        alert(data.detail || 'Preset no válido');
+      }
+    } catch (e) {
+      alert('Error de conexión con el backend');
+    }
+  };
 
   return (
     <div style={{
@@ -125,10 +152,103 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
             </div>
           </label>
           
+          {/* --- Pre-edición --- */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={preEdit.enabled !== false}
+                onChange={(e) => handlePreEditChange('enabled', e.target.checked)}
+                style={{ width: '16px', height: '16px' }}
+              />
+              <div>
+                <div style={{ fontWeight: 500 }}>Pre-edición (preset + WB + exposición)</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Escribe ajustes de revelado reversibles en el XMP de las fotos elegidas
+                </div>
+              </div>
+            </label>
+
+            {preEdit.enabled !== false && (
+              <>
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0] as any;
+                    if (f?.path) usePresetFile(f.path);
+                  }}
+                  style={{ border: '1px dashed var(--border-strong)', borderRadius: '6px', padding: '12px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}
+                >
+                  Arrastra aquí tu preset .xmp de Lightroom, o{' '}
+                  <label style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}>
+                    búscalo
+                    <input
+                      type="file"
+                      accept=".xmp"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] as any;
+                        if (f?.path) usePresetFile(f.path);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  <div style={{ marginTop: '4px', fontSize: '0.75rem' }}>
+                    Nota: las máscaras IA del preset pueden pedir "Actualizar ajustes de IA" en Lightroom
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 500 }}>Preset activo</div>
+                  <select
+                    value={preEdit.preset_path || ''}
+                    onChange={(e) => {
+                      if (e.target.value === '') {
+                        usePresetFile('');
+                        handlePreEditChange('preset_path', '');
+                      } else {
+                        usePresetFile(e.target.value);
+                      }
+                    }}
+                    style={{ padding: '8px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)', maxWidth: '260px' }}
+                  >
+                    <option value="">Ninguno (solo WB + exposición)</option>
+                    {(preEdit.recent_presets || []).map((p: any) => (
+                      <option key={p.path} value={p.path}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>Sesgo de exposición</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Se suma a la exposición medida en las personas
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min={-0.5}
+                      max={0.5}
+                      step={0.05}
+                      value={preEdit.exposure_bias ?? 0.3}
+                      onChange={(e) => handlePreEditChange('exposure_bias', parseFloat(e.target.value))}
+                    />
+                    <span style={{ width: '48px', textAlign: 'right' }}>
+                      {(preEdit.exposure_bias ?? 0.3) >= 0 ? '+' : ''}{(preEdit.exposure_bias ?? 0.3).toFixed(2)} EV
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-            <input 
-              type="checkbox" 
-              checked={prefs.overwrite_xmp_ratings === true} 
+            <input
+              type="checkbox"
+              checked={prefs.overwrite_xmp_ratings === true}
               onChange={(e) => handlePrefChange('overwrite_xmp_ratings', e.target.checked)}
               style={{ width: '16px', height: '16px' }}
             />

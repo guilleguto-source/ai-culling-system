@@ -22,7 +22,7 @@ def _snapshot_path(directory: str) -> Path:
     return EXPORTS_DIR / f"{key}.json"
 
 
-def save_snapshot(directory: str, results: list[dict]) -> None:
+def save_snapshot(directory: str, results: list[dict], preset_path: str = "") -> None:
     """Guarda {path: label} de lo exportado en el último culling del directorio."""
     items = {
         r["path"]: r["label"]
@@ -33,12 +33,18 @@ def save_snapshot(directory: str, results: list[dict]) -> None:
         "directory": str(Path(directory).resolve()),
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "items": items,
-        # Crops propuestos: el re-export tras un duelo los reutiliza tal cual
+        # Crops/develop propuestos: el re-export tras un duelo los reutiliza
         "crops": {
             r["path"]: r["crop"]
             for r in results
             if r.get("crop") and not r.get("error")
         },
+        "develops": {
+            r["path"]: r["develop"]
+            for r in results
+            if r.get("develop") and not r.get("error")
+        },
+        "preset_path": preset_path,
     }
     try:
         EXPORTS_DIR.mkdir(parents=True, exist_ok=True)

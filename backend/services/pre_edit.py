@@ -91,6 +91,14 @@ def estimate_exposure(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> floa
     return float(np.clip(stops, -MAX_EXPOSURE, MAX_EXPOSURE))
 
 
+def luminance_ev(img_rgb: np.ndarray) -> float:
+    """Luminancia mediana de la foto en EV relativos al tono medio (firma de luz)."""
+    if img_rgb is None or img_rgb.size == 0:
+        return 0.0
+    lum = float(np.median(_linear_luminance(img_rgb)))
+    return math.log2(max(lum, 1e-4) / TARGET_MID)
+
+
 # ------------------------------------------------------------------------ WB
 
 def estimate_wb(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> tuple[float, float] | None:
