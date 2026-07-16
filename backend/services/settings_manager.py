@@ -17,12 +17,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # (las top que no pueden faltar), Rojo = para borrar.
     # flag → banderín XMP (PickStatus): "pick" | "reject" | "none".
     # duplicates (Trash) va SIN color: no ensucia la vista de Lightroom.
-    "settings_version": 4,
+    # Rojo = descarte real (se borra): pérdida total, o la peor de la ráfaga
+    # (más ojos cerrados que la ganadora). Las duplicadas son fotos BUENAS que
+    # solo perdieron su grupo → sin marcar, para no ensuciar Lightroom.
+    "settings_version": 5,
     "ratings_mapping": {
         "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
         "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
         "blurry": {"stars": 0, "color": "Rojo", "flag": "reject"},
-        "closed_eyes": {"stars": 0, "color": "Morado", "flag": "reject"},
+        "closed_eyes": {"stars": 0, "color": "Rojo", "flag": "reject"},
         "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
@@ -117,6 +120,21 @@ def load_settings() -> dict[str, Any]:
             for entry in data["ratings_mapping"].values():
                 entry["color"] = _FIX_GENERO.get(entry.get("color"), entry.get("color"))
             data["settings_version"] = 4
+            save_settings(data)
+        # Migración v5: corrige el mapeo inducido por el nombre "Trash" que la
+        # UI le daba a `duplicates` (fotos buenas que perdieron su ráfaga). El
+        # rojo/rechazo pasa a los descartes reales y las duplicadas se limpian.
+        if data.get("settings_version", 1) < 5 and "ratings_mapping" in data:
+            rm = data["ratings_mapping"]
+            dup = rm.get("duplicates", {})
+            if dup.get("color") == "Rojo" or dup.get("flag") == "reject":
+                dup["color"] = ""
+                dup["flag"] = "none"
+                for label in ("blurry", "closed_eyes"):
+                    rm.setdefault(label, {"stars": 0})
+                    rm[label]["color"] = "Rojo"
+                    rm[label]["flag"] = "reject"
+            data["settings_version"] = 5
             save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)

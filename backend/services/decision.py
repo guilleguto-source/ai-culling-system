@@ -55,7 +55,17 @@ def apply_decision_logic(
             record = records[idx]
             is_representative = (idx == cluster.representative_index)
             is_trash = trash_flags[idx] if idx < len(trash_flags) else False
-            has_closed = analyses[idx].any_closed_eyes if idx < len(analyses) else False
+
+            # "Ojos cerrados" es RELATIVO a la ganadora de su ráfaga: en una
+            # grupal casi siempre hay alguien parpadeando, así que marcar
+            # cualquier foto con >=1 ojo cerrado pintaría el 97% del evento.
+            # Solo se marca la perdedora que tiene MÁS caras con ojos cerrados
+            # que la ganadora — la peor del grupo, que es lo que se descarta.
+            rep = analyses[cluster.representative_index] if cluster.representative_index < len(analyses) else None
+            a = analyses[idx] if idx < len(analyses) else None
+            has_closed = bool(
+                a and rep and a.closed_eyes_count > rep.closed_eyes_count
+            )
 
             if record.error:
                 label = None

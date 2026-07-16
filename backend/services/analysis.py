@@ -20,6 +20,12 @@ class PhotoAnalysis:
     eye_landmarks: list = field(default_factory=list)
     face_sharpness: list = field(default_factory=list)
     any_closed_eyes: bool = False
+    # En una grupal casi siempre HAY alguien con los ojos cerrados (6 ojos x
+    # ~20% de parpadeo = 70% de las fotos). Por eso el conteo importa más que
+    # el booleano: la comparación útil es RELATIVA dentro de la ráfaga
+    # (la peor del grupo), no absoluta.
+    closed_eyes_count: int = 0
+    face_count: int = 0
     phash: str = ""
     exif_datetime: str = ""
     
@@ -76,10 +82,12 @@ def analyze_photo(
     analysis.exif_datetime = record.exif_datetime
 
     # Ojos cerrados
+    analysis.face_count = len(analysis.face_bboxes)
     if analysis.scene_type == "portrait" and analysis.eye_landmarks and detect_closed_eyes:
         fa = (evaluate_eyes_onnx(arr, analysis.eye_landmarks, eye_session) if eye_session is not None
               else evaluate_eyes_fast(arr, analysis.eye_landmarks))
         analysis.any_closed_eyes = fa.any_closed_eyes
+        analysis.closed_eyes_count = sum(1 for f in fa.face_results if f.has_closed_eyes)
 
     # Saliencia para detalles
     if analysis.scene_type == "detail":

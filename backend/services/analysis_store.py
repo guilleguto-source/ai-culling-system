@@ -8,7 +8,8 @@ import os
 
 from services.analysis import PhotoAnalysis
 
-ANALYSIS_VERSION = 2
+# v3: se añaden closed_eyes_count / face_count (conteo, no solo el booleano)
+ANALYSIS_VERSION = 3
 
 # Anclado al módulo, NO al cwd (ver nota en thumbnail_store.py).
 ANALYSIS_DIR = Path(__file__).parent.parent / "models" / "analysis"
@@ -34,6 +35,8 @@ def init_store(directory: str) -> sqlite3.Connection:
             eye_landmarks TEXT,
             face_sharpness TEXT,
             any_closed_eyes BOOLEAN,
+            closed_eyes_count INTEGER,
+            face_count INTEGER,
             phash TEXT,
             exif_datetime TEXT,
             blur_score REAL,
@@ -71,6 +74,8 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
         eye_landmarks=json.loads(data["eye_landmarks"]) if data["eye_landmarks"] else [],
         face_sharpness=json.loads(data["face_sharpness"]) if data["face_sharpness"] else [],
         any_closed_eyes=bool(data["any_closed_eyes"]),
+        closed_eyes_count=data["closed_eyes_count"] or 0,
+        face_count=data["face_count"] or 0,
         phash=data["phash"] if data["phash"] else "",
         exif_datetime=data["exif_datetime"] if data["exif_datetime"] else "",
         blur_score=data["blur_score"],
@@ -89,9 +94,10 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
     conn.execute("""
         INSERT OR REPLACE INTO photo_analysis (
             path, mtime, version, index_val, scene_type, face_bboxes, eye_landmarks,
-            face_sharpness, any_closed_eyes, phash, exif_datetime, blur_score, blur_flag, sharp_anywhere,
+            face_sharpness, any_closed_eyes, closed_eyes_count, face_count, phash, exif_datetime,
+            blur_score, blur_flag, sharp_anywhere,
             aesthetic_score, saliency_region, pre_skin_lum, pre_global_lum, pre_clip_frac, pre_wb, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         analysis.path,
         mtime,
@@ -102,6 +108,8 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         json.dumps(analysis.eye_landmarks),
         json.dumps(analysis.face_sharpness),
         analysis.any_closed_eyes,
+        analysis.closed_eyes_count,
+        analysis.face_count,
         analysis.phash,
         analysis.exif_datetime,
         analysis.blur_score,
