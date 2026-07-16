@@ -10,7 +10,8 @@ from services.analysis import PhotoAnalysis
 
 # v3: closed_eyes_count / face_count (conteo, no solo el booleano)
 # v4: atributos de MediaPipe (caras válidas, mirada, sonrisa)
-ANALYSIS_VERSION = 4
+# v5: face_attrs — atributos POR cara (calibración y entrenamiento)
+ANALYSIS_VERSION = 5
 
 # Anclado al módulo, NO al cwd (ver nota en thumbnail_store.py).
 ANALYSIS_DIR = Path(__file__).parent.parent / "models" / "analysis"
@@ -41,6 +42,7 @@ def init_store(directory: str) -> sqlite3.Connection:
             valid_face_count INTEGER,
             looking_away_count INTEGER,
             smiling_count INTEGER,
+            face_attrs TEXT,
             phash TEXT,
             exif_datetime TEXT,
             blur_score REAL,
@@ -83,6 +85,7 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
         valid_face_count=data["valid_face_count"] or 0,
         looking_away_count=data["looking_away_count"] or 0,
         smiling_count=data["smiling_count"] or 0,
+        face_attrs=json.loads(data["face_attrs"]) if data["face_attrs"] else [],
         phash=data["phash"] if data["phash"] else "",
         exif_datetime=data["exif_datetime"] if data["exif_datetime"] else "",
         blur_score=data["blur_score"],
@@ -97,15 +100,40 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
         error=data["error"] if data["error"] else ""
     )
 
+def refresh_mtimes(conn: sqlite3.Connection, paths: list[str]) -> int:
+    """
+    Re-sella el análisis con el mtime actual de cada foto.
+
+    Necesario porque el propio pipeline escribe el XMP DENTRO del JPG al
+    terminar: eso cambia el mtime y el análisis recién guardado quedaba
+    invalidado por su propia escritura — el caché nunca acertaba y la
+    re-selección "instantánea" volvía a analizarlo todo.
+
+    Es seguro: el XMP solo toca metadatos; los píxeles no cambian, así que el
+    análisis sigue siendo válido.
+    """
+    n = 0
+    for p in set(paths):
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            continue
+        cur = conn.execute(
+            "UPDATE photo_analysis SET mtime = ? WHERE path = ?", (mtime, p))
+        n += cur.rowcount
+    conn.commit()
+    return n
+
+
 def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: float):
     conn.execute("""
         INSERT OR REPLACE INTO photo_analysis (
             path, mtime, version, index_val, scene_type, face_bboxes, eye_landmarks,
             face_sharpness, any_closed_eyes, closed_eyes_count, face_count,
-            valid_face_count, looking_away_count, smiling_count, phash, exif_datetime,
+            valid_face_count, looking_away_count, smiling_count, face_attrs, phash, exif_datetime,
             blur_score, blur_flag, sharp_anywhere,
             aesthetic_score, saliency_region, pre_skin_lum, pre_global_lum, pre_clip_frac, pre_wb, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         analysis.path,
         mtime,
@@ -121,6 +149,7 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         analysis.valid_face_count,
         analysis.looking_away_count,
         analysis.smiling_count,
+        json.dumps(analysis.face_attrs),
         analysis.phash,
         analysis.exif_datetime,
         analysis.blur_score,

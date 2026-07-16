@@ -7,8 +7,8 @@ interface SidebarProps {
   jobState: any;
   onOpenSettings: () => void;
   onStartIngest: (directory: string, mode?: string) => void;
-  currentView: 'grid' | 'duel';
-  onViewChange: (view: 'grid' | 'duel') => void;
+  currentView: 'grid' | 'duel' | 'calib';
+  onViewChange: (view: 'grid' | 'duel' | 'calib') => void;
   hasResults: boolean;
 }
 
@@ -183,7 +183,7 @@ export default function Sidebar({
           >
             <IconGrid size={16} /> Grid
           </button>
-          <button 
+          <button
             className={`btn ${currentView === 'duel' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => onViewChange('duel')}
             style={{ flex: 1 }}
@@ -191,6 +191,14 @@ export default function Sidebar({
             <IconDuel size={16} /> Duel
           </button>
         </div>
+        <button
+          className={`btn ${currentView === 'calib' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => onViewChange('calib')}
+          style={{ width: '100%' }}
+          title="Enséñale tu criterio: ojos, mirada y sonrisa, cara por cara"
+        >
+          ◎ Calibración
+        </button>
       </div>
 
       <div style={{ flex: 1 }} />

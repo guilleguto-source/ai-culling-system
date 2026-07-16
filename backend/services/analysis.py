@@ -33,6 +33,10 @@ class PhotoAnalysis:
     valid_face_count: int = 0
     looking_away_count: int = 0        # "caras viradas": no miran a cámara
     smiling_count: int = 0
+    # Atributos POR cara (mismo orden que face_bboxes), serializable a JSON:
+    # {valid, ear, blink, smile, gaze_out, yaw}. Necesario para elegir las
+    # caras dudosas en la calibración y para entrenar sobre ellas.
+    face_attrs: list = field(default_factory=list)
     phash: str = ""
     exif_datetime: str = ""
     
@@ -94,6 +98,7 @@ def analyze_photo(
     analysis.face_count = len(analysis.face_bboxes)
     if analysis.face_bboxes and detect_closed_eyes and face_mesh.is_available():
         attrs = face_mesh.analyze_faces(arr, analysis.face_bboxes)
+        analysis.face_attrs = [face_mesh.to_dict(a) for a in attrs]
         validas = [a for a in attrs if a.valid]
         analysis.valid_face_count = len(validas)
         analysis.closed_eyes_count = sum(1 for a in validas if a.eyes_closed)

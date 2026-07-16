@@ -68,6 +68,58 @@ class FaceAttributes:
         return self.valid and self.smile > SMILE_MIN
 
 
+def to_dict(a: "FaceAttributes") -> dict:
+    """Serializa para persistir en el análisis (JSON)."""
+    return {"valid": a.valid, "ear": round(a.ear, 4), "blink": round(a.blink, 4),
+            "smile": round(a.smile, 4), "gaze_out": round(a.gaze_out, 4),
+            "yaw": round(a.yaw, 4)}
+
+
+def from_dict(d: dict) -> "FaceAttributes":
+    return FaceAttributes(
+        valid=bool(d.get("valid")), ear=float(d.get("ear", 0.0)),
+        blink=float(d.get("blink", 0.0)), smile=float(d.get("smile", 0.0)),
+        gaze_out=float(d.get("gaze_out", 0.0)), yaw=float(d.get("yaw", 0.0)),
+    )
+
+
+def uncertainty(a: "FaceAttributes", attribute: str) -> float:
+    """
+    Cuán dudosa está la predicción (0 = segura, 1 = en el filo del umbral).
+    Sirve para preguntar primero las caras que más información aportan:
+    100 etiquetas elegidas así valen por ~500 al azar.
+    """
+    if not a.valid:
+        return 0.0
+    if attribute == "eyes":
+        # distancia relativa al umbral de EAR, y desacuerdo entre las dos señales
+        d = abs(a.ear - EAR_CLOSED) / EAR_CLOSED
+        geom_dice_cerrado = a.ear < EAR_CLOSED
+        blend_dice_cerrado = a.blink > BLINK_CLOSED
+        desacuerdo = 1.0 if geom_dice_cerrado != blend_dice_cerrado else 0.0
+        return max(0.0, min(1.0, 1.0 - d)) * 0.5 + desacuerdo * 0.5
+    if attribute == "gaze":
+        d = abs(a.gaze_out - GAZE_OUT) / GAZE_OUT
+        return max(0.0, min(1.0, 1.0 - d))
+    if attribute == "mouth":
+        d = abs(a.smile - SMILE_MIN) / SMILE_MIN
+        return max(0.0, min(1.0, 1.0 - d))
+    return 0.0
+
+
+def predict(a: "FaceAttributes", attribute: str) -> str:
+    """Etiqueta que G1 propone (se pre-marca en la UI; el usuario corrige)."""
+    if not a.valid:
+        return ""
+    if attribute == "eyes":
+        return "cerrados" if a.eyes_closed else "abiertos"
+    if attribute == "gaze":
+        return "fuera" if a.looking_away else "camara"
+    if attribute == "mouth":
+        return "sonrisa" if a.smiling else "neutra"
+    return ""
+
+
 def is_available() -> bool:
     return _get_landmarker() is not None
 

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
+import CalibrationView from './CalibrationView';
 
 interface MainContentProps {
   jobState: any;
   jobResults: any;
   settings: any;
-  viewMode: 'grid' | 'duel';
+  viewMode: 'grid' | 'duel' | 'calib';
   directory?: string;
 }
 
@@ -155,11 +156,9 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
 
         {/* View Area */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {viewMode === 'grid' ? (
-            <GridView results={jobResults.results} />
-          ) : (
-            <DuelView results={jobResults.results} />
-          )}
+          {viewMode === 'grid' && <GridView results={jobResults.results} />}
+          {viewMode === 'duel' && <DuelView results={jobResults.results} />}
+          {viewMode === 'calib' && <CalibrationView directory={directory} />}
         </div>
       </div>
     );

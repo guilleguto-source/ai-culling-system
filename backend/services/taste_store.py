@@ -42,8 +42,10 @@ def _connect(db_path: Path) -> sqlite3.Connection:
 
 
 class TasteStore:
-    def __init__(self, db_path: Path = DB_PATH):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | None = None):
+        # Se resuelve en la LLAMADA, no al importar (un default `= DB_PATH`
+        # congela la ruta e ignora cualquier monkeypatch en tests).
+        self.db_path = Path(db_path) if db_path else DB_PATH
 
     def _conn(self) -> sqlite3.Connection:
         try:

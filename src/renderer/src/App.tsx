@@ -80,7 +80,7 @@ export default function App() {
   const [jobResults, setJobResults] = useState<any>(null);
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'grid' | 'duel'>('grid');
+  const [currentView, setCurrentView] = useState<'grid' | 'duel' | 'calib'>('grid');
   const [lastDirectory, setLastDirectory] = useState<string>('');
   
   const [logs, setLogs] = useState<string[]>([]);

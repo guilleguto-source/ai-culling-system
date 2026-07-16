@@ -402,6 +402,77 @@ def learn_preference(data: LearnPreferenceRequest):
     return {"success": True, "learned": learned, "xmp": xmp_stats}
 
 
+# --- Endpoints de Calibración (Fase G2) ---
+
+class LabelRequest(BaseModel):
+    photo_path: str
+    face_index: int
+    face_bbox: list = []
+    labels: dict          # {"eyes": "abiertos", "gaze": "camara", ...}
+    predictions: dict = {} # lo que propuso el detector (para medir acuerdo)
+
+@app.get("/calibration/candidates")
+def calibration_candidates(directory: str, limit: int = 30):
+    """Caras pendientes de calibrar, las más dudosas primero."""
+    from services.calibration import candidates
+    from services.calibration_store import ATTRIBUTES, CalibrationStore
+    if not Path(directory).is_dir():
+        raise HTTPException(status_code=400, detail=f"Directorio no válido: {directory}")
+    cands = candidates(directory, limit=limit)
+    store = CalibrationStore()
+    return {
+        "atributos": ATTRIBUTES,
+        "etiquetadas": store.count(),
+        "candidatas": [
+            {"photo_path": c.photo_path, "face_index": c.face_index,
+             "face_bbox": c.face_bbox, "uncertainty": c.uncertainty,
+             "predictions": c.predictions}
+            for c in cands
+        ],
+    }
+
+@app.get("/calibration/face")
+def calibration_face(path: str, x: int, y: int, w: int, h: int):
+    """Recorte de una cara para mostrar en la vista de calibración."""
+    from services.calibration import crop_face
+    jpeg = crop_face(path, [x, y, w, h])
+    if jpeg is None:
+        raise HTTPException(status_code=404, detail="No se pudo recortar la cara")
+    return Response(content=jpeg, media_type="image/jpeg")
+
+@app.post("/calibration/label")
+def calibration_label(data: LabelRequest):
+    """Guarda la verdad de campo del fotógrafo para una cara."""
+    from services.calibration import face_embedding
+    from services.calibration_store import CalibrationStore, ATTRIBUTES
+
+    store = CalibrationStore()
+    # El embedding se calcula una vez por cara y se reutiliza en los 3 atributos
+    emb = face_embedding(data.photo_path, data.face_bbox) if data.face_bbox else None
+    guardadas = 0
+    for attribute, value in data.labels.items():
+        if attribute not in ATTRIBUTES or value not in ATTRIBUTES[attribute]:
+            continue
+        store.add_label(
+            photo_path=data.photo_path, face_index=data.face_index,
+            attribute=attribute, value=value,
+            predicted=data.predictions.get(attribute, ""),
+            face_bbox=data.face_bbox, embedding=emb,
+        )
+        guardadas += 1
+    return {"success": True, "guardadas": guardadas, "total": store.count()}
+
+@app.get("/calibration/stats")
+def calibration_stats():
+    """Precisión REAL del detector sobre las fotos del usuario."""
+    from services.calibration_store import CalibrationStore, ATTRIBUTES
+    store = CalibrationStore()
+    return {
+        "total": store.count(),
+        "por_atributo": {at: store.agreement(at) for at in ATTRIBUTES},
+    }
+
+
 # --- Endpoints de Presets (pre-edición) ---
 
 class PresetUseRequest(BaseModel):
@@ -482,6 +553,15 @@ def apply_edits(data: ApplyEditsRequest):
 
     xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True, preset=preset_data)
     set_edits_applied(data.directory)
+
+    # El export cambió el mtime de las fotos: re-sellar el análisis para no
+    # invalidar el caché (los píxeles no cambiaron, solo los metadatos).
+    from services.analysis_store import init_store, refresh_mtimes
+    try:
+        refresh_mtimes(init_store(data.directory), [r["path"] for r in rewrite])
+    except Exception as e:
+        logger.warning(f"No se pudo re-sellar el análisis tras aplicar edición: {e}")
+
     return {
         "success": True,
         "edited": len(rewrite),
@@ -934,6 +1014,14 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                                               overwrite=overwrite_xmp, preset=preset_data)
         _job_state["stats"]["xmp"] = xmp_stats
         _job_state["stats"]["edits_applied"] = (mode != "cull")
+
+        # Escribir el XMP dentro del JPG cambia su mtime, lo que invalidaría el
+        # análisis que acabamos de guardar (el caché nunca acertaría y la
+        # re-selección re-analizaría todo). Los píxeles no cambiaron: se
+        # re-sella el análisis con el mtime nuevo.
+        from services.analysis_store import refresh_mtimes
+        resellados = refresh_mtimes(conn, [r["path"] for r in results])
+        logger.info(f"Análisis re-sellado tras el export XMP: {resellados} fotos.")
 
         # Persistir qué exportamos: base para el sync desde Lightroom
         # (las diferencias futuras en los XMP = correcciones del usuario).

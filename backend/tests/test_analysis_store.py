@@ -68,6 +68,35 @@ def test_atributos_de_mediapipe_persisten(tmp_path):
     assert l.smiling_count == 4
 
 
+def test_refresh_mtimes_tras_escribir_xmp(tmp_path):
+    """Regresión: el pipeline escribe el XMP DENTRO del JPG al terminar, lo que
+    cambia el mtime e invalidaba el análisis recién guardado — el caché nunca
+    acertaba y la re-selección 'instantánea' re-analizaba todo."""
+    import os
+    from services.analysis_store import refresh_mtimes
+
+    foto = tmp_path / "a.jpg"
+    foto.write_bytes(b"pixeles originales")
+    conn = init_store(str(tmp_path))
+    save_analysis(conn, PhotoAnalysis(index=0, path=str(foto)), os.path.getmtime(foto))
+    assert load_analysis(conn, str(foto), os.path.getmtime(foto)) is not None
+
+    # simula el export XMP: reescribe el archivo (mtime nuevo)
+    os.utime(foto, (0, 99999))
+    assert load_analysis(conn, str(foto), os.path.getmtime(foto)) is None, \
+        "el análisis debe invalidarse si el archivo cambia"
+
+    # re-sellar lo revalida sin re-analizar
+    assert refresh_mtimes(conn, [str(foto)]) == 1
+    assert load_analysis(conn, str(foto), os.path.getmtime(foto)) is not None
+
+
+def test_refresh_mtimes_ignora_faltantes(tmp_path):
+    conn = init_store(str(tmp_path))
+    from services.analysis_store import refresh_mtimes
+    assert refresh_mtimes(conn, [str(tmp_path / "no-existe.jpg")]) == 0
+
+
 def test_version_vieja_invalida_el_cache(tmp_path):
     """Un análisis guardado con un esquema anterior no debe reusarse."""
     from services import analysis_store
