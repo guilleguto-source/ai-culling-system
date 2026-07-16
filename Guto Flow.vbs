@@ -11,7 +11,7 @@ sh.Environment("PROCESS")("CULLING_LOCAL") = "1"
 
 electronCmd = projectDir & "\node_modules\.bin\electron.cmd"
 If Not fso.FileExists(electronCmd) Then
-  MsgBox "No se encontro Electron. Ejecuta 'npm install' en " & projectDir, 48, "Photo Culler"
+  MsgBox "No se encontro Electron. Ejecuta 'npm install' en " & projectDir, 48, "Guto Flow"
   WScript.Quit 1
 End If
 

@@ -1,7 +1,7 @@
 {
-  "name": "ai-culling-system",
+  "name": "guto-flow",
   "version": "1.0.0",
-  "description": "AI Culling System with Electron, Vite React, and FastAPI",
+  "description": "Guto Flow — Smart Workflow: culling y pre-edición de fotos con IA",
   "main": "dist/main/index.js",
   "scripts": {
     "dev:frontend": "vite",
@@ -35,6 +35,11 @@
           "**/*"
         ]
       }
-    ]
+    ],
+    "productName": "Guto Flow",
+    "appId": "com.gutogutierrez.gutoflow",
+    "win": {
+      "icon": "assets/icon.ico"
+    }
   }
 }

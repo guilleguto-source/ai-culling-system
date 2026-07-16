@@ -41,10 +41,31 @@ export default function Sidebar({
       gap: '24px',
       zIndex: 10
     }}>
-      {/* Brand */}
+      {/* Brand — wordmark Guto Flow */}
       <div>
-        <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '1.4rem' }}>Antigravity Culling</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>AI-Powered Photo Selection</p>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+          <span style={{
+            fontFamily: 'Georgia, "Times New Roman", serif',
+            fontWeight: 700, fontSize: '1.7rem', lineHeight: 1,
+            color: 'var(--accent-primary)', letterSpacing: '-0.02em',
+          }}>
+            guto
+          </span>
+          <span style={{
+            fontFamily: '"Segoe Script", "Brush Script MT", cursive',
+            fontSize: '1.45rem', lineHeight: 1,
+            color: 'var(--text-primary)',
+          }}>
+            Flow
+          </span>
+        </div>
+        <p style={{
+          color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '6px',
+          borderTop: '1px solid var(--border-strong)', paddingTop: '4px',
+          textTransform: 'uppercase', letterSpacing: '0.14em', fontWeight: 600,
+        }}>
+          Smart Workflow
+        </p>
       </div>
 
       {/* Connection Status */}
