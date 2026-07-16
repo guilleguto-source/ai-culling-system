@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
