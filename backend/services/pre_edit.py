@@ -35,6 +35,12 @@ EXPOSURE_STEP = 0.05
 GLOBAL_EV_HEADROOM = 0.5
 CLIP_GUARD_FRACTION = 0.03   # >3% de pixeles quemados → prohibido subir exposición
 
+# Basura real (label Roja/rechazada): solo exposiciones EXTREMAS — errores de
+# toma, no fotos mejorables. Sobre: lavada Y con gran área quemada. Sub: casi negra.
+TRASH_OVER_EV = 2.0
+TRASH_OVER_CLIP = 0.25
+TRASH_UNDER_EV = -2.5
+
 # --- WB (escala incremental de LR para no-RAW: -100..100) ---
 K_TEMP = 100.0         # ganancia (B/R) → unidades incremental
 K_TINT = 100.0         # ganancia (R+B)/2G → unidades incremental
@@ -97,6 +103,17 @@ def measure_luminance(img_rgb: np.ndarray, face_bboxes: list[list[int]]
     if skin is not None and len(skin) > 50:
         skin_lum = float(np.median(_linear_luminance(skin.reshape(1, -1, 3)).ravel()))
     return skin_lum, global_lum, clip_frac
+
+
+def is_trash_exposure(global_lum: float, clip_frac: float) -> bool:
+    """
+    True solo para exposiciones EXTREMAS (error de toma): imagen lavada con
+    área quemada enorme, o prácticamente negra. Lo recuperable no es basura.
+    """
+    ev = math.log2(max(global_lum, 1e-4) / TARGET_MID)
+    if ev > TRASH_OVER_EV and clip_frac > TRASH_OVER_CLIP:
+        return True
+    return ev < TRASH_UNDER_EV
 
 
 # ------------------------------------------------------------------------ WB

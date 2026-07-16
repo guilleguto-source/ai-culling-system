@@ -505,18 +505,13 @@ def _run_culling_pipeline(directory: str, job_id: str):
             # ranking dentro del cluster, sobre embeddings — FASE 4)
             aesthetic_scores.append(evaluate_aesthetics_fast(arr))
 
-            # Firma de luz para pre-edición (piel, global, quemados, WB)
-            if pre_edit_enabled:
-                skin_lum, global_lum, clip_frac = pre_edit.measure_luminance(arr, bboxes)
-                pre_skin.append(skin_lum)
-                pre_global.append(global_lum)
-                pre_clip.append(clip_frac)
-                pre_wb.append(pre_edit.estimate_wb(arr, bboxes))
-            else:
-                pre_skin.append(None)
-                pre_global.append(pre_edit.TARGET_MID)
-                pre_clip.append(0.0)
-                pre_wb.append(None)
+            # Firma de luz (piel, global, quemados): también detecta basura
+            # por exposición extrema, así que se mide siempre.
+            skin_lum, global_lum, clip_frac = pre_edit.measure_luminance(arr, bboxes)
+            pre_skin.append(skin_lum)
+            pre_global.append(global_lum)
+            pre_clip.append(clip_frac)
+            pre_wb.append(pre_edit.estimate_wb(arr, bboxes) if pre_edit_enabled else None)
 
             _job_state["progress"] = 40.0 + round(i / len(records) * 30, 1)  # 40-70%
 
@@ -633,6 +628,17 @@ def _run_culling_pipeline(directory: str, job_id: str):
             if len(cluster.image_indices) == 1:
                 singleton_reps.append(best_idx)
 
+        # Basura real (label "blurry" → Roja/rechazada): SOLO las peores —
+        # desenfoque severo (muy por debajo del umbral, no "algo blanda") o
+        # exposición extrema (disparo al piso, lavada, casi negra). El blur
+        # leve no se marca: solo penaliza el score y pierde duelos/poda.
+        SEVERE_BLUR_FACTOR = 0.35
+        trash_flags = [
+            (blur_flags[i] and blur_scores[i] < blur_threshold * SEVERE_BLUR_FACTOR)
+            or pre_edit.is_trash_exposure(pre_global[i], pre_clip[i])
+            for i in range(len(records))
+        ]
+
         # FASE 4b: Selectividad — barra de calidad final según el modo.
         # Los representatives de clusters >1 ganaron un duelo y son intocables;
         # la poda es SOLO entre singletons (fotos sueltas: transiciones,
@@ -643,7 +649,7 @@ def _run_culling_pipeline(directory: str, job_id: str):
         def _selectable(idx: int) -> bool:
             if records[idx].error:
                 return False
-            if blur_flags[idx] and prefs.get("detect_blurry", True):
+            if trash_flags[idx] and prefs.get("detect_blurry", True):
                 return False
             return True
 
@@ -677,16 +683,16 @@ def _run_culling_pipeline(directory: str, job_id: str):
                     continue
                 record = records[idx]
                 is_representative = (idx == cluster.representative_index)
-                is_blurry = blur_flags[idx] if idx < len(blur_flags) else False
+                is_trash = trash_flags[idx] if idx < len(trash_flags) else False
                 has_closed = closed_flags[idx] if idx < len(closed_flags) else False
 
-                # Prioridad: error > borrosa > ojos cerrados > seleccionada > duplicado.
-                # (Las no-mejores de una ráfaga ya NO se etiquetan "blurry" si son nítidas;
-                #  van a "duplicates". Los ojos cerrados tienen su propia etiqueta.)
+                # Prioridad: error > basura > ojos cerrados > seleccionada > duplicado.
+                # "blurry" (Roja/rechazada) es solo para basura real: desenfoque
+                # severo o exposición extrema. El blur leve va por score.
                 if record.error:
                     label = None
                     stars = 0
-                elif is_blurry and prefs.get("detect_blurry", True):
+                elif is_trash and prefs.get("detect_blurry", True):
                     label = "blurry"
                     stars = ratings_map["blurry"]["stars"]
                 elif has_closed and not is_representative:

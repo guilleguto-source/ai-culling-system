@@ -197,7 +197,9 @@ def _strip_jpeg_xmp(data: bytes) -> bytes:
 
 
 def _embed_xmp_in_jpeg(path: Path, xmp_packet: bytes) -> None:
-    """Inserta el paquete XMP como segmento APP1 (tras SOI), quitando uno previo."""
+    """Inserta el paquete XMP como segmento APP1, quitando uno previo.
+    El XMP va DESPUÉS del APP1-Exif si existe (el estándar exige Exif como
+    primer APP1; con el XMP primero, exifread y otros lectores no ven el EXIF)."""
     data = path.read_bytes()
     if data[:2] != b"\xff\xd8":
         raise ValueError(f"No es un JPEG válido: {path.name}")
@@ -206,7 +208,13 @@ def _embed_xmp_in_jpeg(path: Path, xmp_packet: bytes) -> None:
         raise ValueError("Paquete XMP demasiado grande para un único APP1")
     app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
     base = _strip_jpeg_xmp(data)
-    path.write_bytes(base[:2] + app1 + base[2:])   # APP1 justo después de SOI
+
+    insert_at = 2  # tras SOI por defecto
+    for marker, start, end in _iter_jpeg_segments(base):
+        if marker == 0xE1 and base[start + 4:start + 10] == b"Exif\x00\x00":
+            insert_at = end   # justo después del APP1-Exif
+            break
+    path.write_bytes(base[:insert_at] + app1 + base[insert_at:])
 
 
 # --- Comprobación de rating existente (overwrite=False) ---

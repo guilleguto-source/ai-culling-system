@@ -137,6 +137,18 @@ def test_wb_piel_neutra_correccion_pequena():
     assert abs(temp) < 6 and abs(tint) < 6
 
 
+# --- Basura por exposición extrema ---
+
+def test_trash_exposure_solo_extremos():
+    from services.pre_edit import is_trash_exposure
+    assert is_trash_exposure(0.9, 0.4)          # lavada + área quemada enorme
+    assert is_trash_exposure(0.008, 0.0)        # prácticamente negra
+    assert not is_trash_exposure(0.5, 0.05)     # clara pero recuperable
+    assert not is_trash_exposure(0.9, 0.1)      # muy clara pero poco quemado
+    assert not is_trash_exposure(0.04, 0.0)     # oscura pero recuperable
+    assert not is_trash_exposure(0.18, 0.0)     # normal
+
+
 # --- Sesiones de luz ---
 
 def _sig(i, wb, ev=0.0, people=True):

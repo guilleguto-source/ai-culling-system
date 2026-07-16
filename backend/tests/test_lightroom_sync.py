@@ -55,6 +55,23 @@ def _minimal_jpeg(tmp_path, name="foto.jpg") -> Path:
     return p
 
 
+def test_xmp_se_inserta_despues_del_exif(tmp_path):
+    """El APP1-Exif debe seguir siendo el primero (estándar); el XMP va después."""
+    p = tmp_path / "con_exif.jpg"
+    exif_payload = b"Exif\x00\x00II*\x00\x08\x00\x00\x00" + b"\x00" * 20
+    exif_app1 = b"\xff\xe1" + (len(exif_payload) + 2).to_bytes(2, "big") + exif_payload
+    app0 = b"\xff\xe0" + (16).to_bytes(2, "big") + b"JFIF\x00" + b"\x00" * 9
+    p.write_bytes(b"\xff\xd8" + app0 + exif_app1 + b"\xff\xda\x00\x02" + b"\xff\xd9")
+
+    assert write_xmp(str(p), "selected", stars=2, color="Verde", overwrite=True)
+    from services.xmp_exporter import _iter_jpeg_segments
+    data = p.read_bytes()
+    app1_sigs = [data[s + 4:s + 10] for m, s, e in _iter_jpeg_segments(data) if m == 0xE1]
+    assert app1_sigs[0] == b"Exif\x00\x00"        # Exif sigue primero
+    assert app1_sigs[1].startswith(b"http")       # XMP después
+    assert read_xmp(str(p)) == {"stars": 2, "color": "Verde"}
+
+
 def test_roundtrip_jpeg_embebido(tmp_path):
     jpg = _minimal_jpeg(tmp_path)
     assert write_xmp(str(jpg), "selected", stars=4, color="Azul", overwrite=True)
