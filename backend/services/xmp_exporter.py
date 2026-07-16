@@ -25,7 +25,9 @@ NS = {
     "crs":    "http://ns.adobe.com/camera-raw-settings/1.0/",
 }
 
-# Mapeo de label interno a pick status XMP (extensión Lightroom)
+# Mapeo de label interno a pick status XMP (extensión Lightroom).
+# Fallback: el banderín real viene de ratings_mapping[label]["flag"]
+# (configurable en Settings): "pick" | "reject" | "none".
 PICK_STATUS_MAP = {
     "selected":    "1",   # Pick
     "highlighted": "1",   # Pick
@@ -33,6 +35,7 @@ PICK_STATUS_MAP = {
     "closed_eyes": "-1",  # Reject
     "duplicates":  "0",   # Unflagged
 }
+FLAG_TO_PICK = {"pick": "1", "reject": "-1", "none": "0"}
 
 RAW_EXTENSIONS = {
     ".cr2", ".cr3", ".nef", ".nrw", ".arw", ".srf", ".sr2",
@@ -58,7 +61,8 @@ def _get_xmp_path(image_path: str) -> Path:
 def _build_xmp_packet(stars: int, color: str, label: str,
                       crop: dict | None = None,
                       develop: dict | None = None,
-                      preset=None) -> bytes:
+                      preset=None,
+                      flag: str | None = None) -> bytes:
     """Construye un paquete XMP completo (con envoltura xpacket) listo para
     sidecar o para embeber en APP1. El color se escribe tal cual venga de settings.
     `crop`: dict {left, top, right, bottom, angle} — reencuadre NO destructivo.
@@ -85,7 +89,10 @@ def _build_xmp_packet(stars: int, color: str, label: str,
         label_el.text = color
 
     pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}PickStatus")
-    pick_el.text = PICK_STATUS_MAP.get(label, "0")
+    if flag in FLAG_TO_PICK:
+        pick_el.text = FLAG_TO_PICK[flag]
+    else:
+        pick_el.text = PICK_STATUS_MAP.get(label, "0")
 
     crs_fields: dict[str, str] = {}
 
@@ -224,7 +231,8 @@ def _sidecar_has_rating(xmp_path: Path) -> bool:
 
 def write_xmp(image_path: str, label: str, stars: int, color: str,
               overwrite: bool = False, crop: dict | None = None,
-              develop: dict | None = None, preset=None) -> bool:
+              develop: dict | None = None, preset=None,
+              flag: str | None = None) -> bool:
     """Escribe el rating/etiqueta. RAW -> sidecar; JPEG -> embebido. Respeta overwrite."""
     p = Path(image_path)
     try:
@@ -233,7 +241,7 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
             develop = {k: v for k, v in develop.items()
                        if k not in ("IncrementalTemperature", "IncrementalTint")}
         packet = _build_xmp_packet(stars, color, label, crop=crop,
-                                   develop=develop, preset=preset)
+                                   develop=develop, preset=preset, flag=flag)
         if _is_raw(p):
             xmp_path = _get_xmp_path(image_path)
             if xmp_path.exists() and not overwrite and _sidecar_has_rating(xmp_path):
@@ -276,6 +284,7 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             crop=result.get("crop"),
             develop=develop,
             preset=preset if develop else None,
+            flag=mapping.get("flag"),
         )
         written += ok
         skipped += (not ok)

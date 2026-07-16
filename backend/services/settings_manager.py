@@ -15,13 +15,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Labels de color en español para coincidir con el conjunto de etiquetas
     # del Lightroom del usuario. selected=2★ (elegidas), highlighted=3★
     # (las top que no pueden faltar), Roja = para borrar.
-    "settings_version": 2,
+    # flag → banderín XMP (PickStatus): "pick" | "reject" | "none".
+    # duplicates (Trash) va SIN color: no ensucia la vista de Lightroom.
+    "settings_version": 3,
     "ratings_mapping": {
-        "selected": {"stars": 2, "color": "Verde"},
-        "highlighted": {"stars": 3, "color": "Azul"},
-        "blurry": {"stars": 0, "color": "Roja"},
-        "closed_eyes": {"stars": 0, "color": "Morada"},
-        "duplicates": {"stars": 0, "color": "Morada"},
+        "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
+        "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
+        "blurry": {"stars": 0, "color": "Roja", "flag": "reject"},
+        "closed_eyes": {"stars": 0, "color": "Morada", "flag": "reject"},
+        "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
         "selectivity_target": "standard",   # "few" | "standard" | "more"
@@ -96,6 +98,18 @@ def load_settings() -> dict[str, Any]:
             if rm.get("selected", {}).get("stars") == 3:
                 rm["selected"]["stars"] = 2
             data["settings_version"] = 2
+            save_settings(data)
+        # Migración v3: banderines XMP configurables y Trash (duplicates) sin color
+        if data.get("settings_version", 1) < 3 and "ratings_mapping" in data:
+            rm = data["ratings_mapping"]
+            _DEFAULT_FLAGS = {"selected": "pick", "highlighted": "pick",
+                              "blurry": "reject", "closed_eyes": "reject",
+                              "duplicates": "none"}
+            for label, entry in rm.items():
+                entry.setdefault("flag", _DEFAULT_FLAGS.get(label, "none"))
+            if "duplicates" in rm:
+                rm["duplicates"]["color"] = ""
+            data["settings_version"] = 3
             save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)

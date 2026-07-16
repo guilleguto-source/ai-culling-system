@@ -26,6 +26,22 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
   const prefs = localSettings?.selection_preferences || {};
   const preEdit = prefs.pre_edit || { enabled: true, preset_path: '', exposure_bias: 0.3, recent_presets: [] };
+  const ratings = localSettings?.ratings_mapping || {};
+
+  const handleRatingChange = (label: string, field: string, value: any) => {
+    if (label === 'duplicates' && field === 'flag' && value === 'reject') {
+      if (!window.confirm('¿Marcar las fotos Trash como RECHAZADAS (banderín negro) en Lightroom?')) {
+        return;
+      }
+    }
+    setLocalSettings((prev: any) => ({
+      ...prev,
+      ratings_mapping: {
+        ...prev.ratings_mapping,
+        [label]: { ...prev.ratings_mapping?.[label], [field]: value }
+      }
+    }));
+  };
 
   const handlePreEditChange = (key: string, value: any) => {
     handlePrefChange('pre_edit', { ...preEdit, [key]: value });
@@ -152,6 +168,56 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
             </div>
           </label>
           
+          {/* --- Calificación de estrellas, colores y banderines --- */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '12px' }}>Calificación de estrellas y colores</div>
+            {([
+              ['Selecciones de IA', [
+                ['selected', 'Seleccionadas'],
+                ['highlighted', 'Destacadas'],
+              ]],
+              ['Para revisión', [
+                ['blurry', 'Borrosas'],
+                ['closed_eyes', 'Ojos cerrados'],
+                ['duplicates', 'Trash'],
+              ]],
+            ] as [string, [string, string][]][]).map(([groupTitle, rows]) => (
+              <div key={groupTitle} style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  {groupTitle}
+                </div>
+                {rows.map(([label, name]) => {
+                  const r = ratings[label] || { stars: 0, color: '', flag: 'none' };
+                  const selStyle = { padding: '6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: 'white', border: '1px solid var(--border-strong)' };
+                  return (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <span style={{ flex: 1 }}>{name}</span>
+                      <select value={r.stars ?? 0} style={selStyle}
+                        onChange={(e) => handleRatingChange(label, 'stars', parseInt(e.target.value))}>
+                        {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}
+                      </select>
+                      <select value={r.color || ''} style={selStyle}
+                        onChange={(e) => handleRatingChange(label, 'color', e.target.value)}>
+                        <option value="">Sin color</option>
+                        {['Roja', 'Amarilla', 'Verde', 'Azul', 'Morada'].map(c =>
+                          <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <select value={r.flag || 'none'} style={selStyle}
+                        onChange={(e) => handleRatingChange(label, 'flag', e.target.value)}>
+                        <option value="none">Sin banderín</option>
+                        <option value="pick">⚑ Seleccionada</option>
+                        <option value="reject">⚐ Rechazada</option>
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              El color debe coincidir exactamente con tu conjunto de etiquetas de Lightroom.
+            </div>
+          </div>
+
           {/* --- Pre-edición --- */}
           <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
