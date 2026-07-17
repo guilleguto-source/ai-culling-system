@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 # v3: closed_eyes_count / face_count (conteo, no solo el booleano)
 # v4: atributos de MediaPipe (caras válidas, mirada, sonrisa)
 # v5: face_attrs — atributos POR cara (calibración y entrenamiento)
-ANALYSIS_VERSION = 5
+# v6: face_attrs se mide SIEMPRE (antes dependía de detect_closed_eyes: las
+#     filas v5 creadas con la casilla apagada tienen face_attrs vacío y son
+#     inservibles para la calibración). REGLA: si cambia QUÉ se mide o CÓMO,
+#     hay que subir esta versión — el caché no distingue "no medido" de
+#     "medido y vacío".
+ANALYSIS_VERSION = 6
 
 # Anclado al módulo, NO al cwd (ver nota en thumbnail_store.py).
 ANALYSIS_DIR = Path(__file__).parent.parent / "models" / "analysis"
