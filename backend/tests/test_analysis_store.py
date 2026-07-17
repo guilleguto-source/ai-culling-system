@@ -57,6 +57,8 @@ def test_atributos_de_mediapipe_persisten(tmp_path):
         face_count=43, valid_face_count=7,   # MediaPipe valida 7
         closed_eyes_count=2, looking_away_count=3, smiling_count=4,
         any_closed_eyes=True,
+        # con atributos medidos (si no, la guardia de contenido la invalida)
+        face_attrs=[{"valid": True}] * 7,
     )
     save_analysis(conn, a, 111.0)
     l = load_analysis(conn, "grupal.jpg", 111.0)
@@ -136,6 +138,39 @@ def test_refresh_mtimes_ignora_faltantes(tmp_path):
     conn = init_store(str(tmp_path))
     from services.analysis_store import refresh_mtimes
     assert refresh_mtimes(conn, [str(tmp_path / "no-existe.jpg")]) == 0
+
+
+def test_fila_con_caras_sin_atributos_se_invalida(tmp_path, monkeypatch):
+    """Guardia de CONTENIDO: una fila con caras pero face_attrs vacío es
+    inservible (la escribió un backend viejo en memoria con lógica anterior).
+    El número de versión no protege contra procesos desactualizados."""
+    from services import face_mesh
+    monkeypatch.setattr(face_mesh, "is_available", lambda: True)
+
+    conn = init_store(str(tmp_path))
+    incompleta = PhotoAnalysis(index=0, path="g.jpg", face_count=4, face_attrs=[])
+    save_analysis(conn, incompleta, 7.0)
+    assert load_analysis(conn, "g.jpg", 7.0) is None      # se re-analiza
+
+    # con atributos medidos, la fila sí se reutiliza
+    completa = PhotoAnalysis(index=0, path="h.jpg", face_count=2,
+                             face_attrs=[{"valid": True}, {"valid": False}])
+    save_analysis(conn, completa, 7.0)
+    assert load_analysis(conn, "h.jpg", 7.0) is not None
+
+    # sin caras no hay nada que medir: se reutiliza
+    sin_caras = PhotoAnalysis(index=0, path="i.jpg", face_count=0, face_attrs=[])
+    save_analysis(conn, sin_caras, 7.0)
+    assert load_analysis(conn, "i.jpg", 7.0) is not None
+
+
+def test_guardia_de_contenido_sin_mediapipe_no_invalida(tmp_path, monkeypatch):
+    """Sin MediaPipe instalado no se puede medir: re-analizar no serviría."""
+    from services import face_mesh
+    monkeypatch.setattr(face_mesh, "is_available", lambda: False)
+    conn = init_store(str(tmp_path))
+    save_analysis(conn, PhotoAnalysis(index=0, path="j.jpg", face_count=3), 8.0)
+    assert load_analysis(conn, "j.jpg", 8.0) is not None
 
 
 def test_version_vieja_invalida_el_cache(tmp_path):

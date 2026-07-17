@@ -82,6 +82,22 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'grid' | 'duel' | 'calib'>('grid');
   const [lastDirectory, setLastDirectory] = useState<string>('');
+  const [staleBackend, setStaleBackend] = useState(false);
+
+  // El backend corre desde que se abre la app: si el código en disco cambió
+  // después (actualización), este proceso sirve lógica vieja sin avisar.
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await fetch('http://127.0.0.1:8000/health');
+        const d = await r.json();
+        setStaleBackend(!!d.stale_code);
+      } catch { /* backend caído: ya lo muestra el status normal */ }
+    };
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, []);
   
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -188,6 +204,16 @@ export default function App() {
       />
       
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {staleBackend && (
+          <div style={{
+            backgroundColor: 'var(--status-blurry-bg)', color: 'var(--status-blurry-text)',
+            padding: '8px 16px', fontSize: '0.85rem', textAlign: 'center',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}>
+            ⚠ El motor se actualizó desde que abriste la app — cierra y vuelve a abrir Guto Flow
+            para usar la versión nueva. Lo que corras ahora usará la lógica anterior.
+          </div>
+        )}
         <MainContent
           jobState={jobState}
           jobResults={jobResults}

@@ -111,7 +111,17 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
     
     if data["version"] != ANALYSIS_VERSION or data["mtime"] != current_mtime:
         return None
-        
+
+    # Guardia de CONTENIDO (además de la versión): una fila con caras pero sin
+    # atributos medidos es inservible para calibración/descartes. Puede pasar
+    # si un backend viejo en memoria escribió con lógica anterior — el número
+    # de versión no protege contra procesos desactualizados.
+    if (data["face_count"] or 0) > 0 and data["face_attrs"] in (None, "", "[]"):
+        from services import face_mesh
+        if face_mesh.is_available():
+            return None     # se re-analiza y esta vez sí se mide
+
+
     return PhotoAnalysis(
         index=data["index_val"],
         path=data["path"],

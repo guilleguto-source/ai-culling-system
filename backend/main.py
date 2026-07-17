@@ -70,9 +70,26 @@ class SettingsUpdateRequest(BaseModel):
 
 # --- Endpoints de Sistema ---
 
+def _code_stamp() -> float:
+    """mtime más reciente del código del backend (main.py + services/*.py)."""
+    base = Path(__file__).parent
+    stamps = [os.path.getmtime(base / "main.py")]
+    stamps += [os.path.getmtime(p) for p in (base / "services").glob("*.py")]
+    return max(stamps)
+
+# Se fija al ARRANCAR: si luego el código en disco cambia, este proceso quedó
+# desactualizado. Nos pasó 3 veces: el usuario re-corre el culling tras un fix
+# y el backend viejo en memoria sirve lógica anterior sin que nadie lo note.
+_LOADED_CODE_STAMP = _code_stamp()
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    try:
+        stale = _code_stamp() > _LOADED_CODE_STAMP
+    except OSError:
+        stale = False
+    return {"status": "ok", "version": "1.0.0", "stale_code": stale}
 
 
 @app.get("/hardware")

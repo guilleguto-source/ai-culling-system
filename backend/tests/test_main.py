@@ -8,7 +8,10 @@ client = TestClient(app)
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "1.0.0"}
+    data = response.json()
+    assert data["status"] == "ok"
+    # el proceso recién importado nunca debe reportarse desactualizado
+    assert data["stale_code"] is False
 
 def test_settings_endpoints():
     get_res = client.get("/settings")
