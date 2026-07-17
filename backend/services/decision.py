@@ -12,6 +12,34 @@ def _bad_faces(a: PhotoAnalysis) -> int:
     return a.closed_eyes_count + a.looking_away_count
 
 
+def photos_for_coverage(
+    identities_by_photo: dict[int, list[int]],
+    selected: set[int],
+    score_by_photo: dict[int, float],
+) -> set[int]:
+    """
+    Garantía "al menos una buena foto de cada persona" (Fase L).
+
+    Dada la identidad de las personas por foto, el conjunto ya seleccionado y el
+    score de cada foto, devuelve las fotos a PROMOVER: para cada identidad que
+    no tenga ninguna foto seleccionada, su foto de mayor score. No baja nada —
+    solo suma cobertura.
+    """
+    cubiertas: set[int] = set()
+    todas: set[int] = set()
+    for idx, ids in identities_by_photo.items():
+        todas.update(ids)
+        if idx in selected:
+            cubiertas.update(ids)
+
+    promover: set[int] = set()
+    for ident in todas - cubiertas:
+        candidatas = [i for i, ids in identities_by_photo.items() if ident in ids]
+        if candidatas:
+            promover.add(max(candidatas, key=lambda i: score_by_photo.get(i, 0.0)))
+    return promover
+
+
 def apply_decision_logic(
     records: list[Any],
     analyses: list[PhotoAnalysis],
@@ -20,9 +48,11 @@ def apply_decision_logic(
     trash_flags: list[bool],
     prefs: dict[str, Any],
     settings: dict[str, Any],
-    develop_by_idx: dict[int, dict]
+    develop_by_idx: dict[int, dict],
+    all_scores: dict[int, float] | None = None,
 ) -> list[dict[str, Any]]:
-    
+
+    scores = all_scores if all_scores is not None else rep_scores
     KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
     HIGHLIGHT_FRACTION = 0.10
     
@@ -126,6 +156,7 @@ def apply_decision_logic(
                 "stars": stars,
                 "color": ratings_map.get(label, {}).get("color", "") if label else "",
                 "blur_score": round(analyses[idx].blur_score, 2) if idx < len(analyses) else 0,
+                "score": round(scores.get(idx, 0.0), 4),
                 "crop": crop_dict,
                 "has_crop": crop_dict is not None,
                 "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,

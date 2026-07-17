@@ -2,21 +2,37 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 const API = 'http://127.0.0.1:8000';
 
-// Etiquetas legibles. El orden importa: es el orden de las teclas 1/2/3.
-const OPCIONES: Record<string, { titulo: string; valores: [string, string][] }> = {
+// Etiquetas legibles por atributo. `teclas` son los atajos de la fila, en el
+// mismo orden que `valores` (1ª tecla = 1er valor).
+const OPCIONES: Record<string, { titulo: string; teclas: string; valores: [string, string][] }> = {
   eyes: {
-    titulo: 'Ojos',
+    titulo: 'Ojos', teclas: 'qwe',
     valores: [['abiertos', 'Abiertos'], ['cerrados', 'Cerrados'], ['entrecerrados', 'Entrecerrados']]
   },
   gaze: {
-    titulo: 'Mirada',
+    titulo: 'Mirada', teclas: 'asd',
     valores: [['camara', 'A cámara'], ['fuera', 'A otro lado']]
   },
   mouth: {
-    titulo: 'Boca',
+    titulo: 'Boca', teclas: 'zxc',
     valores: [['sonrisa', 'Sonrisa'], ['neutra', 'Neutra'], ['hablando', 'Hablando / mueca']]
   },
+  glasses: {
+    titulo: 'Lentes', teclas: 'fgh',
+    valores: [['sin', 'Sin lentes'], ['lentes', 'Lentes'], ['oscuros', 'Lentes oscuros']]
+  },
 };
+
+// Lo que se pre-marca cuando el detector no opina (no tiene señal geométrica).
+// Lentes → "sin": es el caso normal; el usuario solo toca la fila si hay lentes.
+const DEFAULTS: Record<string, string> = { glasses: 'sin' };
+
+// Descartes: la cara no se juzga, se etiqueta como lo que es.
+// [tecla, valor, texto, ayuda] — la tecla es también la que muestra el botón.
+const DESCARTES: [string, string, string, string][] = [
+  ['1', 'no_cara', 'No es una cara', 'Un estampado, un muñeco, un dibujo: el detector se equivocó'],
+  ['2', 'ilegible', 'Indistinguible', 'Cara real pero lejana, movida o tapada: ni el ojo humano la juzga'],
+];
 
 interface Candidata {
   photo_path: string;
@@ -63,9 +79,12 @@ export default function CalibrationView({ directory }: { directory?: string }) {
 
   useEffect(() => { cargar(); cargarStats(); }, [cargar, cargarStats]);
 
-  // Al cambiar de cara, pre-marcar lo que propone el detector
+  // Al cambiar de cara, pre-marcar lo que propone el detector. Una predicción
+  // vacía = el detector no opina sobre ese atributo: ahí manda el default.
   useEffect(() => {
-    if (actual) setSel({ ...actual.predictions });
+    if (!actual) return;
+    const opina = Object.entries(actual.predictions).filter(([, v]) => v);
+    setSel({ ...DEFAULTS, ...Object.fromEntries(opina) });
   }, [actual]);
 
   const siguiente = () => {
@@ -73,7 +92,7 @@ export default function CalibrationView({ directory }: { directory?: string }) {
     else setI(i + 1);
   };
 
-  const guardar = async () => {
+  const enviar = async (labels: Record<string, string>) => {
     if (!actual) return;
     try {
       await fetch(`${API}/calibration/label`, {
@@ -83,7 +102,7 @@ export default function CalibrationView({ directory }: { directory?: string }) {
           photo_path: actual.photo_path,
           face_index: actual.face_index,
           face_bbox: actual.face_bbox,
-          labels: sel,
+          labels,
           predictions: actual.predictions,
         })
       });
@@ -92,17 +111,26 @@ export default function CalibrationView({ directory }: { directory?: string }) {
     siguiente();
   };
 
-  // Atajos: 1/2/3 por fila (q/w/e = ojos, a/s/d = mirada, z/x/c = boca),
+  // Cara buena: atributos + subject=persona (el ejemplo positivo que el
+  // clasificador necesita para aprender a distinguir la basura).
+  const guardar = () => enviar({ ...sel, subject: 'persona' });
+
+  // Descarte: solo subject. Los ojos o la boca de un estampado no significan
+  // nada y ensuciarían el entrenamiento.
+  const descartar = (valor: string) => enviar({ subject: valor });
+
+  // Atajos: las teclas de cada fila (ver OPCIONES y DESCARTES),
   // Enter = confirmar, Espacio = saltar.
   useEffect(() => {
-    const filas: [string, string][] = [['eyes', 'qwe'], ['gaze', 'asd'], ['mouth', 'zxc']];
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') { e.preventDefault(); guardar(); return; }
       if (e.key === ' ') { e.preventDefault(); siguiente(); return; }
-      for (const [attr, teclas] of filas) {
-        const idx = teclas.indexOf(e.key.toLowerCase());
-        if (idx >= 0 && OPCIONES[attr].valores[idx]) {
-          setSel(s => ({ ...s, [attr]: OPCIONES[attr].valores[idx][0] }));
+      const desc = DESCARTES.find(([tecla]) => tecla === e.key);
+      if (desc) { e.preventDefault(); descartar(desc[1]); return; }
+      for (const [attr, o] of Object.entries(OPCIONES)) {
+        const idx = o.teclas.indexOf(e.key.toLowerCase());
+        if (idx >= 0 && o.valores[idx]) {
+          setSel(s => ({ ...s, [attr]: o.valores[idx][0] }));
           return;
         }
       }
@@ -169,8 +197,9 @@ export default function CalibrationView({ directory }: { directory?: string }) {
           </div>
 
           {/* Las preguntas */}
-          <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {Object.entries(OPCIONES).map(([attr, o], fila) => (
+          <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '14px',
+            overflowY: 'auto' }}>
+            {Object.entries(OPCIONES).map(([attr, o]) => (
               <div key={attr} className="glass-panel" style={{ padding: '12px' }}>
                 <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '0.85rem' }}>{o.titulo}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -184,7 +213,7 @@ export default function CalibrationView({ directory }: { directory?: string }) {
                         style={{ justifyContent: 'space-between', fontSize: '0.8rem', padding: '6px 10px' }}>
                         <span>{texto}{propuesto && !activo ? ' ·' : ''}</span>
                         <span style={{ opacity: 0.5, fontSize: '0.7rem' }}>
-                          {['qwe', 'asd', 'zxc'][fila][j]?.toUpperCase()}
+                          {o.teclas[j]?.toUpperCase()}
                         </span>
                       </button>
                     );
@@ -198,9 +227,23 @@ export default function CalibrationView({ directory }: { directory?: string }) {
                 Guardar ⏎
               </button>
               <button className="btn btn-secondary" onClick={siguiente}
-                title="La cara es ambigua o no es una cara: no se guarda nada">
+                title="Pasar sin decidir: no se guarda nada y volverá a preguntarse">
                 Saltar ␣
               </button>
+            </div>
+
+            {/* Descartes: no es una cara juzgable. Se etiquetan (no se saltan)
+                para que el clasificador aprenda a filtrarlas. */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {DESCARTES.map(([tecla, valor, texto, ayuda]) => (
+                <button key={valor} className="btn btn-secondary" title={ayuda}
+                  onClick={() => descartar(valor)}
+                  style={{ flex: 1, justifyContent: 'space-between', fontSize: '0.78rem',
+                    padding: '6px 10px' }}>
+                  <span>{texto}</span>
+                  <span style={{ opacity: 0.5, fontSize: '0.7rem' }}>{tecla}</span>
+                </button>
+              ))}
             </div>
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center' }}>
               {i + 1} de {cands.length} en cola {cargando && '· cargando…'}

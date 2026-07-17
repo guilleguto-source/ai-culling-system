@@ -37,6 +37,13 @@ PICK_STATUS_MAP = {
 }
 FLAG_TO_PICK = {"pick": "1", "reject": "-1", "none": "0"}
 
+# Campos de "look" que puede aportar el estilo aprendido por escena (Fase J).
+# Exposición/WB NO están: los calcula pre_edit desde los píxeles.
+STYLE_FIELDS = (
+    "Contrast2012", "Highlights2012", "Shadows2012", "Whites2012",
+    "Blacks2012", "Clarity2012", "Vibrance", "Saturation", "Dehaze",
+)
+
 RAW_EXTENSIONS = {
     ".cr2", ".cr3", ".nef", ".nrw", ".arw", ".srf", ".sr2",
     ".raf", ".orf", ".rw2", ".dng", ".pef", ".kdc", ".mrw",
@@ -107,6 +114,11 @@ def _build_xmp_packet(stars: int, color: str, label: str,
                 crs_fields[key] = f"{develop[key]:+.2f}"
         if "IncrementalTemperature" in crs_fields or "IncrementalTint" in crs_fields:
             crs_fields.setdefault("WhiteBalance", "Custom")
+        # Estilo aprendido por escena (Fase J): curva de tono y color. setdefault
+        # para no pisar un preset explícito del usuario.
+        for key in STYLE_FIELDS:
+            if develop.get(key) is not None:
+                crs_fields.setdefault(key, f"{develop[key]:g}")
 
     # 3. Crop (fase 5): manda sobre todo
     if crop:

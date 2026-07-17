@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import SettingsModal from './components/SettingsModal';
+import SyncReminder from './components/SyncReminder';
 import './index.css';
 
 // Fallback for browser testing connected to real FastAPI backend
@@ -214,6 +215,7 @@ export default function App() {
             para usar la versión nueva. Lo que corras ahora usará la lógica anterior.
           </div>
         )}
+        <SyncReminder active={backendStatus === 'running'} />
         <MainContent
           jobState={jobState}
           jobResults={jobResults}

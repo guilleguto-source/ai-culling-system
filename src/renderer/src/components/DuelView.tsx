@@ -34,8 +34,14 @@ export default function DuelView({ results }: { results: any[] }) {
     || currentGroup.find(img => img.is_cluster_representative)
     || currentGroup[0];
 
-  // Mostrar la elegida primero, luego el resto, todas al mismo tamaño para comparar.
-  const ordered = [representative, ...currentGroup.filter(img => img !== representative)];
+  // La elegida primero; el resto por score de la IA (mejor calificadas antes),
+  // así las 4 primeras — las visibles sin scroll — son las que importan.
+  const ordered = [
+    representative,
+    ...currentGroup
+      .filter(img => img !== representative)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
+  ];
 
   const handleLearnPreference = async (alt: any) => {
     setIsLearning(true);
@@ -85,13 +91,17 @@ export default function DuelView({ results }: { results: any[] }) {
         </div>
       </div>
 
-      {/* Duel Arena — todas las fotos del cluster lado a lado para comparar */}
+      {/* Arena — 4 por fila, ordenadas: las mejores entran sin scroll.
+          Filas de alto fijo: si no, con muchas fotos el grid las aplasta
+          en vez de desbordar y no habría nada que scrollear. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(${Math.min(ordered.length, 3)}, 1fr)`,
+        gridTemplateColumns: `repeat(${Math.min(ordered.length, 4)}, 1fr)`,
+        gridAutoRows: 'minmax(0, 46vh)',
         gap: '16px',
         flex: 1,
-        overflow: 'auto',
+        overflowY: 'auto',
+        alignContent: 'start',
       }}>
         {ordered.map((img, i) => {
           const isSelected = img === representative;
@@ -111,7 +121,9 @@ export default function DuelView({ results }: { results: any[] }) {
                 borderBottom: '1px solid var(--border-subtle)',
                 color: isSelected ? 'var(--status-selected-text)' : 'var(--text-primary)',
               }}>
-                {isSelected ? <strong>AI Selected (Best score)</strong> : <strong>Alternativa {i}</strong>}
+                {isSelected
+                  ? <strong>Elegida por la IA (mejor score)</strong>
+                  : <strong>#{i + 1} · Alternativa</strong>}
               </div>
               <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
                 <img
@@ -126,7 +138,10 @@ export default function DuelView({ results }: { results: any[] }) {
                     {img.filename}
                     {img.has_crop && <span title="Reencuadre propuesto — editable en Lightroom"> ✂</span>}
                   </div>
-                  <div>Blur: {img.blur_score}</div>
+                  <div>
+                    {img.score != null && <>Score: {img.score.toFixed(2)} · </>}
+                    Blur: {img.blur_score}
+                  </div>
                   {img.label === 'blurry' && <div style={{ color: 'var(--status-blurry-text)' }}>Marked Blurry</div>}
                 </div>
                 {isSelected ? (

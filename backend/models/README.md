@@ -63,3 +63,12 @@
 #
 # emb_cache/ — caché de embeddings (.npy) generado automáticamente; se puede
 # borrar sin riesgo (se regenera).
+
+# arcface_r50.onnx — Reconocimiento de personas (Fase L, opcional)
+#   Embedding de IDENTIDAD facial (512 dims). Habilita agrupar por persona y
+#   "al menos una buena foto de cada uno". Sin este archivo, la app funciona
+#   igual y face_identity.is_available() == False (la función se desactiva).
+#   Descargar un ArcFace r50 (glint360k/ms1mv3) en ONNX, input 112x112 RGB
+#   normalizado (x-0.5)/0.5, y guardarlo aquí como arcface_r50.onnx.
+#   Verificación: dos fotos de la MISMA persona → similitud coseno ~0.5+;
+#   personas distintas < 0.3. Umbral de agrupamiento en face_identity.py.

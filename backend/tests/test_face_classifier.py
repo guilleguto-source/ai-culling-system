@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from services.calibration_store import CalibrationStore
 from services.face_classifier import FaceClassifier, MIN_EXAMPLES, MIN_PER_CLASS
 from services.embedding_service import EMBEDDING_DIM
+from services.face_mesh import FEATURE_DIM
 
 
 def _clf(tmp_path):
@@ -29,10 +30,26 @@ def _emb(seed: int, clase: str) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
+def _feat(seed: int, clase: str) -> np.ndarray:
+    """Geometría sintética (la otra mitad del vector híbrido). La 1ª dim lleva
+    señal de clase, como el EAR separa ojos abiertos/cerrados en la realidad."""
+    rng = np.random.default_rng(seed + 7)
+    v = rng.normal(0, 0.05, FEATURE_DIM).astype(np.float32)
+    v[0] += {"abiertos": 1.0, "cerrados": -1.0, "entrecerrados": 0.0}[clase]
+    return v
+
+
+def _vec(seed: int, clase: str) -> np.ndarray:
+    """Vector híbrido [embedding | geometría], como en producción."""
+    return np.concatenate([_emb(seed, clase), _feat(seed, clase)])
+
+
 def _poblar(c: FaceClassifier, n_por_clase: int, clases=("abiertos", "cerrados")):
     for i in range(n_por_clase):
         for j, cl in enumerate(clases):
-            c.store.add_label(f"f{i}_{j}.jpg", 0, "eyes", cl, embedding=_emb(i * 10 + j, cl))
+            s = i * 10 + j
+            c.store.add_label(f"f{i}_{j}.jpg", 0, "eyes", cl,
+                              embedding=_emb(s, cl), features=_feat(s, cl))
     c.invalidate()
 
 
@@ -41,7 +58,7 @@ def _poblar(c: FaceClassifier, n_por_clase: int, clases=("abiertos", "cerrados")
 def test_sin_datos_no_opina(tmp_path):
     c = _clf(tmp_path)
     assert not c.is_ready("eyes")
-    assert c.predict("eyes", _emb(1, "abiertos")) == ("", 0.0)
+    assert c.predict("eyes", _vec(1, "abiertos")) == ("", 0.0)
 
 
 def test_pocos_ejemplos_no_opina(tmp_path):
@@ -54,7 +71,8 @@ def test_una_sola_clase_no_opina(tmp_path):
     """100 ejemplos de 'abiertos' no enseñan a reconocer 'cerrados'."""
     c = _clf(tmp_path)
     for i in range(MIN_EXAMPLES + 10):
-        c.store.add_label(f"f{i}.jpg", 0, "eyes", "abiertos", embedding=_emb(i, "abiertos"))
+        c.store.add_label(f"f{i}.jpg", 0, "eyes", "abiertos",
+                          embedding=_emb(i, "abiertos"), features=_feat(i, "abiertos"))
     c.invalidate()
     assert not c.is_ready("eyes")
 
@@ -62,9 +80,11 @@ def test_una_sola_clase_no_opina(tmp_path):
 def test_clase_minoritaria_insuficiente_no_opina(tmp_path):
     c = _clf(tmp_path)
     for i in range(MIN_EXAMPLES):
-        c.store.add_label(f"a{i}.jpg", 0, "eyes", "abiertos", embedding=_emb(i, "abiertos"))
+        c.store.add_label(f"a{i}.jpg", 0, "eyes", "abiertos",
+                          embedding=_emb(i, "abiertos"), features=_feat(i, "abiertos"))
     for i in range(MIN_PER_CLASS - 1):   # una menos del mínimo
-        c.store.add_label(f"c{i}.jpg", 0, "eyes", "cerrados", embedding=_emb(500 + i, "cerrados"))
+        c.store.add_label(f"c{i}.jpg", 0, "eyes", "cerrados",
+                          embedding=_emb(500 + i, "cerrados"), features=_feat(500 + i, "cerrados"))
     c.invalidate()
     assert not c.is_ready("eyes")
 
@@ -81,7 +101,7 @@ def test_con_datos_suficientes_aprende(tmp_path):
     c = _clf(tmp_path)
     _poblar(c, n_por_clase=MIN_EXAMPLES)
     assert c.is_ready("eyes")
-    valor, conf = c.predict("eyes", _emb(9999, "cerrados"))
+    valor, conf = c.predict("eyes", _vec(9999, "cerrados"))
     assert valor == "cerrados" and conf > 0.7
 
 
@@ -107,7 +127,8 @@ def test_nuevas_etiquetas_reentrenan(tmp_path):
     c = _clf(tmp_path)
     _poblar(c, n_por_clase=MIN_EXAMPLES)
     assert c.is_ready("eyes")
-    c.store.add_label("nueva.jpg", 0, "eyes", "cerrados", embedding=_emb(4242, "cerrados"))
+    c.store.add_label("nueva.jpg", 0, "eyes", "cerrados",
+                      embedding=_emb(4242, "cerrados"), features=_feat(4242, "cerrados"))
     c.invalidate("eyes")
     assert c.stats("eyes")["ejemplos"] == MIN_EXAMPLES * 2 + 1
 

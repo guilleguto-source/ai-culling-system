@@ -24,10 +24,20 @@ DB_PATH = Path(__file__).parent.parent / "models" / "calibration.db"
 # Atributos y sus valores válidos (ver spec 2026-07-16-calibracion-design).
 # "alegría/felicidad" NO se etiqueta: en escala absoluta los datos salen
 # inconsistentes con el propio usuario; esa señal la captura el duelo.
+# "glasses" no tiene señal geométrica (MediaPipe no lo mide): se etiqueta a
+# mano y lo aprende el clasificador del embedding (G3). Importa porque con
+# lentes oscuros el juicio de ojos/mirada no aplica.
 ATTRIBUTES = {
     "eyes": ["abiertos", "cerrados", "entrecerrados"],
     "gaze": ["camara", "fuera"],
     "mouth": ["sonrisa", "neutra", "hablando"],
+    "glasses": ["sin", "lentes", "oscuros"],
+    # "subject" es el descarte: YuNet detecta caras que no lo son (estampados,
+    # muñecos, un sol dibujado) y caras reales imposibles de juzgar (lejanas,
+    # movidas). Se etiquetan como tales en vez de saltarlas: así el clasificador
+    # aprende a filtrarlas y no vuelven a preguntarse. El resto de atributos no
+    # se guarda para estas caras — no tendrían sentido.
+    "subject": ["persona", "no_cara", "ilegible"],
 }
 
 _SCHEMA = """
@@ -51,6 +61,11 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(_SCHEMA)
+        # Migración: `features` (geometría por-cara) para el clasificador
+        # híbrido G3. Las filas viejas la tienen NULL → se rellenan con backfill.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(face_labels)")}
+        if "features" not in cols:
+            conn.execute("ALTER TABLE face_labels ADD COLUMN features BLOB")
     except sqlite3.DatabaseError:
         conn.close()
         raise
@@ -75,23 +90,44 @@ class CalibrationStore:
 
     def add_label(self, photo_path: str, face_index: int, attribute: str,
                   value: str, predicted: str = "", face_bbox: list | None = None,
-                  embedding: np.ndarray | None = None) -> None:
+                  embedding: np.ndarray | None = None,
+                  features: np.ndarray | None = None) -> None:
         """Guarda (o reemplaza) la etiqueta del usuario para una cara."""
         if attribute not in ATTRIBUTES:
             raise ValueError(f"atributo desconocido: {attribute}")
         if value not in ATTRIBUTES[attribute]:
             raise ValueError(f"valor '{value}' no válido para {attribute}")
-        blob = np.asarray(embedding, dtype=np.float32).tobytes() if embedding is not None else None
+        emb = np.asarray(embedding, dtype=np.float32).tobytes() if embedding is not None else None
+        feat = np.asarray(features, dtype=np.float32).tobytes() if features is not None else None
         import json
         with self._conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO face_labels "
-                "(photo_path, face_index, face_bbox, embedding, attribute, value, predicted, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (photo_path, face_index, json.dumps(face_bbox or []), blob,
+                "(photo_path, face_index, face_bbox, embedding, features, attribute, value, predicted, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (photo_path, face_index, json.dumps(face_bbox or []), emb, feat,
                  attribute, value, predicted,
                  datetime.now(timezone.utc).isoformat()),
             )
+
+    def faces_missing_features(self, feature_dim: int) -> list[tuple[str, int, list]]:
+        """Caras (distintas) cuyas features aún no están guardadas o no cuadran
+        con la dimensión actual — candidatas a backfill."""
+        import json
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT photo_path, face_index, face_bbox FROM face_labels "
+                "WHERE features IS NULL OR length(features) != ?",
+                (feature_dim * 4,)).fetchall()
+        return [(p, idx, json.loads(bbox) if bbox else []) for p, idx, bbox in rows]
+
+    def set_features(self, photo_path: str, face_index: int, features: np.ndarray) -> None:
+        """Escribe las features geométricas en todas las filas de una cara."""
+        blob = np.asarray(features, dtype=np.float32).tobytes()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE face_labels SET features = ? WHERE photo_path = ? AND face_index = ?",
+                (blob, photo_path, face_index))
 
     def labeled_faces(self) -> set[tuple[str, int]]:
         """(photo_path, face_index) ya etiquetados — para no volver a preguntar."""
@@ -125,14 +161,25 @@ class CalibrationStore:
         return {"total": len(rows), "aciertos": aciertos,
                 "precision": round(aciertos / len(rows), 3)}
 
-    def training_set(self, attribute: str, embedding_dim: int) -> tuple[np.ndarray, list[str]]:
-        """(X, y) con los ejemplos que tienen embedding — para G3."""
+    def training_set(self, attribute: str, embedding_dim: int,
+                     feature_dim: int) -> tuple[np.ndarray, list[str]]:
+        """
+        (X, y) para G3. Cada fila es el vector híbrido [embedding CLIP | features
+        geométricas]; solo entran los ejemplos que tienen AMBOS (las etiquetas
+        viejas sin features se rellenan con backfill antes de entrenar).
+        """
+        dim = embedding_dim + feature_dim
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT embedding, value FROM face_labels "
-                "WHERE attribute = ? AND embedding IS NOT NULL", (attribute,)).fetchall()
-        rows = [(b, v) for b, v in rows if b and len(b) == embedding_dim * 4]
+                "SELECT embedding, features, value FROM face_labels "
+                "WHERE attribute = ? AND embedding IS NOT NULL AND features IS NOT NULL",
+                (attribute,)).fetchall()
+        rows = [(e, f, v) for e, f, v in rows
+                if e and f and len(e) == embedding_dim * 4 and len(f) == feature_dim * 4]
         if not rows:
-            return np.empty((0, embedding_dim), dtype=np.float32), []
-        X = np.stack([np.frombuffer(b, dtype=np.float32) for b, _ in rows])
-        return X, [v for _, v in rows]
+            return np.empty((0, dim), dtype=np.float32), []
+        X = np.stack([
+            np.concatenate([np.frombuffer(e, dtype=np.float32),
+                            np.frombuffer(f, dtype=np.float32)])
+            for e, f, _ in rows])
+        return X, [v for _, _, v in rows]

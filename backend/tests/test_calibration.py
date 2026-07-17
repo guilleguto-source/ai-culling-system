@@ -70,21 +70,24 @@ def test_acuerdo_ignora_sin_prediccion(tmp_path):
     assert s.agreement("eyes")["total"] == 0
 
 
-# --- Set de entrenamiento para G3 ---
+# --- Set de entrenamiento híbrido para G3 ---
 
-def test_training_set_solo_con_embedding(tmp_path):
+def test_training_set_requiere_embedding_y_features(tmp_path):
     s = _store(tmp_path)
-    v = np.ones(512, dtype=np.float32)
-    s.add_label("a.jpg", 0, "eyes", "abiertos", embedding=v)
-    s.add_label("b.jpg", 0, "eyes", "cerrados")          # sin embedding
-    X, y = s.training_set("eyes", 512)
-    assert X.shape == (1, 512) and y == ["abiertos"]
+    emb, feat = np.ones(512, dtype=np.float32), np.ones(5, dtype=np.float32)
+    s.add_label("a.jpg", 0, "eyes", "abiertos", embedding=emb, features=feat)
+    s.add_label("b.jpg", 0, "eyes", "cerrados", embedding=emb)   # sin features
+    s.add_label("c.jpg", 0, "eyes", "cerrados", features=feat)   # sin embedding
+    X, y = s.training_set("eyes", 512, 5)
+    # Solo la fila con ambos entra; el vector es [embedding | features].
+    assert X.shape == (1, 517) and y == ["abiertos"]
 
 
 def test_training_set_descarta_dim_incompatible(tmp_path):
     s = _store(tmp_path)
-    s.add_label("a.jpg", 0, "eyes", "abiertos", embedding=np.ones(64, dtype=np.float32))
-    X, y = s.training_set("eyes", 512)
+    s.add_label("a.jpg", 0, "eyes", "abiertos",
+                embedding=np.ones(64, dtype=np.float32), features=np.ones(5, dtype=np.float32))
+    X, y = s.training_set("eyes", 512, 5)
     assert len(X) == 0
 
 
@@ -116,7 +119,9 @@ def test_prediccion_se_pre_marca():
 
 
 def test_predicciones_son_valores_validos():
-    """La predicción pre-marcada debe existir en el vocabulario del atributo."""
+    """La predicción pre-marcada debe existir en el vocabulario del atributo.
+    "" = sin predicción (atributo sin señal geométrica, p.ej. glasses): la UI
+    no pre-marca nada y `agreement` lo excluye."""
     a = FaceAttributes(valid=True, ear=0.1, blink=0.9, gaze_out=0.9, smile=0.9)
     for at in ATTRIBUTES:
-        assert face_mesh.predict(a, at) in ATTRIBUTES[at]
+        assert face_mesh.predict(a, at) in ATTRIBUTES[at] + [""]

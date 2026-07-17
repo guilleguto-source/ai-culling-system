@@ -55,7 +55,7 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
       if (res.ok) {
         setSyncMsg(
           data.corrections === 0
-            ? 'Sin cambios nuevos en Lightroom'
+            ? (data.hint || 'Sin cambios nuevos en Lightroom')
             : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
               (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)')
         );

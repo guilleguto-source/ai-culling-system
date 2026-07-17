@@ -68,6 +68,21 @@ class FaceAttributes:
         return self.valid and self.smile > SMILE_MIN
 
 
+# Nº de señales geométricas que se le dan al clasificador híbrido (G3).
+FEATURE_DIM = 5
+
+
+def feature_vector(a: "FaceAttributes") -> np.ndarray:
+    """
+    Vector geométrico por-cara para el clasificador híbrido (G3). Son las mismas
+    señales auditables que usa G1: dárselas al modelo junto al embedding CLIP le
+    aporta el detalle fino (un ojo entrecerrado son unos píxeles) que el
+    embedding del recorte no resuelve bien. El orden es fijo — debe coincidir
+    entre entrenamiento e inferencia.
+    """
+    return np.array([a.ear, a.blink, a.smile, a.gaze_out, a.yaw], dtype=np.float32)
+
+
 def to_dict(a: "FaceAttributes") -> dict:
     """Serializa para persistir en el análisis (JSON)."""
     return {"valid": a.valid, "ear": round(a.ear, 4), "blink": round(a.blink, 4),

@@ -15,3 +15,7 @@ backend/models/emb_cache/
 backend/models/*.db
 backend/models/*.db.bak
 backend/models/*.pkl
+# Modelos descargables (MediaPipe) y artefactos aprendidos (Fases I/J/K)
+backend/models/*.task
+backend/models/*.npy
+backend/models/*.json

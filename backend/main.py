@@ -452,7 +452,7 @@ def calibration_candidates(directory: str, limit: int = 30):
 def calibration_face(path: str, x: int, y: int, w: int, h: int):
     """Recorte de una cara para mostrar en la vista de calibración."""
     from services.calibration import crop_face
-    jpeg = crop_face(path, [x, y, w, h])
+    jpeg = crop_face(path, [x, y, w, h], mark=True)
     if jpeg is None:
         raise HTTPException(status_code=404, detail="No se pudo recortar la cara")
     return Response(content=jpeg, media_type="image/jpeg")
@@ -462,10 +462,23 @@ def calibration_label(data: LabelRequest):
     """Guarda la verdad de campo del fotógrafo para una cara."""
     from services.calibration import face_embedding
     from services.calibration_store import CalibrationStore, ATTRIBUTES
+    from services import face_mesh
+    from services.analysis_store import init_store, load_analysis
 
     store = CalibrationStore()
-    # El embedding se calcula una vez por cara y se reutiliza en los 3 atributos
+    # Embedding y geometría se calculan una vez por cara y se reutilizan en
+    # todos los atributos: juntos forman el vector híbrido que entrena G3.
     emb = face_embedding(data.photo_path, data.face_bbox) if data.face_bbox else None
+    feats = None
+    try:
+        directory = str(Path(data.photo_path).parent)
+        a = load_analysis(init_store(directory), data.photo_path,
+                          os.path.getmtime(data.photo_path))
+        if a and 0 <= data.face_index < len(a.face_attrs):
+            feats = face_mesh.feature_vector(face_mesh.from_dict(a.face_attrs[data.face_index]))
+    except Exception:
+        feats = None   # sin geometría: la fila se rellena luego con backfill
+
     guardadas = 0
     for attribute, value in data.labels.items():
         if attribute not in ATTRIBUTES or value not in ATTRIBUTES[attribute]:
@@ -474,7 +487,7 @@ def calibration_label(data: LabelRequest):
             photo_path=data.photo_path, face_index=data.face_index,
             attribute=attribute, value=value,
             predicted=data.predictions.get(attribute, ""),
-            face_bbox=data.face_bbox, embedding=emb,
+            face_bbox=data.face_bbox, embedding=emb, features=feats,
         )
         guardadas += 1
 
@@ -492,8 +505,14 @@ def calibration_stats():
     """
     from services.calibration_store import CalibrationStore, ATTRIBUTES
     from services.face_classifier import face_classifier, MIN_EXAMPLES
+    from services.calibration import backfill_features
 
     store = CalibrationStore()
+    # Rellenar la geometría de etiquetas viejas (una sola vez) para que cuenten
+    # en el entrenamiento híbrido. Barato tras la primera pasada.
+    if backfill_features(store):
+        face_classifier.invalidate()
+
     out = {}
     for at in ATTRIBUTES:
         geo = store.agreement(at)
@@ -680,15 +699,118 @@ def reimport_xmp(data: ReimportRequest):
     if new_synced:
         update_synced_stars(data.directory, new_synced)
 
+    from services.export_snapshot import mark_synced
+    mark_synced(data.directory)
+
+    total_corrections = upgraded + downgraded
     return {
         "success": True,
-        "corrections": upgraded + downgraded,
+        "corrections": total_corrections,
         "upgraded": upgraded,
         "downgraded": downgraded,
         "learned": learned,
         "embeddings_available": emb_available,
         "total_examples": taste_model.n_examples,
+        # Cero correcciones casi siempre significa que Lightroom no volcó los
+        # cambios al archivo: viven en su catálogo, no en el XMP que leemos.
+        "hint": ("¿Guardaste los metadatos en Lightroom? En Lightroom: "
+                 "Metadatos → Guardar metadatos en archivo (Ctrl+S), o activa "
+                 "'Escribir cambios automáticamente en XMP'.")
+                if total_corrections == 0 else "",
     }
+
+
+class SyncReminderRequest(BaseModel):
+    directory: str
+    hours: float = 8.0
+
+
+class HistoryBootstrapRequest(BaseModel):
+    catalog_path: str = ""   # .lrcat; si vacío, usar `root` (XMP en disco)
+    root: str = ""
+    since: str = "2025-02-01"
+    dry_run: bool = True
+
+
+@app.post("/history/bootstrap")
+def history_bootstrap(data: HistoryBootstrapRequest):
+    """
+    Fase H1: etiquetar el historial (catálogo Lightroom o XMP) según la
+    convención de rating del usuario. dry_run=True solo reporta qué saldría.
+    """
+    from services.history_bootstrap import bootstrap_from_catalog, bootstrap_from_xmp
+    if data.catalog_path:
+        return bootstrap_from_catalog(data.catalog_path, data.since, data.dry_run)
+    if data.root:
+        return bootstrap_from_xmp(data.root, data.since, data.dry_run)
+    raise HTTPException(status_code=400, detail="Indica catalog_path o root")
+
+
+class HistoryScenesRequest(BaseModel):
+    k: int = 10
+    label: str = "positive"
+    limit: int | None = None
+
+
+@app.post("/history/embed")
+def history_embed(data: HistoryScenesRequest):
+    """Fase I (lote pesado): calcula/cachea los embeddings CLIP del historial."""
+    from services.scene_grouping import embed_history
+    return embed_history(label=data.label, limit=data.limit)
+
+
+@app.post("/history/scenes")
+def history_scenes(data: HistoryScenesRequest):
+    """Fase I: agrupa por escena las fotos ya embebidas y persiste la categoría."""
+    from services.scene_grouping import assign_scenes
+    return assign_scenes(k=data.k, label=data.label)
+
+
+@app.post("/history/feed-taste")
+def history_feed_taste(data: HistoryScenesRequest):
+    """Fase H2: alimenta el taste model con positivas (+1) y negativas (-1)."""
+    from services.history_taste import feed_taste_from_history
+    return feed_taste_from_history(limit=data.limit)
+
+
+@app.post("/history/develop-style")
+def history_develop_style():
+    """Fase J: aprende el 'look' (contraste, tono, color) por escena."""
+    from services.develop_style import learn_recipes
+    recipes = learn_recipes()
+    return {"escenas_con_receta": len(recipes),
+            "recetas": {s: {k: v for k, v in r.items()} for s, r in recipes.items()}}
+
+
+@app.post("/history/crop-style")
+def history_crop_style():
+    """Fase K: aprende tendencias de recorte (área, encuadre, ángulo) por escena."""
+    from services.crop_style import learn_crop_style
+    estilos = learn_crop_style()
+    return {"escenas_con_estilo": len(estilos), "estilos": estilos}
+
+
+@app.get("/sync/pending")
+def sync_pending():
+    """Eventos culleados que toca recordar sincronizar desde Lightroom."""
+    from services.export_snapshot import pending_reminders
+    return {"events": pending_reminders()}
+
+
+@app.post("/sync/snooze")
+def sync_snooze(data: SyncReminderRequest):
+    """Posponer el recordatorio de un evento (p.ej. 8 h)."""
+    from services.export_snapshot import snooze_reminder
+    snooze_reminder(data.directory, data.hours)
+    return {"success": True}
+
+
+@app.post("/sync/dismiss")
+def sync_dismiss(data: SyncReminderRequest):
+    """Apagar el recordatorio de un evento ('ya terminé')."""
+    from services.export_snapshot import dismiss_reminder
+    dismiss_reminder(data.directory)
+    return {"success": True}
 
 
 # --- Endpoint de Apagado ---
@@ -868,6 +990,16 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             "images_per_second": round(total / elapsed, 1) if elapsed > 0 else 0,
         }
 
+        # G3: sobre los conteos por-cara que ya midió la geometría, aplicar el
+        # clasificador aprendido de tu calibración donde ya es fiable. Antes del
+        # clustering: los gates y la decisión leen estos conteos. No toca la DB
+        # (queda G1 crudo cacheado) para reflejar siempre la última calibración.
+        from services.face_classifier import refine_face_counts
+        refinadas = refine_face_counts(analyses)
+        if refinadas:
+            _job_state["stats"]["face_learned"] = {"fotos_ajustadas": refinadas}
+            logger.info(f"G3 (calibración) ajustó los conteos de cara en {refinadas} fotos.")
+
         # FASE 3: Clustering
         if prefs.get("detect_duplicates", True):
             clusters = cluster_images(
@@ -953,6 +1085,24 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 "photos": len(develop_by_idx),
             }
 
+            # Fase J: fusionar el "look" aprendido por escena. Guardado:
+            # setdefault (nunca pisa exposición/WB de pre_edit), embedding
+            # solo-caché (sin recargar) y no-op si no hay recetas. Se aplica
+            # a las fotos que ya tienen embedding; crece al cachearse más.
+            from services.develop_style import load_recipes, style_for_scene
+            from services.scene_grouping import nearest_scene
+            from services import embedding_service as _emb_svc
+            recipes = load_recipes()
+            if recipes and _emb_svc.is_available():
+                aplicadas = 0
+                for i in develop_by_idx:
+                    emb = _emb_svc.embed_path(records[i].path, None)
+                    estilo = style_for_scene(nearest_scene(emb), recipes) if emb is not None else {}
+                    for k, v in estilo.items():
+                        develop_by_idx[i].setdefault(k, v)
+                    aplicadas += bool(estilo)
+                _job_state["stats"]["develop_style"] = {"fotos": aplicadas}
+
         # FASE 4a: elegir representative por cluster y calcular su score
         ratings_map = settings["ratings_mapping"]
         auto_crop_level = prefs.get("auto_crop", "minimo")
@@ -961,7 +1111,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         SHARP_REF = 500.0   # ref para normalizar varianza Laplaciana (satura fotos nítidas)
         use_taste = taste_model.is_trained and embedding_service.is_available()
         rep_scores: dict[int, float] = {}
-        singleton_reps: list[int] = []
+        all_scores: dict[int, float] = {}   # score de TODAS las fotos: ordena el duelo
 
         for cluster in clusters:
             if not cluster.image_indices:
@@ -971,32 +1121,31 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             # sin defectos técnicos relativos (ojos cerrados, cara borrosa),
             # si es que existe al menos una alternativa limpia en el cluster.
             candidates = apply_technical_gates(
-                cluster.image_indices, 
-                [a.any_closed_eyes for a in analyses], 
+                cluster.image_indices,
+                [a.any_closed_eyes for a in analyses],
                 [a.face_sharpness for a in analyses]
             )
 
-            # Ranking entre candidatos:
+            # Ranking:
             # - Con gusto entrenado (≥ MIN_EXAMPLES) → score del taste model
-            #   sobre el embedding (los supervivientes ya son técnicamente OK).
+            #   sobre el embedding.
             # - Fallback frío → combinado blur+heurísticas, ambos en 0..1.
-            cluster_scores = []
-            for idx in candidates:
+            # Se puntúa el cluster ENTERO, no solo los supervivientes: el duelo
+            # muestra también a los gateados y necesita ordenarlos.
+            for idx in cluster.image_indices:
                 a = analyses[idx]
                 blur_norm = min(1.0, a.blur_score / SHARP_REF)
                 score = 0.6 * blur_norm + 0.4 * a.aesthetic_score
-                if use_taste and len(candidates) > 1:
+                if use_taste and len(cluster.image_indices) > 1:
                     emb = embedding_service.embed_path(records[idx].path, records[idx].thumb_ai)
                     if emb is not None:
                         score = taste_model.predict_score(emb)
-                cluster_scores.append((score, idx))
+                all_scores[idx] = score
 
-            cluster_scores.sort(key=lambda x: x[0])
-            best_score, best_idx = cluster_scores[-1]
+            # El representative sale solo de los que pasaron los gates.
+            best_idx = max(candidates, key=lambda i: all_scores[i])
             cluster.representative_index = best_idx
-            rep_scores[best_idx] = best_score
-            if len(cluster.image_indices) == 1:
-                singleton_reps.append(best_idx)
+            rep_scores[best_idx] = all_scores[best_idx]
 
         # Basura real (label "blurry" → Roja/rechazada): SOLO las peores —
         # desenfoque severo (muy por debajo del umbral, no "algo blanda") o
@@ -1021,6 +1170,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             analyses=analyses,
             clusters=clusters,
             rep_scores=rep_scores,
+            all_scores=all_scores,
             trash_flags=trash_flags,
             prefs=prefs,
             settings=settings,

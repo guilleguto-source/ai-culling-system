@@ -107,3 +107,74 @@ def update_synced_stars(directory: str, stars_by_path: dict[str, int]) -> None:
         return
     data.setdefault("synced_stars", {}).update(stars_by_path)
     _save(directory, data)
+
+
+# --- Recordatorio de sincronización ---
+# El culling se hace, luego pasan 1-2 días en Lightroom, y es fácil olvidar
+# volver a sincronizar. Cada evento exportado lleva un estado de recordatorio:
+#   remind_after: no molestar hasta esta hora (default = exported_at, ya vencido).
+#   dismissed:    el usuario dijo "ya terminé": no recordar más.
+#   last_synced_at: para mostrar cuándo fue el último sync.
+
+REMIND_HOURS = 8
+
+
+def snooze_reminder(directory: str, hours: float = REMIND_HOURS) -> None:
+    """Posponer el recordatorio (botón 'Recordarme en Nh')."""
+    data = load_snapshot(directory)
+    if data is None:
+        return
+    from datetime import timedelta
+    data["remind_after"] = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+    _save(directory, data)
+
+
+def dismiss_reminder(directory: str) -> None:
+    """Apagar el recordatorio de un evento ('Ya terminé')."""
+    data = load_snapshot(directory)
+    if data is None:
+        return
+    data["dismissed"] = True
+    _save(directory, data)
+
+
+def mark_synced(directory: str) -> None:
+    """Tras un sync: registrar la hora y callar el recordatorio unas horas
+    (puede que aún falte terminar en Lightroom, así que no se descarta)."""
+    data = load_snapshot(directory)
+    if data is None:
+        return
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    data["last_synced_at"] = now.isoformat()
+    data["remind_after"] = (now + timedelta(hours=REMIND_HOURS)).isoformat()
+    _save(directory, data)
+
+
+def pending_reminders() -> list[dict]:
+    """
+    Eventos exportados que toca recordar sincronizar: ni descartados ni
+    pospuestos a futuro. Ordenados del más reciente al más viejo.
+    """
+    now = datetime.now(timezone.utc)
+    out = []
+    if not EXPORTS_DIR.exists():
+        return out
+    for f in EXPORTS_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if data.get("dismissed") or not data.get("directory"):
+            continue
+        remind_after = data.get("remind_after") or data.get("exported_at", "")
+        if remind_after and remind_after > now.isoformat():
+            continue   # pospuesto a futuro
+        out.append({
+            "directory": data["directory"],
+            "folder_name": Path(data["directory"]).name,
+            "exported_at": data.get("exported_at", ""),
+            "last_synced_at": data.get("last_synced_at", ""),
+        })
+    out.sort(key=lambda e: e["exported_at"], reverse=True)
+    return out
