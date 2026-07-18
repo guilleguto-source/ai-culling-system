@@ -242,6 +242,85 @@ def get_thumbnail(path: str, size: str = "ui"):
         
     raise HTTPException(status_code=404, detail="Thumbnail no encontrado")
 
+class ProfileRequest(BaseModel):
+    nombre: str
+
+
+@app.get("/profiles")
+def profiles_list():
+    """Fase V: perfiles de workflow (bodas, infantil, corporativo…)."""
+    from services.workflow_profiles import list_profiles
+    return {"perfiles": list_profiles()}
+
+
+@app.post("/profiles/save")
+def profiles_save(data: ProfileRequest):
+    """Guarda las preferencias actuales como un perfil con nombre."""
+    from services.workflow_profiles import save_profile
+    settings = load_settings()
+    try:
+        return save_profile(data.nombre, settings.get("preferences", {}))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/profiles/apply")
+def profiles_apply(data: ProfileRequest):
+    """Aplica un perfil sobre las preferencias actuales y las persiste."""
+    from services.workflow_profiles import apply_profile
+    from services.settings_manager import save_settings
+    settings = load_settings()
+    try:
+        settings["preferences"] = apply_profile(data.nombre, settings.get("preferences", {}))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    save_settings(settings)
+    return {"aplicado": data.nombre, "settings": settings}
+
+
+@app.post("/profiles/delete")
+def profiles_delete(data: ProfileRequest):
+    from services.workflow_profiles import delete_profile
+    if not delete_profile(data.nombre):
+        raise HTTPException(status_code=404, detail="No existe ese perfil")
+    return {"eliminado": data.nombre}
+
+
+@app.get("/exif")
+def get_exif(path: str):
+    """Fase U: datos de toma (cámara, lente, ISO, apertura, velocidad)."""
+    from services.exif_info import read_exif
+    if not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+    return read_exif(path)
+
+
+@app.get("/preview")
+def get_preview(path: str, con_edicion: bool = True):
+    """
+    Fase U: previsualiza la pre-edición propuesta ANTES de escribirla.
+    `con_edicion=False` devuelve la foto sin ajustes, para comparar.
+    Es una aproximación de Camera Raw, no un motor de revelado.
+    """
+    from services.export_snapshot import load_snapshot
+    from services.preview_render import render_preview
+
+    if not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+
+    develop = crop = None
+    if con_edicion:
+        snapshot = load_snapshot(str(Path(path).parent))
+        if snapshot:
+            develop = (snapshot.get("develops") or {}).get(path)
+            crop = (snapshot.get("crops") or {}).get(path)
+
+    data = render_preview(path, develop, crop)
+    if data is None:
+        raise HTTPException(status_code=500, detail="No se pudo generar la vista previa")
+    return Response(content=data, media_type="image/jpeg")
+
+
 @app.get("/cache/projects")
 def get_cached_projects():
     """Retorna una lista de proyectos con caché de miniaturas y análisis en disco."""
