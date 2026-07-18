@@ -53,12 +53,17 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
       });
       const data = await res.json();
       if (res.ok) {
-        setSyncMsg(
-          data.corrections === 0
-            ? (data.hint || 'Sin cambios nuevos en Lightroom')
-            : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
-              (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)')
-        );
+        {
+          const guardadas = data.estilo_aprendido?.guardadas || 0;
+          const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
+          setSyncMsg(
+            data.corrections === 0 && !guardadas
+              ? (data.hint || 'Sin cambios nuevos en Lightroom')
+              : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
+                (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)') +
+                estilo
+          );
+        }
       } else {
         setSyncMsg(data.detail || 'Error al sincronizar');
       }

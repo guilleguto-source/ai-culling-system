@@ -210,6 +210,32 @@ identidades selecciona al menos una por identidad.
 - **Leer el catálogo en vivo**: hacerlo solo-lectura e idealmente con Lightroom
   cerrado (WAL). Nunca escribir en el `.lrcat`.
 
+## Fase M — Sync incremental unificado (implementada)
+
+**Problema**: el botón "Sincronizar desde Lightroom" solo aprendía del GUSTO
+(cambios de estrellas). El revelado y el recorte que el fotógrafo aplica en cada
+evento se ignoraban — solo se aprendían en el lote grande del historial.
+
+**Diseño (hecho)**:
+- `reimport_xmp` lee el XMP COMPLETO (`read_xmp(full=True)`): rating + revelado
+  + recorte.
+- `sync_learning.learn_styles_from_event`: las keepers (2★+) del evento se
+  integran al `history_store` (source="lightroom-sync") con su escena
+  (`nearest_scene` sobre el embedding) y se re-aprenden las recetas de revelado
+  y recorte por escena.
+- El gusto sigue igual (señal = cambio de estrellas); el estilo se suma en la
+  misma pasada. Respuesta del endpoint incluye `estilo_aprendido`.
+- Degradación: sin CLIP o sin centroides, guarda la foto pero no la bucketiza
+  por escena hasta el próximo agrupamiento.
+
+**Requisito operativo**: Lightroom debe haber volcado los metadatos al archivo
+(Ctrl+S o auto-XMP), si no el XMP en disco no tiene los cambios.
+
+**Tests**: `test_sync_learning.py` — keepers persistidas con escena; extremas
+marcadas y excluidas; sin keepers no hace nada.
+
+---
+
 ## Recomendación de ejecución
 
 Si se hace la cadena de más valor con menos esfuerzo: **H1 → I → J**

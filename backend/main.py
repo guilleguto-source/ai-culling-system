@@ -663,9 +663,12 @@ def reimport_xmp(data: ReimportRequest):
         arr = _extract_raw_preview(p) if p.suffix.lower() in RAW_EXTENSIONS else _load_jpg(p)
         return embedding_service.embed_path(path_str, arr) if arr is not None else None
 
+    from services.scene_grouping import nearest_scene
+
     upgraded = downgraded = 0
     learned = 0
     new_synced: dict[str, int] = {}
+    keepers: list[dict] = []          # para aprender revelado/recorte (estilo)
     emb_available = embedding_service.is_available()
 
     for members in groups.values():
@@ -675,29 +678,45 @@ def reimport_xmp(data: ReimportRequest):
         exported_label = snapshot["items"][primary]
         baseline = synced.get(primary, ratings_map.get(exported_label, {}).get("stars", 0))
 
-        # El usuario pudo editar el JPG o el sidecar del RAW: primer XMP que difiera
-        current = None
-        for m in members:
-            xmp = read_xmp(m)
-            if xmp is not None and xmp["stars"] != baseline:
-                current = xmp
-                break
-        if current is None:
-            continue
+        # Leer el XMP COMPLETO (rating + revelado + recorte) de cada miembro.
+        # El usuario pudo editar el JPG o el sidecar del RAW.
+        xmps = {m: read_xmp(m, full=True) for m in members}
+        # Gusto: primer XMP cuyo rating difiere del baseline.
+        current = next((x for x in xmps.values() if x and x["stars"] != baseline), None)
+        # Estilo: el XMP que trae los ajustes (revelado/recorte).
+        edited = (next((x for x in xmps.values() if x and (x.get("develop") or x.get("crop"))), None)
+                  or next((x for x in xmps.values() if x), None))
+        stars_now = edited["stars"] if edited else baseline
 
-        sign = +1 if current["stars"] > baseline else -1
-        upgraded += sign > 0
-        downgraded += sign < 0
-        new_synced[primary] = current["stars"]
+        # El embedding se calcula una vez y se reutiliza (gusto + escena).
+        emb = get_embedding(primary) if emb_available and (current or stars_now >= 2) else None
 
-        if emb_available:
-            emb = get_embedding(primary)
+        # 1) GUSTO: solo si cambió el rating (un cambio es la señal).
+        if current is not None:
+            sign = +1 if current["stars"] > baseline else -1
+            upgraded += sign > 0
+            downgraded += sign < 0
+            new_synced[primary] = current["stars"]
             if emb is not None:
                 taste_model.add_example(emb, sign, "lightroom", event_dir=data.directory)
                 learned += 1
 
+        # 2) ESTILO: revelado/recorte de las keepers (2★+), tengan o no cambio
+        #    de rating — su edición es el estilo a aprender.
+        if edited is not None and stars_now >= 2 and (edited.get("develop") or edited.get("crop")):
+            keepers.append({
+                "path": primary, "rating": stars_now,
+                "develop": edited.get("develop", {}), "crop": edited.get("crop", {}),
+                "scene": nearest_scene(emb) or "",
+            })
+
     if new_synced:
         update_synced_stars(data.directory, new_synced)
+
+    # Aprender revelado + recorte de las keepers de este evento (re-aprende las
+    # recetas por escena incluyendo estas fotos).
+    from services.sync_learning import learn_styles_from_event
+    estilo = learn_styles_from_event(keepers)
 
     from services.export_snapshot import mark_synced
     mark_synced(data.directory)
@@ -711,6 +730,7 @@ def reimport_xmp(data: ReimportRequest):
         "learned": learned,
         "embeddings_available": emb_available,
         "total_examples": taste_model.n_examples,
+        "estilo_aprendido": estilo,   # revelado/recorte: keepers guardadas + escenas
         # Cero correcciones casi siempre significa que Lightroom no volcó los
         # cambios al archivo: viven en su catálogo, no en el XMP que leemos.
         "hint": ("¿Guardaste los metadatos en Lightroom? En Lightroom: "

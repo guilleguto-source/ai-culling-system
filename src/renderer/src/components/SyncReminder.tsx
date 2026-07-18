@@ -41,12 +41,14 @@ export default function SyncReminder({ active }: { active: boolean }) {
         body: JSON.stringify({ directory: ev.directory }),
       });
       const d = await r.json();
+      const guardadas = d.estilo_aprendido?.guardadas || 0;
+      const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
       const msg = !r.ok
         ? (d.detail || 'Error al sincronizar')
-        : d.corrections === 0
+        : d.corrections === 0 && !guardadas
           ? (d.hint || 'Sin cambios nuevos en Lightroom')
           : `${d.corrections} correcciones (↑${d.upgraded} ↓${d.downgraded})` +
-            (d.embeddings_available ? ` · ${d.total_examples} ejemplos aprendidos` : '');
+            (d.embeddings_available ? ` · ${d.total_examples} ejemplos aprendidos` : '') + estilo;
       setEventos(evs => evs.map(e =>
         e.directory === ev.directory ? { ...e, _status: 'done', _msg: msg } : e));
     } catch {

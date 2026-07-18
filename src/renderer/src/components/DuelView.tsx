@@ -1,4 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+
+// Preferencias de vista del duelo, recordadas entre sesiones.
+const leerPref = (clave: string, porDefecto: number) => {
+  const v = Number(localStorage.getItem(clave));
+  return Number.isFinite(v) && v > 0 ? v : porDefecto;
+};
 
 export default function DuelView({ results }: { results: any[] }) {
   if (!results || results.length === 0) return null;
@@ -18,6 +24,14 @@ export default function DuelView({ results }: { results: any[] }) {
   const [currentClusterIdx, setCurrentClusterIdx] = useState(0);
   const [learnedOverrides, setLearnedOverrides] = useState<Record<number, string>>({});
   const [isLearning, setIsLearning] = useState(false);
+
+  // Columnas y alto de fila. En fotos verticales lo que agranda la imagen es el
+  // ALTO de la celda (el ancho sobrante se va en barras negras), por eso el
+  // tamaño se regula aparte de las columnas.
+  const [cols, setCols] = useState(() => leerPref('duelCols', 2));
+  const [rowH, setRowH] = useState(() => leerPref('duelRowH', 62));
+  useEffect(() => { localStorage.setItem('duelCols', String(cols)); }, [cols]);
+  useEffect(() => { localStorage.setItem('duelRowH', String(rowH)); }, [rowH]);
 
   if (clusters.length === 0) {
     return (
@@ -70,6 +84,31 @@ export default function DuelView({ results }: { results: any[] }) {
       {/* Duel Header */}
       <div className="flex-between glass-panel" style={{ padding: '12px 24px', marginBottom: '16px' }}>
         <h3 style={{ margin: 0 }}>Cluster A/B Comparison</h3>
+
+        {/* Controles de vista: cuántas por fila y qué tan grandes */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Columnas</span>
+          {[2, 3, 4].map(n => (
+            <button
+              key={n}
+              className={cols === n ? 'btn btn-primary' : 'btn btn-secondary'}
+              style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+              onClick={() => setCols(n)}
+            >
+              {n}
+            </button>
+          ))}
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '6px' }}
+            title="Alto de cada foto: subilo para ver detalle (foco, ojos)">
+            Tamaño
+          </span>
+          <input
+            type="range" min={35} max={110} step={5} value={rowH}
+            onChange={e => setRowH(Number(e.target.value))}
+            style={{ width: '110px' }}
+          />
+        </div>
+
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button 
             className="btn btn-secondary" 
@@ -91,13 +130,13 @@ export default function DuelView({ results }: { results: any[] }) {
         </div>
       </div>
 
-      {/* Arena — 4 por fila, ordenadas: las mejores entran sin scroll.
-          Filas de alto fijo: si no, con muchas fotos el grid las aplasta
-          en vez de desbordar y no habría nada que scrollear. */}
+      {/* Arena — ordenadas por score: las mejores entran primero. Columnas y
+          alto los elige el usuario. Filas de alto fijo: si no, con muchas fotos
+          el grid las aplasta en vez de desbordar y no habría scroll. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(${Math.min(ordered.length, 4)}, 1fr)`,
-        gridAutoRows: 'minmax(0, 46vh)',
+        gridTemplateColumns: `repeat(${Math.min(ordered.length, cols)}, 1fr)`,
+        gridAutoRows: `minmax(0, ${rowH}vh)`,
         gap: '16px',
         flex: 1,
         overflowY: 'auto',

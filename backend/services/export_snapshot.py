@@ -165,7 +165,12 @@ def pending_reminders() -> list[dict]:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if data.get("dismissed") or not data.get("directory"):
+        directory = data.get("directory")
+        if data.get("dismissed") or not directory:
+            continue
+        # Solo eventos reales que siguen en disco: descarta snapshots de tests
+        # (carpetas temporales ya borradas) y exports vacíos sin fotos.
+        if not data.get("items") or not Path(directory).exists():
             continue
         remind_after = data.get("remind_after") or data.get("exported_at", "")
         if remind_after and remind_after > now.isoformat():
