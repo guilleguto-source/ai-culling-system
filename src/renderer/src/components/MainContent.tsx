@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
 import CalibrationView from './CalibrationView';
@@ -16,6 +16,48 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
   const [syncMsg, setSyncMsg] = useState<string>('');
   const [applying, setApplying] = useState(false);
   const [editsApplied, setEditsApplied] = useState(false);
+  const [undoDisponible, setUndoDisponible] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [avisoLightroom, setAvisoLightroom] = useState('');
+
+  // ¿Hay respaldo del último culling para este evento?
+  useEffect(() => {
+    if (!directory) { setUndoDisponible(false); return; }
+    (async () => {
+      try {
+        const r = await fetch(`http://127.0.0.1:8000/undo_export/available?directory=${encodeURIComponent(directory)}`);
+        if (r.ok) setUndoDisponible((await r.json()).disponible);
+      } catch { /* backend caído */ }
+    })();
+  }, [directory, jobResults]);
+
+  // Deshacer devuelve las fotos al XMP que tenían ANTES del culling. Toca
+  // archivos reales del fotógrafo, así que se confirma explícitamente.
+  const handleUndo = async () => {
+    if (!directory) return;
+    const ok = window.confirm(
+      'Se devolverán las estrellas y etiquetas de estas fotos al estado que tenían ANTES del último culling.\n\n¿Continuar?'
+    );
+    if (!ok) return;
+    setUndoing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('http://127.0.0.1:8000/undo_export', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory }),
+      });
+      const d = await res.json();
+      setSyncMsg(res.ok
+        ? `Deshecho: ${d.restauradas} restauradas` +
+          (d.limpiadas ? `, ${d.limpiadas} sin marcas` : '') +
+          (d.fallidas ? ` · ${d.fallidas} fallaron` : '')
+        : (d.detail || 'No se pudo deshacer'));
+    } catch {
+      setSyncMsg('Error de conexión con el backend');
+    } finally {
+      setUndoing(false);
+    }
+  };
 
   const handleApplyEdits = async () => {
     if (!directory) return;
@@ -156,6 +198,18 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
              >
                {syncing ? 'Sincronizando…' : 'Sincronizar desde Lightroom'}
              </button>
+             {/* Red de seguridad: devuelve las fotos al estado previo al culling */}
+             {undoDisponible && (
+               <button
+                 className="btn btn-secondary"
+                 onClick={handleUndo}
+                 disabled={undoing || !directory}
+                 style={{ color: 'var(--status-blurry-text)' }}
+                 title="Devuelve estrellas y etiquetas al estado que tenían antes del último culling"
+               >
+                 {undoing ? 'Deshaciendo…' : '↩ Deshacer culling'}
+               </button>
+             )}
            </div>
         </div>
 

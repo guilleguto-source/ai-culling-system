@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ProfilesBar from './ProfilesBar';
 
 interface SettingsModalProps {
   settings: any;
@@ -116,7 +117,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
         {/* Header */}
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <h2 style={{ margin: 0, fontSize: '0.95rem' }}>Culling Preferences</h2>
+          <h2 style={{ margin: 0, fontSize: '0.95rem' }}>Preferencias de culling</h2>
           <button
             onClick={onClose}
             style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.95rem' }}
@@ -127,11 +128,13 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
         {/* Body */}
         <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', flex: 1 }}>
-          
+
+          <ProfilesBar />
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: 500 }}>Selectivity Target</div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>How aggressively should the AI cull?</div>
+              <div style={{ fontWeight: 500 }}>Selectividad</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>¿Qué tan exigente al descartar?</div>
             </div>
             <select 
               value={prefs.selectivity_target || 'standard'} 
@@ -185,7 +188,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               style={{ width: '13px', height: '13px' }}
             />
             <div>
-              <div style={{ fontWeight: 500 }}>Detect Duplicates</div>
+              <div style={{ fontWeight: 500 }}>Detectar repetidas</div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Group similar photos and select the best</div>
             </div>
           </label>
@@ -198,7 +201,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               style={{ width: '13px', height: '13px' }}
             />
             <div>
-              <div style={{ fontWeight: 500 }}>Detect Closed Eyes</div>
+              <div style={{ fontWeight: 500 }}>Detectar ojos cerrados</div>
               <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Flag portraits with closed eyes</div>
             </div>
           </label>
@@ -377,7 +380,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
             />
             <div>
               <div style={{ fontWeight: 500 }}>Overwrite XMP Ratings</div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Warning: This will overwrite existing Lightroom ratings</div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Cuidado: sobrescribe las estrellas que ya tengas en Lightroom</div>
             </div>
           </label>
 
@@ -419,8 +422,8 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
         {/* Footer */}
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: 'var(--bg-primary)', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave}>Save Preferences</button>
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSave}>Guardar preferencias</button>
         </div>
         
       </div>

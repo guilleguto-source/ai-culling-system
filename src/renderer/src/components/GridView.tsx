@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import PhotoDetail from './PhotoDetail';
 
 // Etiquetas legibles. Las claves internas (selected, duplicates…) NO se tocan:
 // están cableadas al mapeo de estrellas y al XMP.
@@ -20,6 +21,7 @@ const FILTROS: [string, string, (r: any) => boolean][] = [
 
 export default function GridView({ results }: { results: any[] }) {
   const [filtro, setFiltro] = useState('todas');
+  const [detalle, setDetalle] = useState<any>(null);
   if (!results || results.length === 0) return null;
 
   const visibles = useMemo(() => {
@@ -59,7 +61,8 @@ export default function GridView({ results }: { results: any[] }) {
           const descartada = img.label === 'blurry' || img.label === 'closed_eyes';
           const elegida = img.label === 'selected' || img.label === 'highlighted';
           return (
-            <div key={i} className="glass-panel" style={{
+            <div key={i} className="glass-panel" onClick={() => setDetalle(img)}
+              style={{ cursor: 'pointer',
               width: '220px', overflow: 'hidden', display: 'flex', flexDirection: 'column',
               // Jerarquía visual: la vista se recorre de un vistazo.
               opacity: descartada ? 0.45 : 1,
@@ -99,11 +102,23 @@ export default function GridView({ results }: { results: any[] }) {
                   <span>{img.scene_type === 'portrait' ? 'Retrato' : 'Detalle'}</span>
                   <span>Nitidez {Math.round(Math.min(1, (img.blur_score || 0) / 500) * 100)}%</span>
                 </div>
+                {img.score != null && (
+                  <div title={`Score ${img.score.toFixed(2)} — comparable dentro de la ráfaga`}
+                    style={{ height: '3px', borderRadius: '2px', marginTop: '6px',
+                      backgroundColor: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.round(Math.min(1, img.score) * 100)}%`, height: '100%',
+                      backgroundColor: elegida ? 'var(--status-selected-text)' : 'var(--text-muted)',
+                    }} />
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {detalle && <PhotoDetail foto={detalle} onClose={() => setDetalle(null)} />}
     </div>
   );
 }
