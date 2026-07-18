@@ -12,6 +12,8 @@ backend/models/cache/
 backend/models/analysis/
 backend/models/exports/
 backend/models/emb_cache/
+backend/models/face_emb_cache/
+backend/models/undo/
 backend/models/*.db
 backend/models/*.db.bak
 backend/models/*.pkl

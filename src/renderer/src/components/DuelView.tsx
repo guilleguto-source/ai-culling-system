@@ -1,5 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 
+// El título dice QUIÉN decidió. Antes afirmaba siempre "mejor score", que es
+// falso cuando gana por un gate técnico (la elegida puede tener score menor).
+const TITULO_ELEGIDA: Record<string, string> = {
+  gate: 'Elegida por la IA (única sin defectos)',
+  gusto: 'Elegida por la IA (tu criterio aprendido)',
+  score: 'Elegida por la IA (mejor score)',
+};
+
 // Preferencias de vista del duelo, recordadas entre sesiones.
 const leerPref = (clave: string, porDefecto: number) => {
   const v = Number(localStorage.getItem(clave));
@@ -56,6 +64,28 @@ export default function DuelView({ results }: { results: any[] }) {
       .filter(img => img !== representative)
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
   ];
+
+  // Aprobar: hasta ahora solo aprendíamos cuando el usuario CORREGÍA; si estaba
+  // de acuerdo, esa señal se perdía. Confirmar genera el par positivo
+  // (elegida > mejor alternativa), que es la mitad del aprendizaje que faltaba.
+  const [approved, setApproved] = useState<Record<number, boolean>>({});
+  const handleApprove = async () => {
+    const rival = ordered.find(img => img !== representative);
+    if (!rival) return;
+    setIsLearning(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/learn_preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ winner_path: representative.path, loser_path: rival.path }),
+      });
+      if (res.ok) setApproved(prev => ({ ...prev, [clusterId]: true }));
+    } catch (e) {
+      console.error('Error approving:', e);
+    } finally {
+      setIsLearning(false);
+    }
+  };
 
   const handleLearnPreference = async (alt: any) => {
     setIsLearning(true);
@@ -161,7 +191,7 @@ export default function DuelView({ results }: { results: any[] }) {
                 color: isSelected ? 'var(--status-selected-text)' : 'var(--text-primary)',
               }}>
                 {isSelected
-                  ? <strong>Elegida por la IA (mejor score)</strong>
+                  ? <strong>{TITULO_ELEGIDA[img.decided_by] || 'Elegida por la IA'}</strong>
                   : <strong>#{i + 1} · Alternativa</strong>}
               </div>
               <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
@@ -179,12 +209,37 @@ export default function DuelView({ results }: { results: any[] }) {
                   </div>
                   <div>
                     {img.score != null && <>Score: {img.score.toFixed(2)} · </>}
-                    Blur: {img.blur_score}
+                    Nitidez: {Math.round(Math.min(1, (img.blur_score || 0) / 500) * 100)}%
                   </div>
+                  {/* Por qué ganó o perdió: hechos medidos, no adjetivos. */}
+                  {Array.isArray(img.reasons) && img.reasons.length > 0 && (
+                    <div style={{ marginTop: '4px', lineHeight: 1.5 }}>
+                      {img.reasons.map((r: string, k: number) => (
+                        <div key={k} style={{
+                          fontSize: '0.75rem',
+                          color: r.startsWith('✔') ? 'var(--status-selected-text)'
+                               : r.startsWith('✖') ? 'var(--status-blurry-text)'
+                               : 'var(--text-muted)',
+                        }}>{r}</div>
+                      ))}
+                    </div>
+                  )}
                   {img.label === 'blurry' && <div style={{ color: 'var(--status-blurry-text)' }}>Marked Blurry</div>}
                 </div>
                 {isSelected ? (
-                  <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem' }}>✓ Elegida</span>
+                  approved[clusterId] ? (
+                    <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem' }}>✓ Aprobada</span>
+                  ) : (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                      title="Confirmar que estás de acuerdo — también entrena el modelo"
+                      onClick={handleApprove}
+                      disabled={isLearning || ordered.length < 2}
+                    >
+                      Aprobar
+                    </button>
+                  )
                 ) : (
                   <button
                     className="btn btn-primary"

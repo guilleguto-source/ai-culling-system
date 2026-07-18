@@ -37,6 +37,11 @@ class PhotoAnalysis:
     # {valid, ear, blink, smile, gaze_out, yaw}. Necesario para elegir las
     # caras dudosas en la calibración y para entrenar sobre ellas.
     face_attrs: list = field(default_factory=list)
+    # Embeddings de IDENTIDAD (ArcFace) por cara, mismo orden que face_bboxes.
+    # NO se persiste en el caché de análisis (pesa y cambia poco el valor): en
+    # una corrida con análisis cacheado queda vacío y la cobertura por persona
+    # simplemente no actúa.
+    face_identities: list = field(default_factory=list)
     phash: str = ""
     exif_datetime: str = ""
     
@@ -110,6 +115,17 @@ def analyze_photo(
         analysis.looking_away_count = sum(1 for a in validas if a.looking_away)
         analysis.smiling_count = sum(1 for a in validas if a.smiling)
         analysis.any_closed_eyes = analysis.closed_eyes_count > 0
+
+    # Identidad de las personas (ArcFace). Guardado: si el modelo no está, no
+    # hace nada. Alinea por los 5 landmarks de YuNet cuando existen.
+    from services import face_identity
+    if analysis.face_bboxes and face_identity.is_available():
+        analysis.face_identities = [
+            face_identity.embed_face(
+                arr, bbox,
+                landmarks=analysis.eye_landmarks[i] if i < len(analysis.eye_landmarks) else None)
+            for i, bbox in enumerate(analysis.face_bboxes)
+        ]
 
     # Saliencia para detalles
     if analysis.scene_type == "detail":

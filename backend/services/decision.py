@@ -12,6 +12,61 @@ def _bad_faces(a: PhotoAnalysis) -> int:
     return a.closed_eyes_count + a.looking_away_count
 
 
+def build_reasons(
+    idx: int,
+    is_representative: bool,
+    analyses: list[PhotoAnalysis],
+    rep_index: int,
+    gate_reasons: dict[int, str],
+    decided_by: dict[int, str],
+    solo_en_cluster: bool,
+) -> list[str]:
+    """
+    Motivos legibles de por qué esta foto ganó o perdió su ráfaga.
+
+    Solo afirma hechos que el sistema midió. En particular NO dice "mejor score"
+    cuando quien decidió fue un gate técnico: la ganadora puede tener un score
+    menor que una alternativa descartada, y afirmar lo contrario es falso.
+    """
+    if solo_en_cluster:
+        return []
+
+    a = analyses[idx] if idx < len(analyses) else None
+    rep = analyses[rep_index] if rep_index < len(analyses) else None
+    razones: list[str] = []
+
+    if is_representative:
+        criterio = decided_by.get(idx, "score")
+        razones.append({
+            "gate": "✔ Única sin defectos técnicos de la ráfaga",
+            "gusto": "✔ La que más se parece a lo que sueles elegir",
+            "score": "✔ Mejor combinación de nitidez y composición",
+        }.get(criterio, "✔ Elegida de la ráfaga"))
+        if a and a.valid_face_count:
+            if not a.closed_eyes_count:
+                razones.append("✔ Todos con los ojos abiertos")
+            if a.smiling_count:
+                razones.append(f"✔ {a.smiling_count} sonriendo")
+        return razones
+
+    # Perdedoras: primero el gate que la sacó (es el motivo real).
+    motivo = gate_reasons.get(idx)
+    if motivo == "ojos_cerrados":
+        razones.append("✖ Ojos cerrados (hay alternativa con ojos abiertos)")
+    elif motivo == "rostro_blando":
+        razones.append("✖ Rostro menos nítido que el resto de la ráfaga")
+
+    # Hechos comparativos contra la ganadora.
+    if a and rep:
+        if a.closed_eyes_count > rep.closed_eyes_count and motivo != "ojos_cerrados":
+            razones.append(f"✖ {a.closed_eyes_count} con ojos cerrados")
+        if a.looking_away_count > rep.looking_away_count:
+            razones.append(f"✖ {a.looking_away_count} mirando fuera de cámara")
+        if not razones and a.blur_score < rep.blur_score:
+            razones.append("✖ Menos nítida que la elegida")
+    return razones or ["Alternativa válida — la elegida puntuó algo mejor"]
+
+
 def photos_for_coverage(
     identities_by_photo: dict[int, list[int]],
     selected: set[int],
@@ -50,9 +105,13 @@ def apply_decision_logic(
     settings: dict[str, Any],
     develop_by_idx: dict[int, dict],
     all_scores: dict[int, float] | None = None,
+    gate_reasons: dict[int, str] | None = None,
+    decided_by: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
 
     scores = all_scores if all_scores is not None else rep_scores
+    gate_reasons = gate_reasons or {}
+    decided_by = decided_by or {}
     KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
     HIGHLIGHT_FRACTION = 0.10
     
@@ -157,6 +216,12 @@ def apply_decision_logic(
                 "color": ratings_map.get(label, {}).get("color", "") if label else "",
                 "blur_score": round(analyses[idx].blur_score, 2) if idx < len(analyses) else 0,
                 "score": round(scores.get(idx, 0.0), 4),
+                "reasons": build_reasons(
+                    idx, is_representative, analyses, cluster.representative_index,
+                    gate_reasons, decided_by,
+                    solo_en_cluster=len(cluster.image_indices) <= 1,
+                ),
+                "decided_by": decided_by.get(cluster.representative_index, ""),
                 "crop": crop_dict,
                 "has_crop": crop_dict is not None,
                 "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,

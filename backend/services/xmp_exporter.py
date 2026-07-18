@@ -280,6 +280,55 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
         return False
 
 
+def read_raw_packet(image_path: str) -> bytes | None:
+    """
+    Paquete XMP crudo de una foto (sidecar en RAW, embebido en JPEG), o None si
+    no tiene. Base del respaldo previo al export: guardar los bytes tal cual
+    permite una restauración exacta, no reconstruida.
+    """
+    p = Path(image_path)
+    try:
+        if _is_raw(p):
+            xp = _get_xmp_path(image_path)
+            return xp.read_bytes() if xp.exists() else None
+        return _extract_jpeg_xmp(p.read_bytes())
+    except Exception as e:
+        logger.error(f"No se pudo leer el XMP crudo de {p.name}: {e}")
+        raise
+
+
+def write_raw_packet(image_path: str, packet: bytes) -> bool:
+    """Escribe un paquete XMP tal cual (restauración de un respaldo)."""
+    p = Path(image_path)
+    try:
+        if _is_raw(p):
+            _get_xmp_path(image_path).write_bytes(packet)
+        else:
+            _embed_xmp_in_jpeg(p, packet)
+        return True
+    except Exception as e:
+        logger.error(f"No se pudo restaurar el XMP de {p.name}: {e}")
+        return False
+
+
+def clear_xmp(image_path: str) -> bool:
+    """
+    Deja la foto sin nuestras marcas, para restaurar un archivo que NO tenía
+    XMP antes. En RAW borra el sidecar (queda como estaba). En JPEG el segmento
+    no se puede quitar sin re-escribir la imagen, así que se deja un paquete
+    neutro (sin rating, etiqueta ni banderín).
+    """
+    p = Path(image_path)
+    try:
+        if _is_raw(p):
+            _get_xmp_path(image_path).unlink(missing_ok=True)
+            return True
+        return write_raw_packet(image_path, _build_xmp_packet(0, "", "", flag="none"))
+    except Exception as e:
+        logger.error(f"No se pudo limpiar el XMP de {p.name}: {e}")
+        return False
+
+
 def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
                           overwrite: bool = False, preset=None) -> dict:
     """Exporta todos los resultados. Devuelve {written, skipped, errors, total}.

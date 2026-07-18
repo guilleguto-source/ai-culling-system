@@ -15,6 +15,64 @@ logger = logging.getLogger(__name__)
 FACE_SHARPNESS_RELATIVE_FACTOR = 0.5
 
 
+# Motivos de descarte (claves estables; la UI las traduce).
+GATE_OJOS = "ojos_cerrados"
+GATE_NITIDEZ = "rostro_blando"
+
+
+def apply_technical_gates_explained(
+    indices: list[int],
+    closed_flags: list[bool],
+    face_sharpness: list[list[float]],
+) -> tuple[list[int], dict[int, str]]:
+    """
+    Igual que `apply_technical_gates`, pero además devuelve POR QUÉ cayó cada
+    descartada. Es la base de la explicabilidad: sin esto la UI no puede decir
+    "perdió porque tenía los ojos cerrados" y termina afirmando "mejor score",
+    que es falso cuando quien decide es un gate.
+
+    Returns:
+        (supervivientes, {índice_descartado: motivo})
+    """
+    if len(indices) <= 1:
+        return list(indices), {}
+
+    survivors = list(indices)
+    motivos: dict[int, str] = {}
+
+    # --- Gate 1: ojos cerrados ---
+    open_eyes = [i for i in survivors if not _closed(i, closed_flags)]
+    if open_eyes and len(open_eyes) < len(survivors):
+        dropped = set(survivors) - set(open_eyes)
+        logger.debug(f"Gate ojos: descartadas {sorted(dropped)} (hay alternativa con ojos abiertos)")
+        for i in dropped:
+            motivos[i] = GATE_OJOS
+        survivors = open_eyes
+
+    # --- Gate 2: nitidez por rostro (solo entre fotos con caras detectadas) ---
+    # Score por imagen = la cara MENOS nítida (en grupos, todos deben salir bien).
+    with_faces = [i for i in survivors if _min_sharpness(i, face_sharpness) is not None]
+    if len(with_faces) > 1:
+        min_sharps = {i: _min_sharpness(i, face_sharpness) for i in with_faces}
+        median_sharp = statistics.median(min_sharps.values())
+        threshold = median_sharp * FACE_SHARPNESS_RELATIVE_FACTOR
+        sharp_enough = [i for i in with_faces if min_sharps[i] >= threshold]
+        if sharp_enough and len(sharp_enough) < len(with_faces):
+            dropped = set(with_faces) - set(sharp_enough)
+            logger.debug(
+                f"Gate nitidez: descartadas {sorted(dropped)} "
+                f"(umbral {threshold:.1f}, mediana {median_sharp:.1f})"
+            )
+            for i in dropped:
+                motivos[i] = GATE_NITIDEZ
+            # Las fotos sin caras no participan de este gate y se conservan.
+            survivors = [i for i in survivors if i not in dropped]
+
+    if not survivors:
+        return list(indices), {}
+    return survivors, motivos
+
+
 def apply_technical_gates(
     indices: list[int],
     closed_flags: list[bool],
@@ -32,36 +90,7 @@ def apply_technical_gates(
         Subconjunto de `indices` que sobrevive los gates. Nunca vacío:
         si todos los candidatos fallan un gate, ese gate no se aplica.
     """
-    if len(indices) <= 1:
-        return list(indices)
-
-    survivors = list(indices)
-
-    # --- Gate 1: ojos cerrados ---
-    open_eyes = [i for i in survivors if not _closed(i, closed_flags)]
-    if open_eyes and len(open_eyes) < len(survivors):
-        dropped = set(survivors) - set(open_eyes)
-        logger.debug(f"Gate ojos: descartadas {sorted(dropped)} (hay alternativa con ojos abiertos)")
-        survivors = open_eyes
-
-    # --- Gate 2: nitidez por rostro (solo entre fotos con caras detectadas) ---
-    # Score por imagen = la cara MENOS nítida (en grupos, todos deben salir bien).
-    with_faces = [i for i in survivors if _min_sharpness(i, face_sharpness) is not None]
-    if len(with_faces) > 1:
-        min_sharps = {i: _min_sharpness(i, face_sharpness) for i in with_faces}
-        median_sharp = statistics.median(min_sharps.values())
-        threshold = median_sharp * FACE_SHARPNESS_RELATIVE_FACTOR
-        sharp_enough = [i for i in with_faces if min_sharps[i] >= threshold]
-        if sharp_enough and len(sharp_enough) < len(with_faces):
-            dropped = set(with_faces) - set(sharp_enough)
-            logger.debug(
-                f"Gate nitidez: descartadas {sorted(dropped)} "
-                f"(umbral {threshold:.1f}, mediana {median_sharp:.1f})"
-            )
-            # Las fotos sin caras no participan de este gate y se conservan.
-            survivors = [i for i in survivors if i not in dropped]
-
-    return survivors if survivors else list(indices)
+    return apply_technical_gates_explained(indices, closed_flags, face_sharpness)[0]
 
 
 def _closed(idx: int, closed_flags: list[bool]) -> bool:

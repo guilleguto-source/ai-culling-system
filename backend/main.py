@@ -740,6 +740,49 @@ def reimport_xmp(data: ReimportRequest):
     }
 
 
+class CatalogDiffRequest(BaseModel):
+    directory: str
+    catalog_path: str
+    since: str = "2025-02-01"
+    limit: int | None = None
+
+
+@app.post("/lightroom/pending_changes")
+def lightroom_pending_changes(data: CatalogDiffRequest):
+    """
+    Fase R: avisa si Lightroom tiene cambios que aún no se volcaron al archivo
+    (el caso en que un sync no encontraría nada que aprender).
+    """
+    from services.catalog_diff import find_pending_changes, mensaje_para_usuario
+    if not Path(data.catalog_path).exists():
+        raise HTTPException(status_code=404, detail="No se encontró el catálogo")
+    res = find_pending_changes(data.catalog_path, data.directory, data.since, data.limit)
+    return {**res, "mensaje": mensaje_para_usuario(res)}
+
+
+class UndoRequest(BaseModel):
+    directory: str
+
+
+@app.post("/undo_export")
+def undo_export(data: UndoRequest):
+    """
+    Fase O: deshace el último export, devolviendo cada foto al XMP que tenía
+    antes (respaldo byte a byte tomado justo antes de escribir).
+    """
+    from services.undo_export import restore_previous_state, has_backup
+    if not has_backup(data.directory):
+        raise HTTPException(status_code=404,
+                            detail="No hay respaldo previo para este directorio")
+    return restore_previous_state(data.directory)
+
+
+@app.get("/undo_export/available")
+def undo_available(directory: str):
+    from services.undo_export import has_backup
+    return {"disponible": has_backup(directory)}
+
+
 class SyncReminderRequest(BaseModel):
     directory: str
     hours: float = 8.0
@@ -791,6 +834,16 @@ def history_feed_taste(data: HistoryScenesRequest):
     """Fase H2: alimenta el taste model con positivas (+1) y negativas (-1)."""
     from services.history_taste import feed_taste_from_history
     return feed_taste_from_history(limit=data.limit)
+
+
+@app.post("/history/feed-taste-pairs")
+def history_feed_taste_pairs():
+    """
+    Fase Q: alimenta el gusto con pares ganadora/perdedora DENTRO de cada
+    ráfaga revisada. Compara alternativas parecidas, que es la tarea real.
+    """
+    from services.history_taste import feed_pairwise_from_history
+    return feed_pairwise_from_history()
 
 
 @app.post("/history/develop-style")
@@ -866,7 +919,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         from services.ingester import ingest_directory
         from services.scene_classifier import classify_scene, compute_saliency_region, SceneType
         from services.clustering import cluster_images, assign_cluster_representatives
-        from services.cluster_gates import apply_technical_gates
+        from services.cluster_gates import apply_technical_gates_explained
         from services.auto_crop import propose_crop, detect_horizon_angle, LEVEL_LIMITS
         from services import pre_edit
         from services.preset_manager import load_preset
@@ -1132,6 +1185,8 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         use_taste = taste_model.is_trained and embedding_service.is_available()
         rep_scores: dict[int, float] = {}
         all_scores: dict[int, float] = {}   # score de TODAS las fotos: ordena el duelo
+        gate_reasons: dict[int, str] = {}   # por qué cayó cada descartada por gate
+        decidido_por: dict[int, str] = {}   # gate | gusto | score (para no mentir)
 
         for cluster in clusters:
             if not cluster.image_indices:
@@ -1140,11 +1195,12 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             # Gates técnicos: el representative se elige solo entre las fotos
             # sin defectos técnicos relativos (ojos cerrados, cara borrosa),
             # si es que existe al menos una alternativa limpia en el cluster.
-            candidates = apply_technical_gates(
+            candidates, motivos_gate = apply_technical_gates_explained(
                 cluster.image_indices,
                 [a.any_closed_eyes for a in analyses],
                 [a.face_sharpness for a in analyses]
             )
+            gate_reasons.update(motivos_gate)
 
             # Ranking:
             # - Con gusto entrenado (≥ MIN_EXAMPLES) → score del taste model
@@ -1166,6 +1222,16 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             best_idx = max(candidates, key=lambda i: all_scores[i])
             cluster.representative_index = best_idx
             rep_scores[best_idx] = all_scores[best_idx]
+
+            # QUIÉN decidió: si los gates dejaron una sola candidata, ganó por
+            # el gate, NO por score (afirmar "mejor score" ahí sería falso).
+            if len(cluster.image_indices) > 1:
+                if len(candidates) == 1 and motivos_gate:
+                    decidido_por[best_idx] = "gate"
+                elif use_taste:
+                    decidido_por[best_idx] = "gusto"
+                else:
+                    decidido_por[best_idx] = "score"
 
         # Basura real (label "blurry" → Roja/rechazada): SOLO las peores —
         # desenfoque severo (muy por debajo del umbral, no "algo blanda") o
@@ -1191,6 +1257,8 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             clusters=clusters,
             rep_scores=rep_scores,
             all_scores=all_scores,
+            gate_reasons=gate_reasons,
+            decided_by=decidido_por,
             trash_flags=trash_flags,
             prefs=prefs,
             settings=settings,
@@ -1204,7 +1272,46 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             "highlighted": len(highlights),
         }
 
+        # FASE 4d: cobertura por persona (ArcFace). Garantiza que cada identidad
+        # del evento tenga al menos una foto seleccionada — el dolor real del
+        # fotógrafo de eventos ("me olvidé de la abuela"). Solo PROMUEVE: nunca
+        # baja nada. No-op si falta el modelo o si el análisis vino de caché.
+        if prefs.get("ensure_person_coverage", True):
+            from services.face_identity import group_event_identities
+            from services.decision import photos_for_coverage
+
+            embs_por_foto = {
+                a.index: a.face_identities for a in analyses if a.face_identities
+            }
+            if embs_por_foto:
+                identidades = group_event_identities(embs_por_foto)
+                promovidas = photos_for_coverage(
+                    identidades, set(final_selected), all_scores)
+                por_path = {r["path"]: r for r in results}
+                aplicadas = 0
+                for idx in promovidas:
+                    if idx >= len(records):
+                        continue
+                    r = por_path.get(records[idx].path)
+                    if r and r["label"] not in ("selected", "highlighted"):
+                        r["label"] = "selected"
+                        r["stars"] = ratings_map.get("selected", {}).get("stars", 4)
+                        r["color"] = ratings_map.get("selected", {}).get("color", "")
+                        r["reasons"] = ["✔ Única buena de esta persona en el evento"]
+                        aplicadas += 1
+                _job_state["stats"]["person_coverage"] = {
+                    "identidades": len({i for ids in identidades.values() for i in ids}),
+                    "promovidas": aplicadas,
+                }
+
         # FASE 5: Exportar metadatos a XMP sidecars
+        # Antes de tocar UN SOLO archivo, respaldar el XMP actual de todas las
+        # fotos. Si el respaldo falla, se aborta: nunca escribimos sin red.
+        from services.undo_export import capture_previous_state
+        backup_stats = capture_previous_state(
+            directory, [r["path"] for r in results if not r.get("error")])
+        _job_state["stats"]["backup"] = backup_stats
+
         from services.xmp_exporter import export_results_to_xmp
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
         if mode == "cull":

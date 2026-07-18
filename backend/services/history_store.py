@@ -99,6 +99,14 @@ class HistoryStore:
             if d:
                 yield path, scene, d
 
+    def rows_for_bursts(self):
+        """(path, label, capture_time) ordenado por carpeta y hora — base para
+        reconstruir las ráfagas del historial (Fase Q)."""
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT path, label, capture_time FROM history "
+                "WHERE capture_time != '' ORDER BY path, capture_time").fetchall()
+
     def unfed_labeled(self, limit: int | None = None):
         """(path, label) de positivas/negativas que aún no alimentaron el taste
         model — para el aprendizaje de gusto (H2), idempotente."""
