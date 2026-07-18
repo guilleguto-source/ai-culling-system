@@ -44,7 +44,7 @@ export default function DuelView({ results }: { results: any[] }) {
   if (clusters.length === 0) {
     return (
       <div className="flex-center" style={{ height: '100%', color: 'var(--text-muted)' }}>
-        No duplicates or groups found.
+        No hay ráfagas para comparar.
       </div>
     );
   }
@@ -87,6 +87,32 @@ export default function DuelView({ results }: { results: any[] }) {
     }
   };
 
+  // Atajos: cullear con teclado es mucho más rápido que con el mouse.
+  // 1-9 elegir alternativa · ←/→ navegar · Enter aprobar.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setCurrentClusterIdx(c => Math.min(c + 1, clusters.length - 1));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentClusterIdx(c => Math.max(c - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleApprove();
+      } else if (/^[1-9]$/.test(e.key)) {
+        const elegida = ordered[Number(e.key) - 1];
+        if (elegida && elegida !== representative) {
+          e.preventDefault();
+          handleLearnPreference(elegida);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const handleLearnPreference = async (alt: any) => {
     setIsLearning(true);
     try {
@@ -113,7 +139,7 @@ export default function DuelView({ results }: { results: any[] }) {
       
       {/* Duel Header */}
       <div className="flex-between glass-panel" style={{ padding: '12px 24px', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0 }}>Cluster A/B Comparison</h3>
+        <h3 style={{ margin: 0 }}>Comparar la ráfaga</h3>
 
         {/* Controles de vista: cuántas por fila y qué tan grandes */}
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
@@ -145,17 +171,17 @@ export default function DuelView({ results }: { results: any[] }) {
             disabled={currentClusterIdx === 0}
             onClick={() => setCurrentClusterIdx(c => c - 1)}
           >
-            Previous Group
+            Anterior
           </button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            {currentClusterIdx + 1} of {clusters.length}
+            {currentClusterIdx + 1} de {clusters.length}
           </span>
           <button 
             className="btn btn-secondary"
             disabled={currentClusterIdx === clusters.length - 1}
             onClick={() => setCurrentClusterIdx(c => c + 1)}
           >
-            Next Group
+            Siguiente
           </button>
         </div>
       </div>

@@ -107,11 +107,13 @@ def apply_decision_logic(
     all_scores: dict[int, float] | None = None,
     gate_reasons: dict[int, str] | None = None,
     decided_by: dict[int, str] | None = None,
+    margins: dict[int, float] | None = None,
 ) -> list[dict[str, Any]]:
 
     scores = all_scores if all_scores is not None else rep_scores
     gate_reasons = gate_reasons or {}
     decided_by = decided_by or {}
+    margins = margins or {}
     KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
     HIGHLIGHT_FRACTION = 0.10
     
@@ -222,6 +224,8 @@ def apply_decision_logic(
                     solo_en_cluster=len(cluster.image_indices) <= 1,
                 ),
                 "decided_by": decided_by.get(cluster.representative_index, ""),
+                # Margen chico = decisión reñida → candidata a repaso (Fase S)
+                "margin": margins.get(idx, 1.0),
                 "crop": crop_dict,
                 "has_crop": crop_dict is not None,
                 "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { IconFolder, IconSettings, IconGrid, IconDuel } from './icons';
+import LearningPanel from './LearningPanel';
 
 interface SidebarProps {
   backendStatus: string;
@@ -77,37 +78,31 @@ export default function Sidebar({
         </p>
       </div>
 
-      {/* Connection Status */}
-      <div className="glass-panel" style={{ padding: '12px', fontSize: '0.85rem' }}>
-        <div className="flex-between" style={{ marginBottom: '8px' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>Backend Engine</span>
-          <span style={{ 
-            color: backendStatus === 'running' ? 'var(--status-selected-text)' : 'var(--status-blurry-text)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            <span style={{ 
-              display: 'inline-block', 
-              width: '8px', height: '8px', 
-              borderRadius: '50%', 
-              backgroundColor: 'currentColor' 
-            }} />
-            {backendStatus === 'running' ? 'Online' : backendStatus}
-          </span>
-        </div>
+      {/* Lo que la IA aprendió de vos: el diferencial va arriba, donde el ojo
+          llega primero. Lo técnico (motor, hardware) baja a una línea discreta. */}
+      <LearningPanel active={backendStatus === 'running'} />
+
+      <div className="flex-between" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}
+        title={hardwareInfo
+          ? `${hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} · ${hardwareInfo.physical_cores} núcleos`
+          : ''}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{
+            display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+            backgroundColor: backendStatus === 'running'
+              ? 'var(--status-selected-text)' : 'var(--status-blurry-text)',
+          }} />
+          Motor {backendStatus === 'running' ? 'listo' : backendStatus}
+        </span>
         {hardwareInfo && (
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-            Hardware: {hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU Mode'} 
-            ({hardwareInfo.physical_cores} Cores)
-          </div>
+          <span>{hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} · {hardwareInfo.physical_cores} núcleos</span>
         )}
       </div>
 
       {/* Start Job Area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          New Session
+          Nueva sesión
         </h3>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -130,7 +125,7 @@ export default function Sidebar({
                 borderRadius: '4px'
               }}
               className="hover-bg-secondary"
-              title="Browse Folder"
+              title="Elegir carpeta"
             >
               <IconFolder size={18} className="text-primary" style={{ color: 'var(--accent-primary)' }} />
             </div>
@@ -156,7 +151,7 @@ export default function Sidebar({
             disabled={!folderInput.trim() || backendStatus !== 'running' || jobState?.status === 'running'}
             style={{ width: '100%', padding: '12px' }}
           >
-            {jobState?.status === 'running' ? 'Procesando...' : 'Culling + Edición'}
+            {jobState?.status === 'running' ? 'Procesando…' : 'Culling + edición'}
           </button>
           <button
             className="btn btn-secondary"
@@ -165,7 +160,7 @@ export default function Sidebar({
             style={{ width: '100%', padding: '10px' }}
             title="Solo selecciona (labels/estrellas). Revisas, haces duelos, y aplicas la edición después con un clic."
           >
-            Solo Culling
+            Solo culling
           </button>
         </div>
       </div>
@@ -173,7 +168,7 @@ export default function Sidebar({
       {/* View Toggles (only if we have results) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: hasResults ? 1 : 0.3, pointerEvents: hasResults ? 'auto' : 'none' }}>
         <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          View Mode
+          Modo de vista
         </h3>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button 
@@ -181,14 +176,14 @@ export default function Sidebar({
             onClick={() => onViewChange('grid')}
             style={{ flex: 1 }}
           >
-            <IconGrid size={16} /> Grid
+            <IconGrid size={16} /> Cuadrícula
           </button>
           <button
             className={`btn ${currentView === 'duel' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => onViewChange('duel')}
             style={{ flex: 1 }}
           >
-            <IconDuel size={16} /> Duel
+            <IconDuel size={16} /> Comparar
           </button>
         </div>
         <button
@@ -206,7 +201,7 @@ export default function Sidebar({
       {/* Settings */}
       <button className="btn btn-secondary" onClick={onOpenSettings} style={{ justifyContent: 'flex-start' }}>
         <IconSettings size={18} />
-        Settings & Preferences
+        Ajustes y preferencias
       </button>
     </div>
   );

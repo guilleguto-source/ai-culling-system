@@ -3,7 +3,9 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.7.0
 python-multipart>=0.0.9
 onnxruntime>=1.17.0
-opencv-python-headless>=4.9.0
+# OpenCV 5.x cambia la forma que devuelve HoughLinesP y rompe la detección de
+# horizonte del auto-crop. mediapipe arrastra la 5 si no se acota.
+opencv-python-headless>=4.9.0,<5
 rawpy>=0.21.0
 imageio>=2.34.0
 Pillow>=10.0.0

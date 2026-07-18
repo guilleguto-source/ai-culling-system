@@ -863,6 +863,13 @@ def history_crop_style():
     return {"escenas_con_estilo": len(estilos), "estilos": estilos}
 
 
+@app.get("/learning/summary")
+def learning_summary():
+    """Fase T: panel 'Tu estilo' — solo cifras reales, nada inventado."""
+    from services.learning_summary import build_summary
+    return build_summary()
+
+
 @app.get("/sync/pending")
 def sync_pending():
     """Eventos culleados que toca recordar sincronizar desde Lightroom."""
@@ -1187,6 +1194,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         all_scores: dict[int, float] = {}   # score de TODAS las fotos: ordena el duelo
         gate_reasons: dict[int, str] = {}   # por qué cayó cada descartada por gate
         decidido_por: dict[int, str] = {}   # gate | gusto | score (para no mentir)
+        margenes: dict[int, float] = {}     # cuán reñida fue la decisión (Fase S)
 
         for cluster in clusters:
             if not cluster.image_indices:
@@ -1222,6 +1230,17 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             best_idx = max(candidates, key=lambda i: all_scores[i])
             cluster.representative_index = best_idx
             rep_scores[best_idx] = all_scores[best_idx]
+
+            # Margen de la decisión: cuánto le sacó la ganadora a la segunda.
+            # Margen chico = decisión reñida → es lo que conviene que el
+            # fotógrafo revise (Fase S). Revisar 30 dudosas rinde más que 182.
+            if len(candidates) > 1:
+                ordenados = sorted((all_scores[i] for i in candidates), reverse=True)
+                margen = round(ordenados[0] - ordenados[1], 4)
+            else:
+                margen = 1.0        # sin alternativa real: nada que dudar
+            for idx in cluster.image_indices:
+                margenes[idx] = margen
 
             # QUIÉN decidió: si los gates dejaron una sola candidata, ganó por
             # el gate, NO por score (afirmar "mejor score" ahí sería falso).
@@ -1259,6 +1278,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             all_scores=all_scores,
             gate_reasons=gate_reasons,
             decided_by=decidido_por,
+            margins=margenes,
             trash_flags=trash_flags,
             prefs=prefs,
             settings=settings,

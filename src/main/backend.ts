@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import http from 'http';
 import kill from 'tree-kill';
@@ -28,13 +29,25 @@ export function startBackend() {
   setBackendStatus('starting');
 
   if (isDev) {
-    // In dev, spawn python -m uvicorn in the workspace root directory
-    const backendPath = path.resolve(__dirname, '../../backend');
+    // En dev se usa el venv AISLADO de backend/, no la `python` del PATH: con
+    // la del sistema, cualquier `pip install` global puede romper la app (pasó:
+    // instalar insightface subió numpy y dejó scikit-learn inservible).
+    // Si el venv no existe, se cae a `python` del sistema con un aviso.
+    const root = path.resolve(__dirname, '../../');
+    const backendPath = path.join(root, 'backend');
+    const venvPython = path.join(
+      backendPath, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+    );
+    const usarVenv = fs.existsSync(venvPython);
+    if (!usarVenv) {
+      broadcast('backend:log',
+        'AVISO: no se encontró backend/.venv; usando la Python del sistema (frágil ante pip global).');
+    }
     const env = { ...process.env, PYTHONPATH: backendPath };
-    pyProcess = spawn('python', ['-m', 'uvicorn', 'backend.main:app', '--port', `${BACKEND_PORT}`], {
-      cwd: path.resolve(__dirname, '../../'),
-      env: env
-    });
+    pyProcess = spawn(usarVenv ? venvPython : 'python',
+      ['-m', 'uvicorn', 'backend.main:app', '--port', `${BACKEND_PORT}`],
+      { cwd: root, env }
+    );
   } else {
     // Executable packaged with PyInstaller
     const binaryName = process.platform === 'win32' ? 'backend.exe' : 'backend';
