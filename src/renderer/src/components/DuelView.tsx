@@ -173,9 +173,22 @@ export default function DuelView({ results }: { results: any[] }) {
           >
             Anterior
           </button>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            {currentClusterIdx + 1} de {clusters.length}
-          </span>
+          {/* Progreso: cuánto falta para terminar de revisar el evento */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              {currentClusterIdx + 1} de {clusters.length}
+            </span>
+            <div style={{
+              width: '120px', height: '4px', borderRadius: '2px',
+              backgroundColor: 'var(--bg-tertiary)', overflow: 'hidden',
+            }}>
+              <div style={{
+                width: `${((currentClusterIdx + 1) / clusters.length) * 100}%`,
+                height: '100%', backgroundColor: 'var(--accent-primary)',
+                transition: 'width 0.2s ease',
+              }} />
+            </div>
+          </div>
           <button 
             className="btn btn-secondary"
             disabled={currentClusterIdx === clusters.length - 1}

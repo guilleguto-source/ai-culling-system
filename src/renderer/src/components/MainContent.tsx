@@ -87,6 +87,28 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
     if (!directory) return;
     setSyncing(true);
     setSyncMsg('');
+
+    // Si el catálogo está configurado, avisar ANTES de sincronizar: Lightroom
+    // guarda los cambios en su base hasta que hacés Ctrl+S, y sin eso leemos
+    // archivos que no cambiaron y no se aprende nada.
+    const catalogo = settings?.selection_preferences?.lightroom_catalog_path;
+    if (catalogo) {
+      try {
+        const r = await fetch('http://127.0.0.1:8000/lightroom/pending_changes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ directory, catalog_path: catalogo }),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.pendientes > 0) {
+            setSyncMsg(d.mensaje);
+            setSyncing(false);
+            return;   // sincronizar ahora no aprendería nada
+          }
+        }
+      } catch { /* si el chequeo falla, seguimos con el sync normal */ }
+    }
+
     try {
       const res = await fetch('http://127.0.0.1:8000/reimport_xmp', {
         method: 'POST',

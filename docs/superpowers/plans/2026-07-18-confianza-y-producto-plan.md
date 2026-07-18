@@ -149,6 +149,50 @@ es medir, no prometer 0,80.
 **Tests**: `test_taste_pairwise.py` — ráfaga sin 2★ no genera pares; ganadora
 vs perdedora genera el par correcto; idempotencia.
 
+### RESULTADO MEDIDO (2026-07-18) — la hipótesis NO se confirmó
+
+Medido sobre **2.235 pares de 1.712 ráfagas** del historial, evaluando la tarea
+real ("dado un par de la misma ráfaga, ¿pone arriba a la que el fotógrafo
+eligió?") con validación cruzada agrupada por ráfaga:
+
+| Enfoque | Acierto |
+|---|---|
+| Azar | 50,0% |
+| Producción, fórmula en frío (`0.6·nitidez + 0.4·estética`) | 61,2% |
+| Producción, taste_model *(con fuga: cota alta)* | 62,7% |
+| Rasgos técnicos (ojos, nitidez de rostro, sonrisa, blur) | 62,0% (±1,7) |
+| **CLIP entrenado en pares** | **64,2%** (±2,0) |
+
+**Conclusiones:**
+
+1. **El enfoque por pares no mejora al absoluto** (63,9% vs 64,2% en una
+   medición previa sobre los mismos datos). No se aplicó ningún cambio de
+   modelo.
+2. **Producción no está rota.** La sospecha de que el taste_model "pisaba la
+   señal buena" al reemplazar la fórmula en frío **no se sostiene**: queda a
+   mitad de tabla, no último.
+3. **Todo cae en una banda de 61–64% con ±2 de error.** El techo con las
+   señales actuales es ~64%: el problema no es qué modelo se elige, es que la
+   tarea es intrínsecamente difícil. Ningún cambio de forma del modelo va a
+   mover esto de forma significativa.
+4. **Lección de método**: una medición previa sobre 300 pares dio el orden
+   INVERSO (rasgos técnicos 62,3% vs CLIP 56,3%) y llevó a recomendar un cambio
+   de ranking que resultó equivocado. Era ruido de muestra chica. **No sacar
+   conclusiones de <1.000 pares.**
+
+**Lo que sí podría mover la aguja** (no intentado):
+- Embeber las ~79.775 fotos en 0★ (~17 h) para obtener los pares *elegida vs
+  sus hermanas en cero*, que son los informativos y hoy faltan por completo:
+  todos los pares medidos fueron positiva-vs-negativa.
+- Señales de **detalle facial fino** (nitidez del ojo, apertura exacta,
+  micro-expresión) en vez de representaciones globales. Es lo que distingue dos
+  fotos casi idénticas, y ni CLIP ni los rasgos actuales lo capturan.
+
+**Estado del código**: la infraestructura de pares (`build_burst_pairs`,
+`/history/feed-taste-pairs`) queda construida y testeada pero **sin alimentar
+el modelo**. Destapó un bug real de producción (fechas del catálogo con y sin
+zona horaria que reventaban al ordenarlas).
+
 ---
 
 ## Fase R — Detectar cambios del catálogo (sync proactivo)

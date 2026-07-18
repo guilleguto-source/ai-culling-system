@@ -360,6 +360,28 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
                 El color debe coincidir exactamente con tu conjunto de etiquetas de Lightroom.
               </div>
+
+              <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '6px 0' }} />
+
+              {/* Con el catálogo configurado se puede avisar ANTES de sincronizar
+                  si Lightroom tiene cambios que nunca se volcaron al archivo. */}
+              <div>
+                <div style={{ fontWeight: 500 }}>Catálogo de Lightroom (.lrcat)</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Opcional. Permite avisarte si hay cambios sin guardar al archivo antes de sincronizar.
+                </div>
+                <input
+                  type="text"
+                  value={prefs.lightroom_catalog_path || ''}
+                  placeholder="C:\Users\...\Catalogo.lrcat"
+                  onChange={e => handlePrefChange('lightroom_catalog_path', e.target.value)}
+                  style={{
+                    width: '100%', padding: '6px 8px', borderRadius: '4px',
+                    background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
+                    border: '1px solid var(--border-strong)', fontSize: '0.72rem',
+                  }}
+                />
+              </div>
             </>
           )}
 
