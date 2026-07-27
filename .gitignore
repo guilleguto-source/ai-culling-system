@@ -21,3 +21,7 @@ backend/models/*.pkl
 backend/models/*.task
 backend/models/*.npy
 backend/models/*.json
+backend/models/vector_store/
+
+# Salidas de experimentos (regenerables, pesadas)
+backend/scripts/out/

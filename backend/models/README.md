@@ -72,3 +72,23 @@
 #   normalizado (x-0.5)/0.5, y guardarlo aquí como arcface_r50.onnx.
 #   Verificación: dos fotos de la MISMA persona → similitud coseno ~0.5+;
 #   personas distintas < 0.3. Umbral de agrupamiento en face_identity.py.
+
+# clip_vit_b32_text.onnx + clip_tokenizer/ — Búsqueda semántica (opcional, 100% offline)
+#   Permite buscar por texto ("la novia de blanco") entre las fotos ya
+#   embebidas. Dos piezas, ambas empaquetadas localmente — la feature NUNCA
+#   toca internet en tiempo de uso:
+#     - clip_vit_b32_text.onnx: modelo de texto CLIP ViT-B/32. Input:
+#       input_ids (int64, sin attention_mask). Output: text_embeds (512).
+#     - clip_tokenizer/: vocab/merges de CLIP (~3,5 MB). Se carga con
+#       local_files_only=True; sin esta carpeta la búsqueda se desactiva
+#       (clip_text_service.is_available() == False) — nunca se descarga online.
+#
+#   Cómo se empaquetó el tokenizador (una sola vez, requiere red esa vez):
+#     from transformers import CLIPTokenizer
+#     # en máquina con SSL corporativo: import truststore; truststore.inject_into_ssl()
+#     CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32") \
+#         .save_pretrained("backend/models/clip_tokenizer")
+#
+#   Requiere en el venv: transformers, huggingface-hub, faiss-cpu (ya en
+#   requirements.txt). El índice vectorial (faiss) se guarda en
+#   models/vector_store/ y se regenera solo; se puede borrar sin riesgo.
