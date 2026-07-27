@@ -132,7 +132,7 @@ def apply_decision_logic(
     gate_reasons = gate_reasons or {}
     decided_by = decided_by or {}
     margins = margins or {}
-    KEEP_FRACTION = {"few": 0.40, "standard": 0.65, "more": 0.85}
+    KEEP_FRACTION = {"few": 0.35, "standard": 0.55, "more": 0.75}
     HIGHLIGHT_FRACTION = 0.10
     
     singleton_reps = [c.representative_index for c in clusters if len(c.image_indices) == 1]
@@ -146,7 +146,7 @@ def apply_decision_logic(
 
     pool = sorted((i for i in singleton_reps if _selectable(i)),
                   key=lambda i: rep_scores[i], reverse=True)
-    keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.65)
+    keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.55)
     keep_n = max(1, int(round(len(pool) * keep_frac))) if pool else 0
     demoted = set(pool[keep_n:])
 
