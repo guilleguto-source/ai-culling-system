@@ -239,36 +239,31 @@ def semantic_search(q: str, directory: str, limit: int = 50):
     Busca fotos por texto libre usando embeddings CLIP en el directorio activo.
     """
     from services.semantic_search import search_photos
-    
+    from services.thumbnail_store import thumb_url
+
     results = search_photos(q, directory, limit)
-    
-    formatted = []
-    for r in results:
-        path = r["path"]
-        from pathlib import Path
-        name = Path(path).name
-        formatted.append({
-            "path": path,
-            "filename": name,
-            "score": round(r["score"], 3),
-            "thumb": f"/thumbnail?path={path}&type=ui"
-        })
-        
+
+    formatted = [{
+        "path": r["path"],
+        "filename": Path(r["path"]).name,
+        "score": round(r["score"], 3),
+        "thumb": thumb_url(r["path"]),
+    } for r in results]
+
     return {"results": formatted}
 
 
 @app.get("/storyline")
-def get_storyline(gap: int = 30):
+def get_storyline(directory: str, gap: int = 30):
     """
-    Agrupa cronológicamente (gap en mins) y extrae el medoide visual de cada capítulo.
+    Agrupa cronológicamente (gap en mins) y extrae el medoide visual de cada
+    capítulo. Stateless: el directorio viaja en cada request (igual que
+    /search/semantic) — un estado global aquí moría con cada reinicio y de
+    hecho nunca se asignaba.
     """
     from services.storyline_builder import build_storyline
-    global current_directory
-    
-    if current_directory is None:
-        return {"error": "Directorio no seleccionado"}
-        
-    storyline = build_storyline(current_directory, gap_minutes=gap)
+
+    storyline = build_storyline(directory, gap_minutes=gap)
     return {"storyline": storyline}
 
 

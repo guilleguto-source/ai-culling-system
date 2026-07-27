@@ -41,7 +41,9 @@ export default function SemanticSearchBar({ directory, onSearchResults, onClearS
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [query]);
+    // directory en las deps: si cambia la carpeta con una búsqueda activa, el
+    // closure viejo buscaría en la carpeta anterior.
+  }, [query, directory]);
 
   const handleClear = () => {
     setQuery('');

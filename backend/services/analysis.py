@@ -112,36 +112,37 @@ def analyze_photo(
     analysis.face_count = len(analysis.face_bboxes)
     if analysis.face_bboxes and face_mesh.is_available():
         attrs = face_mesh.analyze_faces(arr, analysis.face_bboxes)
-        analysis.face_attrs = [face_mesh.to_dict(a) for a in attrs]
         validas = [a for a in attrs if a.valid]
         analysis.valid_face_count = len(validas)
-        
-        # Fase 4: Clasificador de Parpadeos ONNX Dedicado
+
+        # Decisión de ojos por cara. Base: geometría de MediaPipe (eyes_closed).
+        # Si hay un blink_detector.onnx dedicado (Fase 4), su probabilidad
+        # refina la decisión — SIN mutar FaceAttributes: eyes_closed es un
+        # property calculado y asignarle revienta con AttributeError.
+        cerrada_por_cara = [a.valid and a.eyes_closed for a in attrs]
         from services import blink_classifier
         if blink_classifier.is_available():
-            # Devuelve [0..1] de prob(abierto) por cada cara detectada (no solo validas)
-            onnx_probs = blink_classifier.predict_eyes_open(arr, analysis.face_bboxes, analysis.eye_landmarks)
-            
-            closed_eyes_count = 0
+            # OJO: cuando se incorpore un modelo real hay que subir
+            # ANALYSIS_VERSION — cambia QUÉ se mide y el caché no lo distingue.
+            onnx_probs = blink_classifier.predict_eyes_open(
+                arr, analysis.face_bboxes, analysis.eye_landmarks)
             for i, a in enumerate(attrs):
                 if not a.valid:
                     continue
-                # Score compuesto propuesto: (prob_ojos_abiertos * 0.7) + (prob_mirada_intencional * 0.3)
                 prob_abierto = onnx_probs[i] if i < len(onnx_probs) else 0.5
-                prob_intencional = 0.0 if a.looking_away else 1.0 # heurística simple
-                score_compuesto = (prob_abierto * 0.7) + (prob_intencional * 0.3)
-                
-                # Modificamos el dict original para persistir la decisión híbrida
-                a.eyes_closed = bool(score_compuesto < 0.45)
-                if a.eyes_closed:
-                    closed_eyes_count += 1
-                    
-            analysis.closed_eyes_count = closed_eyes_count
-            
-        else:
-            # Fallback elegante a la heurística de MediaPipe original si falta .onnx
-            analysis.closed_eyes_count = sum(1 for a in validas if a.eyes_closed)
-            
+                prob_intencional = 0.0 if a.looking_away else 1.0  # heurística simple
+                score = prob_abierto * 0.7 + prob_intencional * 0.3
+                cerrada_por_cara[i] = score < 0.45
+
+        # Serializar DESPUÉS de decidir: persiste la decisión por cara
+        # (closed_hybrid) junto a las señales crudas. Antes se serializaba
+        # arriba del bloque y la "persistencia" del híbrido no persistía nada.
+        analysis.face_attrs = [
+            {**face_mesh.to_dict(a), "closed_hybrid": bool(cerrada_por_cara[i])}
+            for i, a in enumerate(attrs)
+        ]
+        analysis.closed_eyes_count = sum(
+            1 for i, a in enumerate(attrs) if a.valid and cerrada_por_cara[i])
         analysis.looking_away_count = sum(1 for a in validas if a.looking_away)
         analysis.smiling_count = sum(1 for a in validas if a.smiling)
         analysis.any_closed_eyes = analysis.closed_eyes_count > 0

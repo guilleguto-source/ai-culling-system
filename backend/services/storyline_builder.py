@@ -1,12 +1,12 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
 import numpy as np
 
 from services.analysis_store import get_all_analysis
 from services import embedding_service
 from services.scene_grouping import cluster_embeddings
+from services.thumbnail_store import thumb_url
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,7 @@ def build_storyline(directory: str, gap_minutes: int = 30, max_subchapters: int 
             "start_time": chapter_photos[0]["dt"].strftime("%H:%M"),
             "end_time": chapter_photos[-1]["dt"].strftime("%H:%M"),
             "photo_count": len(chapter_photos),
-            # size (no type) es el parámetro real del endpoint; la ruta va
-            # URL-encodeada porque las carpetas reales tienen espacios y tildes.
-            "medoid_thumb": f"/thumbnail?path={quote(medoid_path)}&size=ui",
+            "medoid_thumb": thumb_url(medoid_path),
             "medoid_path": medoid_path
         })
 

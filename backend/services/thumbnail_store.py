@@ -1,8 +1,17 @@
 import hashlib
 from pathlib import Path
+from urllib.parse import quote
 import os
 import shutil
 import time
+
+
+def thumb_url(file_path: str, size: str = "ui") -> str:
+    """URL relativa del endpoint /thumbnail para una foto. Única fuente del
+    formato: ruta URL-encodeada (las carpetas reales tienen espacios y tildes)
+    y el parámetro se llama `size` — un 'type=' escrito a mano ya rompió dos
+    features en silencio."""
+    return f"/thumbnail?path={quote(file_path)}&size={size}"
 
 # Anclado al módulo, NO al cwd: el backend puede arrancar desde la raíz del
 # repo, desde backend/ (tests) o empaquetado — una ruta relativa crearía

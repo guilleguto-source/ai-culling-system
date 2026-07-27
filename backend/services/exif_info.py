@@ -40,7 +40,10 @@ def read_exif(image_path: str) -> dict:
     try:
         with open(image_path, "rb") as f:
             tags = exifread.process_file(f, details=False)
-    except (OSError, Exception) as e:
+    except Exception as e:
+        # Catch-all deliberado: el contrato es "{} si no se puede leer" (los
+        # errores internos de exifread no deben tumbar la ingesta). El tuple
+        # (OSError, Exception) anterior era redundante.
         logger.debug(f"Sin EXIF en {Path(image_path).name}: {e}")
         return out
 

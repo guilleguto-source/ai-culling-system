@@ -22,7 +22,7 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
   useEffect(() => {
     if (!directory) return;
     setLoading(true);
-    fetch(`http://127.0.0.1:8000/storyline?gap=30`)
+    fetch(`http://127.0.0.1:8000/storyline?directory=${encodeURIComponent(directory)}&gap=30`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && data.storyline) {
