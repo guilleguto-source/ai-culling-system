@@ -1279,8 +1279,10 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             ]
             develop_by_idx = pre_edit.compute_pre_edits(
                 signatures,
-                bias=float(pre_edit_prefs.get("exposure_bias", 0.3)),
+                bias=float(pre_edit_prefs.get("exposure_bias", 0.0)),
                 preset_wb_bias=preset_data.wb_bias if preset_data else (0.0, 0.0),
+                exposure_deadband=float(pre_edit_prefs.get("exposure_deadband", 0.15)),
+                auto_wb=pre_edit_prefs.get("auto_wb", False),
             )
             _job_state["stats"]["pre_edit"] = {
                 "preset": preset_data.name if preset_data else None,

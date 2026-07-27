@@ -240,16 +240,24 @@ def compute_pre_edits(
     signatures: list[PhotoSignature],
     bias: float,
     preset_wb_bias: tuple[float, float] = (0.0, 0.0),
+    exposure_deadband: float = 0.0,
+    auto_wb: bool = True,
 ) -> dict[int, dict]:
     """
     Calcula los ajustes finales por foto (keyed por PhotoSignature.index).
     `signatures` va en orden temporal.
 
     WB: mediana de sesión (pieles mandan) + sesgo del preset, clamp ±MAX_WB.
+    Con `auto_wb=False` solo se aplica el sesgo del preset (la corrección
+    adaptativa por piel se apaga: medido, el historial del fotógrafo es RAW con
+    WB absoluto y una firma tenue constante, no corrección por foto).
     Exposición: la referencia de piel es la MEDIANA DE PIEL DE LA SESIÓN
     (acotada a [SKIN_TARGET_MIN, SKIN_TARGET_MAX]) — respeta el tono real de
     piel de los sujetos; corrección propia acotada a la mediana de sesión
     ±SESSION_EXPOSURE_BAND, + bias, redondeada a EXPOSURE_STEP.
+    `exposure_deadband`: correcciones de |EV| menores a esto se anulan (los
+    micro-toques pisan el criterio del usuario, que deja el 78% de sus fotos sin
+    tocar).
     """
     sessions = segment_light_sessions(signatures)
     results: dict[int, dict] = {}
@@ -302,12 +310,17 @@ def compute_pre_edits(
 
         for p in positions:
             sig = signatures[p]
-            # WB: detalle con luz genuinamente distinta se edita aparte
-            t, i = wb_t, wb_i
-            if not sig.has_people and sig.wb is not None:
-                if (abs(sig.wb[0] - wb_t) > DETAIL_OVERRIDE_DELTA
-                        or abs(sig.wb[1] - wb_i) > DETAIL_OVERRIDE_DELTA):
-                    t, i = sig.wb
+            # WB adaptativo (por piel/sesión). Con auto_wb=False solo queda el
+            # sesgo del preset: no se corrige WB por foto.
+            if auto_wb:
+                t, i = wb_t, wb_i
+                # detalle con luz genuinamente distinta se edita aparte
+                if not sig.has_people and sig.wb is not None:
+                    if (abs(sig.wb[0] - wb_t) > DETAIL_OVERRIDE_DELTA
+                            or abs(sig.wb[1] - wb_i) > DETAIL_OVERRIDE_DELTA):
+                        t, i = sig.wb
+            else:
+                t, i = 0.0, 0.0
             t = float(np.clip(t + preset_wb_bias[0], -MAX_WB, MAX_WB))
             i = float(np.clip(i + preset_wb_bias[1], -MAX_WB, MAX_WB))
 
@@ -323,6 +336,9 @@ def compute_pre_edits(
                 e -= final_ev - cap
             # Protección de altas luces: con pixeles quemados no se sube nada
             if sig.clip_frac > CLIP_GUARD_FRACTION and e > 0:
+                e = 0.0
+            # Banda muerta: los micro-toques pisan el criterio del usuario.
+            if abs(e) < exposure_deadband:
                 e = 0.0
             e = float(np.clip(e, -MAX_EXPOSURE, MAX_EXPOSURE))
             e = round(e / EXPOSURE_STEP) * EXPOSURE_STEP

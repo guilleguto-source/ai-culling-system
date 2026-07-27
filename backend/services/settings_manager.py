@@ -36,11 +36,19 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "blurry_sensitivity": "moderate",   # "lenient" | "moderate" | "strict"
         "detect_closed_eyes": True,
         "overwrite_xmp_ratings": False,
-        "auto_crop": "minimo",              # "off" | "minimo" | "medio" | "agresivo"
+        # Defaults calibrados contra el historial real del fotógrafo (2026-07-27):
+        # su edición es mínima e intencional, y las correcciones automáticas
+        # geométricas/de WB no predicen su criterio. Ver
+        # docs/.../2026-07-27-pre-revelado-calibracion.md. Todo queda disponible
+        # como opt-in; solo cambia el default a "no estorbar".
+        "auto_crop": "off",                 # "off" | "minimo" | "medio" | "agresivo"
+        "auto_straighten": False,           # rotación por horizonte: erraba 4.8° vs 1.3° real
         "pre_edit": {
             "enabled": True,
             "preset_path": "",              # .xmp de LR activo ("" = sin preset)
-            "exposure_bias": 0.3,           # -0.5 .. +0.5
+            "exposure_bias": 0.0,           # -0.5 .. +0.5 (era 0.3: peor que no tocar)
+            "exposure_deadband": 0.15,      # no emitir correcciones de exposición menores a esto (EV)
+            "auto_wb": False,               # WB por piel: opera en espacio incremental que el usuario (RAW) no usa
             "recent_presets": [],           # [{name, path}] MRU máx 5
         },
     },

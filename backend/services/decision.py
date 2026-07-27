@@ -159,7 +159,11 @@ def apply_decision_logic(
         highlights = set(final_selected[:top_n])
 
     ratings_map = settings.get("ratings_mapping", {})
-    auto_crop_level = prefs.get("auto_crop", "minimo")
+    auto_crop_level = prefs.get("auto_crop", "off")
+    # Enderezado desacoplado del crop: medido, el detector de horizonte erraba
+    # 4.8° vs 1.3° del usuario y torcía el 80% de sus fotos derechas. Off por
+    # defecto aunque el crop esté activo.
+    auto_straighten = prefs.get("auto_straighten", False)
     results = []
 
     for cluster in clusters:
@@ -215,10 +219,11 @@ def apply_decision_logic(
                 gray = cv2.cvtColor(record.thumb_ai, cv2.COLOR_RGB2GRAY)
                 from services import person_detector
                 persons = person_detector.detect_persons(record.thumb_ai)
+                horizonte = detect_horizon_angle(gray) if auto_straighten else None
                 prop = propose_crop(
                     analyses[idx].scene_type, analyses[idx].face_bboxes, analyses[idx].eye_landmarks,
                     analyses[idx].saliency_region, record.thumb_ai.shape,
-                    auto_crop_level, detect_horizon_angle(gray),
+                    auto_crop_level, horizonte,
                     person_bboxes=persons, img_rgb=record.thumb_ai,
                 )
                 if prop is not None:
