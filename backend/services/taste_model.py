@@ -6,7 +6,7 @@ Los ejemplos (duelos + correcciones de Lightroom) se persisten en SQLite
 import logging
 
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import BayesianRidge
 
 from services.taste_store import TasteStore
 from services.embedding_service import EMBEDDING_DIM, MODEL_VERSION
@@ -21,7 +21,7 @@ MIN_EXAMPLES = 50
 class TasteModel:
     def __init__(self, store: TasteStore | None = None):
         self.store = store or TasteStore()
-        self._clf: LogisticRegression | None = None
+        self._clf: BayesianRidge | None = None
         self._dirty = True   # hay ejemplos nuevos sin re-entrenar
 
     @property
@@ -54,23 +54,25 @@ class TasteModel:
         self.add_example(loser_embedding, -1, source, event_dir)
         logger.info(f"Preferencia registrada ({self.n_examples} ejemplos, fuente={source}).")
 
-    def _fit(self) -> LogisticRegression | None:
+    def _fit(self) -> BayesianRidge | None:
         if not self._dirty and self._clf is not None:
             return self._clf
         X, y = self.store.load_examples(EMBEDDING_DIM, MODEL_VERSION)
         if len(X) < MIN_EXAMPLES or len(np.unique(y)) < 2:
             return None
-        clf = LogisticRegression(max_iter=1000, C=1.0)
-        clf.fit(X, (y > 0).astype(int))
+        # Usamos Bayes para manejar la incertidumbre.
+        # Tolera mejor errores (ruido) en el etiquetado del usuario.
+        clf = BayesianRidge(compute_score=True, alpha_1=1e-3, lambda_1=1e-3)
+        clf.fit(X, y)
         self._clf = clf
         self._dirty = False
-        logger.info(f"Taste model re-entrenado con {len(X)} ejemplos.")
+        logger.info(f"Taste model Bayesiano re-entrenado con {len(X)} ejemplos.")
         return clf
 
     def predict_score(self, embedding: np.ndarray | None) -> float:
         """
-        Puntaje de gusto (0..1) para un embedding. 0.5 neutro si el modelo
-        aún no es fiable o no hay embedding disponible.
+        Puntaje de gusto (0..1) para un embedding con factor de contracción.
+        Si la incertidumbre es alta, el puntaje se acerca a 0.5 (Neutro).
         """
         if embedding is None or not self.is_trained:
             return 0.5
@@ -78,7 +80,19 @@ class TasteModel:
         if clf is None:
             return 0.5
         X = np.asarray(embedding, dtype=np.float32).reshape(1, -1)
-        return float(clf.predict_proba(X)[0][1])
+        mean, std = clf.predict(X, return_std=True)
+        
+        # mean mapea idealmente alrededor de [-1, +1] (nuestras etiquetas)
+        # Convertimos a probabilidad cruda usando una sigmoide simple escalada o mapeo lineal
+        raw_prob = (mean[0] + 1.0) / 2.0
+        raw_prob = max(0.0, min(1.0, raw_prob))
+        
+        # Shrinkage (Contracción): penaliza predicciones altamente inseguras
+        # std suele estar entre 0.1 (muy seguro) y >1.0 (inseguro)
+        certainty = float(np.exp(-std[0]))
+        
+        # Aplica contracción hacia el neutro
+        return 0.5 + (raw_prob - 0.5) * certainty
 
 
 # Instancia global (Singleton)

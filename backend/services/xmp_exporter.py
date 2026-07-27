@@ -91,9 +91,9 @@ def _build_xmp_packet(stars: int, color: str, label: str,
     rating_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Rating")
     rating_el.text = str(max(0, min(5, stars)))
 
-    if color:                                   # etiqueta dinámica (tal cual settings)
-        label_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Label")
-        label_el.text = color
+    # ALWAYS write Label to force Lightroom to clear outdated colors if empty
+    label_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Label")
+    label_el.text = color if color else ""
 
     pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}PickStatus")
     if flag in FLAG_TO_PICK:
@@ -331,17 +331,16 @@ def clear_xmp(image_path: str) -> bool:
 
 def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
                           overwrite: bool = False, preset=None) -> dict:
-    """Exporta todos los resultados. Devuelve {written, skipped, errors, total}.
+    """Exporta todos los resultados en paralelo. Devuelve {written, skipped, errors, total}.
     `preset` (PresetData) solo se aplica a fotos que traen `develop`."""
-    written = skipped = errors = 0
-    for result in results:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _export_single(result: dict) -> str:
         if result.get("error"):
-            errors += 1
-            continue
+            return "error"
         label = result.get("label")
         if not label:
-            skipped += 1
-            continue
+            return "skipped"
         mapping = ratings_mapping.get(label, {})
         develop = result.get("develop")
         ok = write_xmp(
@@ -355,8 +354,20 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             preset=preset if develop else None,
             flag=mapping.get("flag"),
         )
-        written += ok
-        skipped += (not ok)
+        return "written" if ok else "skipped"
+
+    written = skipped = errors = 0
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_export_single, r) for r in results]
+        for future in as_completed(futures):
+            res = future.result()
+            if res == "written":
+                written += 1
+            elif res == "skipped":
+                skipped += 1
+            else:
+                errors += 1
+
     logger.info(
         f"Exportación XMP: {written} escritos, {skipped} omitidos, {errors} errores "
         f"de {len(results)} total")

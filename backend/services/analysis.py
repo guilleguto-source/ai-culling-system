@@ -16,6 +16,10 @@ logger = logging.getLogger("analysis")
 class PhotoAnalysis:
     index: int
     path: str
+    # mtime del archivo con el que se guardó este análisis. Lo rellena el store
+    # al leer del caché; sirve como clave del embedding cacheado sin re-stat del
+    # disco (crítico con el NAS). 0.0 en un análisis recién calculado en memoria.
+    mtime: float = 0.0
     scene_type: str = "detail"
     face_bboxes: list = field(default_factory=list)
     eye_landmarks: list = field(default_factory=list)
@@ -111,7 +115,33 @@ def analyze_photo(
         analysis.face_attrs = [face_mesh.to_dict(a) for a in attrs]
         validas = [a for a in attrs if a.valid]
         analysis.valid_face_count = len(validas)
-        analysis.closed_eyes_count = sum(1 for a in validas if a.eyes_closed)
+        
+        # Fase 4: Clasificador de Parpadeos ONNX Dedicado
+        from services import blink_classifier
+        if blink_classifier.is_available():
+            # Devuelve [0..1] de prob(abierto) por cada cara detectada (no solo validas)
+            onnx_probs = blink_classifier.predict_eyes_open(arr, analysis.face_bboxes, analysis.eye_landmarks)
+            
+            closed_eyes_count = 0
+            for i, a in enumerate(attrs):
+                if not a.valid:
+                    continue
+                # Score compuesto propuesto: (prob_ojos_abiertos * 0.7) + (prob_mirada_intencional * 0.3)
+                prob_abierto = onnx_probs[i] if i < len(onnx_probs) else 0.5
+                prob_intencional = 0.0 if a.looking_away else 1.0 # heurística simple
+                score_compuesto = (prob_abierto * 0.7) + (prob_intencional * 0.3)
+                
+                # Modificamos el dict original para persistir la decisión híbrida
+                a.eyes_closed = bool(score_compuesto < 0.45)
+                if a.eyes_closed:
+                    closed_eyes_count += 1
+                    
+            analysis.closed_eyes_count = closed_eyes_count
+            
+        else:
+            # Fallback elegante a la heurística de MediaPipe original si falta .onnx
+            analysis.closed_eyes_count = sum(1 for a in validas if a.eyes_closed)
+            
         analysis.looking_away_count = sum(1 for a in validas if a.looking_away)
         analysis.smiling_count = sum(1 for a in validas if a.smiling)
         analysis.any_closed_eyes = analysis.closed_eyes_count > 0
@@ -132,7 +162,14 @@ def analyze_photo(
         analysis.saliency_region = compute_saliency_region(arr)
 
     # Análisis técnico (desenfoque)
-    tq = evaluate_technical_quality(arr, analysis.scene_type, analysis.face_bboxes, analysis.saliency_region, blur_threshold)
+    tq = evaluate_technical_quality(
+        arr, 
+        analysis.scene_type, 
+        analysis.face_bboxes, 
+        analysis.saliency_region, 
+        blur_threshold,
+        iso=record.iso,
+    )
     analysis.blur_score = tq.blur_score
     analysis.blur_flag = tq.is_blurry
     analysis.sharp_anywhere = max_region_sharpness(arr) if tq.is_blurry else tq.blur_score

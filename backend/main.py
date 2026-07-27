@@ -83,6 +83,13 @@ def _code_stamp() -> float:
 _LOADED_CODE_STAMP = _code_stamp()
 
 
+def _safe_getmtime(path) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
 @app.get("/health")
 def health_check():
     try:
@@ -200,7 +207,7 @@ def get_debug_overlay(path: str):
     # Intentar cargar análisis de DB
     from services.analysis_store import init_store, load_analysis
     conn = init_store(str(p.parent))
-    current_mtime = os.path.getmtime(path)
+    current_mtime = _safe_getmtime(path)
     analysis = load_analysis(conn, path, current_mtime)
     
     if not analysis:
@@ -224,6 +231,45 @@ def get_results():
         "results": _job_state["results"],
         "stats": _job_state["stats"],
     }
+
+
+@app.get("/search/semantic")
+def semantic_search(q: str, directory: str, limit: int = 50):
+    """
+    Busca fotos por texto libre usando embeddings CLIP en el directorio activo.
+    """
+    from services.semantic_search import search_photos
+    
+    results = search_photos(q, directory, limit)
+    
+    formatted = []
+    for r in results:
+        path = r["path"]
+        from pathlib import Path
+        name = Path(path).name
+        formatted.append({
+            "path": path,
+            "filename": name,
+            "score": round(r["score"], 3),
+            "thumb": f"/thumbnail?path={path}&type=ui"
+        })
+        
+    return {"results": formatted}
+
+
+@app.get("/storyline")
+def get_storyline(gap: int = 30):
+    """
+    Agrupa cronológicamente (gap en mins) y extrae el medoide visual de cada capítulo.
+    """
+    from services.storyline_builder import build_storyline
+    global current_directory
+    
+    if current_directory is None:
+        return {"error": "Directorio no seleccionado"}
+        
+    storyline = build_storyline(current_directory, gap_minutes=gap)
+    return {"storyline": storyline}
 
 
 @app.get("/thumbnail")
@@ -552,7 +598,7 @@ def calibration_label(data: LabelRequest):
     try:
         directory = str(Path(data.photo_path).parent)
         a = load_analysis(init_store(directory), data.photo_path,
-                          os.path.getmtime(data.photo_path))
+                          _safe_getmtime(data.photo_path))
         if a and 0 <= data.face_index < len(a.face_attrs):
             feats = face_mesh.feature_vector(face_mesh.from_dict(a.face_attrs[data.face_index]))
     except Exception:
@@ -1048,6 +1094,8 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         tasks = get_ingest_tasks(directory)
         total = len(tasks)
         
+        _job_state["phase_text"] = "Seleccionando fotos y analizando gestos..."
+        
         # Inicializar cachés globales
         global _thumbnail_cache, _thumbnail_duel_cache
         _thumbnail_cache.clear()
@@ -1072,7 +1120,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             to_process = []
             
             for path, linked_raw in batch_tasks:
-                current_mtime = os.path.getmtime(path)
+                current_mtime = _safe_getmtime(path)
                 ans = load_analysis(conn, str(path), current_mtime)
                 ui_path, duel_path = get_thumbnail_cache_paths(str(path))
                 if ans and ui_path.exists() and duel_path.exists():
@@ -1106,7 +1154,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             for record in batch_records:
                 global_idx = len(records)
                 
-                current_mtime = os.path.getmtime(record.path) if not record.error else 0.0
+                current_mtime = _safe_getmtime(record.path) if not record.error else 0.0
                 ans = load_analysis(conn, record.path, current_mtime)
                 
                 if record.error:
@@ -1146,7 +1194,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             "success": total - errors,
             "errors": errors,
             "elapsed_seconds": round(elapsed, 1),
-            "images_per_second": round(total / elapsed, 1) if elapsed > 0 else 0,
+            "images_per_second": round(total / max(elapsed, 0.001), 1),
         }
 
         # G3: sobre los conteos por-cara que ya midió la geometría, aplicar el
@@ -1160,6 +1208,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             logger.info(f"G3 (calibración) ajustó los conteos de cara en {refinadas} fotos.")
 
         # FASE 3: Clustering
+        _job_state["phase_text"] = "Agrupando fotos por ráfaga y similitud..."
         if prefs.get("detect_duplicates", True):
             clusters = cluster_images(
                 [r.phash for r in records],
@@ -1176,11 +1225,10 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 for i in range(len(records))
             ]
 
-        # FASE 3b: Embeddings visuales (solo fotos en clusters con >1 imagen,
-        # donde hay que desempatar). Caché en disco: re-correr un evento no
-        # re-embebe. Si el modelo CLIP no está, se omite sin error.
+        # FASE 3b: Embeddings visuales
         from services import embedding_service
         if embedding_service.is_available():
+            _job_state["phase_text"] = "Extrayendo vectores de estilo visual (CLIP)..."
             multi_indices = [
                 idx for c in clusters if len(c.image_indices) > 1
                 for idx in c.image_indices
@@ -1215,10 +1263,10 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         _job_state["progress"] = 90.0
 
         # FASE 3c: Pre-edición — sesiones de luz y ajustes por foto.
-        # Analiza todas las fotos en orden temporal; se aplica solo a selected.
         develop_by_idx: dict[int, dict] = {}
         preset_data = None
         if pre_edit_enabled:
+            _job_state["phase_text"] = "Aplicando filtros y pre revelados..."
             preset_path = pre_edit_prefs.get("preset_path") or ""
             if preset_path and Path(preset_path).exists():
                 preset_data = load_preset(preset_path)
@@ -1244,10 +1292,6 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 "photos": len(develop_by_idx),
             }
 
-            # Fase J: fusionar el "look" aprendido por escena. Guardado:
-            # setdefault (nunca pisa exposición/WB de pre_edit), embedding
-            # solo-caché (sin recargar) y no-op si no hay recetas. Se aplica
-            # a las fotos que ya tienen embedding; crece al cachearse más.
             from services.develop_style import load_recipes, style_for_scene
             from services.scene_grouping import nearest_scene
             from services import embedding_service as _emb_svc
@@ -1257,12 +1301,34 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 for i in develop_by_idx:
                     emb = _emb_svc.embed_path(records[i].path, None)
                     estilo = style_for_scene(nearest_scene(emb), recipes) if emb is not None else {}
-                    for k, v in estilo.items():
-                        develop_by_idx[i].setdefault(k, v)
-                    aplicadas += bool(estilo)
+                    if estilo:
+                        develop_by_idx[i].update(estilo)  # PRIORIDAD al estilo aprendido
+                        aplicadas += 1
                 _job_state["stats"]["develop_style"] = {"fotos": aplicadas}
 
+            # ARMONIZACIÓN POR CLUSTER
+            for cluster in clusters:
+                if len(cluster.image_indices) > 1:
+                    c_exps, c_temps, c_tints = [], [], []
+                    for idx in cluster.image_indices:
+                        if idx in develop_by_idx:
+                            c_exps.append(develop_by_idx[idx].get("Exposure2012", 0.0))
+                            c_temps.append(develop_by_idx[idx].get("IncrementalTemperature", 0.0))
+                            c_tints.append(develop_by_idx[idx].get("IncrementalTint", 0.0))
+                    
+                    if c_exps:
+                        med_exp = float(np.median(c_exps))
+                        med_temp = float(np.median(c_temps))
+                        med_tint = float(np.median(c_tints))
+                        
+                        for idx in cluster.image_indices:
+                            if idx in develop_by_idx:
+                                develop_by_idx[idx]["Exposure2012"] = round(med_exp, 2)
+                                develop_by_idx[idx]["IncrementalTemperature"] = round(med_temp, 1)
+                                develop_by_idx[idx]["IncrementalTint"] = round(med_tint, 1)
+
         # FASE 4a: elegir representative por cluster y calcular su score
+        _job_state["phase_text"] = "Seleccionando las mejores fotos y aplicando reglas..."
         ratings_map = settings["ratings_mapping"]
         auto_crop_level = prefs.get("auto_crop", "minimo")
         results = []
@@ -1279,22 +1345,13 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             if not cluster.image_indices:
                 continue
 
-            # Gates técnicos: el representative se elige solo entre las fotos
-            # sin defectos técnicos relativos (ojos cerrados, cara borrosa),
-            # si es que existe al menos una alternativa limpia en el cluster.
             candidates, motivos_gate = apply_technical_gates_explained(
                 cluster.image_indices,
-                [a.any_closed_eyes for a in analyses],
+                [a.face_attrs for a in analyses],
                 [a.face_sharpness for a in analyses]
             )
             gate_reasons.update(motivos_gate)
 
-            # Ranking:
-            # - Con gusto entrenado (≥ MIN_EXAMPLES) → score del taste model
-            #   sobre el embedding.
-            # - Fallback frío → combinado blur+heurísticas, ambos en 0..1.
-            # Se puntúa el cluster ENTERO, no solo los supervivientes: el duelo
-            # muestra también a los gateados y necesita ordenarlos.
             for idx in cluster.image_indices:
                 a = analyses[idx]
                 blur_norm = min(1.0, a.blur_score / SHARP_REF)
@@ -1305,26 +1362,37 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                         score = taste_model.predict_score(emb)
                 all_scores[idx] = score
 
-            # El representative sale solo de los que pasaron los gates.
             best_idx = max(candidates, key=lambda i: all_scores[i])
-            cluster.representative_index = best_idx
-            rep_scores[best_idx] = all_scores[best_idx]
-
-            # Margen de la decisión: cuánto le sacó la ganadora a la segunda.
-            # Margen chico = decisión reñida → es lo que conviene que el
-            # fotógrafo revise (Fase S). Revisar 30 dudosas rinde más que 182.
+            
             if len(candidates) > 1:
-                ordenados = sorted((all_scores[i] for i in candidates), reverse=True)
-                margen = round(ordenados[0] - ordenados[1], 4)
+                cands_sorted = sorted(candidates, key=lambda i: all_scores[i], reverse=True)
+                margen = round(all_scores[cands_sorted[0]] - all_scores[cands_sorted[1]], 4)
+                
+                # FASE S: Refinamiento VLM si la decisión está muy reñida
+                if prefs.get("use_vlm_refinement", False) and margen < 0.05:
+                    _job_state["phase_text"] = "La IA está desempatando algunas ráfagas..."
+                    from services.vlm_refiner import decide_winner
+                    top_paths = [records[i].path for i in cands_sorted[:3]]
+                    vlm_winner_idx = decide_winner(top_paths)
+                    if vlm_winner_idx is not None:
+                        # Reemplazamos la ganadora fría por la que eligió el VLM
+                        best_idx = cands_sorted[vlm_winner_idx]
+                        decidido_por[best_idx] = "vlm"
             else:
                 margen = 1.0        # sin alternativa real: nada que dudar
+                
+            cluster.representative_index = best_idx
+            rep_scores[best_idx] = all_scores[best_idx]
+            
             for idx in cluster.image_indices:
                 margenes[idx] = margen
 
             # QUIÉN decidió: si los gates dejaron una sola candidata, ganó por
             # el gate, NO por score (afirmar "mejor score" ahí sería falso).
             if len(cluster.image_indices) > 1:
-                if len(candidates) == 1 and motivos_gate:
+                if best_idx in decidido_por and decidido_por[best_idx] == "vlm":
+                    pass # Ya se asignó
+                elif len(candidates) == 1 and motivos_gate:
                     decidido_por[best_idx] = "gate"
                 elif use_taste:
                     decidido_por[best_idx] = "gusto"
@@ -1377,14 +1445,14 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         # baja nada. No-op si falta el modelo o si el análisis vino de caché.
         if prefs.get("ensure_person_coverage", True):
             from services.face_identity import group_event_identities
-            from services.decision import photos_for_coverage
+            from services.decision import photos_for_group_coverage
 
             embs_por_foto = {
                 a.index: a.face_identities for a in analyses if a.face_identities
             }
             if embs_por_foto:
                 identidades = group_event_identities(embs_por_foto)
-                promovidas = photos_for_coverage(
+                promovidas = photos_for_group_coverage(
                     identidades, set(final_selected), all_scores)
                 por_path = {r["path"]: r for r in results}
                 aplicadas = 0
@@ -1396,7 +1464,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                         r["label"] = "selected"
                         r["stars"] = ratings_map.get("selected", {}).get("stars", 4)
                         r["color"] = ratings_map.get("selected", {}).get("color", "")
-                        r["reasons"] = ["✔ Única buena de esta persona en el evento"]
+                        r["reasons"] = ["✔ Única buena de esta persona o grupo en el evento"]
                         aplicadas += 1
                 _job_state["stats"]["person_coverage"] = {
                     "identidades": len({i for ids in identidades.values() for i in ids}),
@@ -1412,6 +1480,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         _job_state["stats"]["backup"] = backup_stats
 
         from services.xmp_exporter import export_results_to_xmp
+        _job_state["phase_text"] = "Dando los toques finales..."
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
         if mode == "cull":
             # Solo selección: labels/estrellas/banderines sí; edición NO

@@ -49,6 +49,7 @@ class ImageRecord:
     thumb_ai: np.ndarray = field(repr=False, default=None)  # Array para IA
     phash: str = ""
     exif_datetime: str = ""
+    iso: int = 100
     width: int = 0
     height: int = 0
     error: str = ""
@@ -147,15 +148,25 @@ def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, bytes, np.ndarray]:
     return thumb_ui_bytes, thumb_duel_bytes, thumb_ai_arr
 
 
-def _get_exif_datetime(path: Path) -> str:
-    """Extrae la fecha/hora de captura desde los metadatos EXIF."""
+def _get_exif_metadata(path: Path) -> tuple[str, int]:
+    """Extrae la fecha/hora de captura y el ISO desde los metadatos EXIF."""
+    dt_str = ""
+    iso_val = 100
     try:
         with open(path, "rb") as f:
-            tags = exifread.process_file(f, stop_tag="EXIF DateTimeOriginal", details=False)
+            tags = exifread.process_file(f, details=False)
         dt = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
-        return str(dt) if dt else ""
+        dt_str = str(dt) if dt else ""
+        
+        iso_tag = tags.get("EXIF ISOSpeedRatings")
+        if iso_tag and iso_tag.values:
+            try:
+                iso_val = int(iso_tag.values[0])
+            except ValueError:
+                pass
     except Exception:
-        return ""
+        pass
+    return dt_str, iso_val
 
 
 def _compute_phash(arr: np.ndarray) -> str:
@@ -206,8 +217,10 @@ def process_single_image(path: Path, linked_raw_path: str | None = None) -> Imag
     # 3. Calcular pHash para detección de duplicados
     record.phash = _compute_phash(arr)
 
-    # 4. Extraer fecha EXIF
-    record.exif_datetime = _get_exif_datetime(path)
+    # 4. Extraer metadatos EXIF (fecha e ISO)
+    dt_str, iso_val = _get_exif_metadata(path)
+    record.exif_datetime = dt_str
+    record.iso = iso_val
 
     return record
 
@@ -298,7 +311,7 @@ def ingest_directory(
         "success": total - errors,
         "errors": errors,
         "elapsed_seconds": round(elapsed, 2),
-        "images_per_second": round(total / elapsed, 1) if elapsed > 0 else 0,
+        "images_per_second": round(total / max(elapsed, 0.001), 1),
     }
     logger.info(
         f"Ingesta completa: {stats['success']}/{total} imágenes en "

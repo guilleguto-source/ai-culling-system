@@ -3,7 +3,6 @@ import sqlite3
 import json
 import hashlib
 from pathlib import Path
-from dataclasses import asdict
 from typing import Optional
 import os
 
@@ -64,7 +63,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 def init_store(directory: str) -> sqlite3.Connection:
     db_path = _get_db_path(directory)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
     _ensure_schema(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS photo_analysis (
@@ -100,31 +100,14 @@ def init_store(directory: str) -> sqlite3.Connection:
     conn.commit()
     return conn
 
-def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> Optional[PhotoAnalysis]:
-    cursor = conn.execute("SELECT * FROM photo_analysis WHERE path = ?", (path,))
-    row = cursor.fetchone()
-    if not row:
-        return None
-    
-    col_names = [description[0] for description in cursor.description]
-    data = dict(zip(col_names, row))
-    
-    if data["version"] != ANALYSIS_VERSION or data["mtime"] != current_mtime:
-        return None
-
-    # Guardia de CONTENIDO (además de la versión): una fila con caras pero sin
-    # atributos medidos es inservible para calibración/descartes. Puede pasar
-    # si un backend viejo en memoria escribió con lógica anterior — el número
-    # de versión no protege contra procesos desactualizados.
-    if (data["face_count"] or 0) > 0 and data["face_attrs"] in (None, "", "[]"):
-        from services import face_mesh
-        if face_mesh.is_available():
-            return None     # se re-analiza y esta vez sí se mide
-
-
+def _row_to_analysis(data: dict) -> PhotoAnalysis:
+    """Reconstruye un PhotoAnalysis desde una fila del caché (dict col→valor).
+    Único lugar que conoce el mapeo columnas→objeto: load_analysis y
+    get_all_analysis lo comparten para no divergir."""
     return PhotoAnalysis(
         index=data["index_val"],
         path=data["path"],
+        mtime=data["mtime"],
         scene_type=data["scene_type"],
         face_bboxes=json.loads(data["face_bboxes"]) if data["face_bboxes"] else [],
         eye_landmarks=json.loads(data["eye_landmarks"]) if data["eye_landmarks"] else [],
@@ -149,6 +132,30 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
         pre_wb=tuple(json.loads(data["pre_wb"])) if data["pre_wb"] else None,
         error=data["error"] if data["error"] else ""
     )
+
+
+def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> Optional[PhotoAnalysis]:
+    cursor = conn.execute("SELECT * FROM photo_analysis WHERE path = ?", (path,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+
+    col_names = [description[0] for description in cursor.description]
+    data = dict(zip(col_names, row))
+
+    if data["version"] != ANALYSIS_VERSION or data["mtime"] != current_mtime:
+        return None
+
+    # Guardia de CONTENIDO (además de la versión): una fila con caras pero sin
+    # atributos medidos es inservible para calibración/descartes. Puede pasar
+    # si un backend viejo en memoria escribió con lógica anterior — el número
+    # de versión no protege contra procesos desactualizados.
+    if (data["face_count"] or 0) > 0 and data["face_attrs"] in (None, "", "[]"):
+        from services import face_mesh
+        if face_mesh.is_available():
+            return None     # se re-analiza y esta vez sí se mide
+
+    return _row_to_analysis(data)
 
 def refresh_mtimes(conn: sqlite3.Connection, paths: list[str]) -> int:
     """
@@ -214,3 +221,33 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         analysis.error
     ))
     conn.commit()
+
+def get_all_analysis(directory: str) -> list[PhotoAnalysis]:
+    """Todo el análisis cacheado de un directorio, SIN comprobar mtime ni
+    versión (lo consumen la búsqueda semántica y el storyline, que trabajan
+    sobre lo ya analizado). Cada objeto trae su `mtime` para poder resolver el
+    embedding cacheado sin re-stat del disco."""
+    db_path = _get_db_path(directory)
+    if not db_path.exists():
+        return []
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute("SELECT * FROM photo_analysis")
+        col_names = [description[0] for description in cursor.description]
+        results = []
+        descartadas = 0
+        for row in cursor.fetchall():
+            data = dict(zip(col_names, row))
+            try:
+                results.append(_row_to_analysis(data))
+            except Exception as e:
+                descartadas += 1
+                logger.warning("Fila de análisis corrupta (%s): %s",
+                               data.get("path", "?"), e)
+        if descartadas:
+            logger.warning("get_all_analysis: %d filas corruptas descartadas de %s",
+                           descartadas, directory)
+        return results
+    finally:
+        conn.close()

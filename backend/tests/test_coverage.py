@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.face_identity import group_event_identities
-from services.decision import photos_for_coverage
+from services.decision import photos_for_group_coverage
 
 
 def _v(*xs):
@@ -39,13 +39,13 @@ def test_cobertura_promueve_persona_sin_seleccion():
     # A está en fotos 0,1 ; B solo en foto 2. Seleccionada: {0} (tiene A).
     identities = {0: [0], 1: [0], 2: [1]}   # id 0 = A, id 1 = B
     scores = {0: 0.9, 1: 0.5, 2: 0.7}
-    promover = photos_for_coverage(identities, selected={0}, score_by_photo=scores)
+    promover = photos_for_group_coverage(identities, selected={0}, score_by_photo=scores)
     assert promover == {2}   # B no estaba cubierta → se promueve su única foto
 
 
 def test_cobertura_no_promueve_si_ya_cubierta():
     identities = {0: [0], 1: [0]}   # solo la persona A
-    promover = photos_for_coverage(identities, selected={0}, score_by_photo={0: 0.9, 1: 0.5})
+    promover = photos_for_group_coverage(identities, selected={0}, score_by_photo={0: 0.9, 1: 0.5})
     assert promover == set()   # A ya tiene una seleccionada
 
 
@@ -53,5 +53,5 @@ def test_cobertura_elige_la_de_mayor_score():
     # B (id 1) en fotos 1 y 2, ninguna seleccionada → promueve la de más score
     identities = {0: [0], 1: [1], 2: [1]}
     scores = {0: 0.9, 1: 0.4, 2: 0.8}
-    promover = photos_for_coverage(identities, selected={0}, score_by_photo=scores)
+    promover = photos_for_group_coverage(identities, selected={0}, score_by_photo=scores)
     assert promover == {2}

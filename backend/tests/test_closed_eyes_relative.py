@@ -26,10 +26,20 @@ def _rec(i):
 
 
 def _an(i, closed=0, faces=3, away=0):
+    # face_attrs (geometría cruda) + los conteos que en producción derivan de
+    # ellos (analyze_photo) y refina el clasificador. El gate lee los conteos.
+    attrs = []
+    for _ in range(closed):
+        attrs.append({"valid": True, "ear": 0.1, "blink": 0.8, "gaze_out": 0.0, "yaw": 0.0})
+    for _ in range(away):
+        attrs.append({"valid": True, "ear": 0.3, "blink": 0.1, "gaze_out": 0.8, "yaw": 0.0})
+    while len(attrs) < faces:
+        attrs.append({"valid": True, "ear": 0.3, "blink": 0.1, "gaze_out": 0.1, "yaw": 0.0})
     return PhotoAnalysis(index=i, path=f"C:/ev/IMG_{i}.jpg", scene_type="portrait",
-                         closed_eyes_count=closed, face_count=faces,
-                         valid_face_count=faces, looking_away_count=away,
-                         any_closed_eyes=closed > 0, blur_score=500.0)
+                         face_attrs=attrs, blur_score=500.0,
+                         closed_eyes_count=closed, looking_away_count=away,
+                         face_count=faces, valid_face_count=faces,
+                         any_closed_eyes=closed > 0)
 
 
 SETTINGS = {"ratings_mapping": {

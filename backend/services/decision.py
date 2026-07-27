@@ -5,10 +5,12 @@ from services.analysis import PhotoAnalysis
 from services.clustering import ImageCluster
 from services.auto_crop import LEVEL_LIMITS, propose_crop, detect_horizon_angle
 
+
 def _bad_faces(a: PhotoAnalysis) -> int:
-    """Caras con problema según el criterio del fotógrafo: ojos cerrados o
-    cara virada (no mira a cámara). Solo cuenta sobre caras que MediaPipe
-    validó — las detecciones basura de YuNet (decoración) no suman."""
+    """Caras con problema según el criterio del fotógrafo: ojos cerrados o cara
+    virada (no mira a cámara). Usa los CONTEOS ya refinados (analyze_photo +
+    clasificador aprendido de Fase G3), no re-umbraliza face_attrs: derivar de
+    nuevo con cortes fijos descartaría lo que el modelo aprendió del usuario."""
     return a.closed_eyes_count + a.looking_away_count
 
 
@@ -41,6 +43,7 @@ def build_reasons(
             "gate": "✔ Única sin defectos técnicos de la ráfaga",
             "gusto": "✔ La que más se parece a lo que sueles elegir",
             "score": "✔ Mejor combinación de nitidez y composición",
+            "vlm": "✔ Elegida por IA visual profunda para desempatar (mejor expresión)"
         }.get(criterio, "✔ Elegida de la ráfaga"))
         if a and a.valid_face_count:
             if not a.closed_eyes_count:
@@ -67,31 +70,46 @@ def build_reasons(
     return razones or ["Alternativa válida — la elegida puntuó algo mejor"]
 
 
-def photos_for_coverage(
+def photos_for_group_coverage(
     identities_by_photo: dict[int, list[int]],
     selected: set[int],
     score_by_photo: dict[int, float],
 ) -> set[int]:
     """
-    Garantía "al menos una buena foto de cada persona" (Fase L).
-
-    Dada la identidad de las personas por foto, el conjunto ya seleccionado y el
-    score de cada foto, devuelve las fotos a PROMOVER: para cada identidad que
-    no tenga ninguna foto seleccionada, su foto de mayor score. No baja nada —
-    solo suma cobertura.
+    Fase 6: Garantía de Grupos Únicos.
+    Identifica combinaciones únicas de personas (frozensets de tamaño >= 2) y
+    personas individuales, y promueve la mejor foto de los grupos/personas
+    que no hayan salido ya en las selecciones base.
     """
-    cubiertas: set[int] = set()
-    todas: set[int] = set()
+    from collections import Counter
+    
+    counts = Counter(i for ids in identities_by_photo.values() for i in ids)
+    
+    # 1. Identificar grupos (tamaño >= 2)
+    grupos_por_foto: dict[int, frozenset] = {}
     for idx, ids in identities_by_photo.items():
-        todas.update(ids)
-        if idx in selected:
-            cubiertas.update(ids)
-
+        if len(ids) >= 2:
+            grupos_por_foto[idx] = frozenset(ids)
+            
+    cubiertos: set[frozenset] = {grupos_por_foto[i] for i in selected if i in grupos_por_foto}
+    todos_los_grupos = set(grupos_por_foto.values())
+    
     promover: set[int] = set()
-    for ident in todas - cubiertas:
-        candidatas = [i for i, ids in identities_by_photo.items() if ident in ids]
+    # 2. Para cada grupo no cubierto, rescatar la mejor
+    for g in todos_los_grupos - cubiertos:
+        candidatas = [i for i, gr in grupos_por_foto.items() if gr == g]
         if candidatas:
             promover.add(max(candidatas, key=lambda i: score_by_photo.get(i, 0.0)))
+            
+    # 3. Cobertura de personas individuales (fallback de seguridad)
+    personas_cubiertas = {p for i in (selected | promover) for p in identities_by_photo.get(i, [])}
+    todas_las_personas = set(counts.keys())
+    
+    for p in todas_las_personas - personas_cubiertas:
+        cands = [i for i, ids in identities_by_photo.items() if p in ids]
+        if cands:
+            promover.add(max(cands, key=lambda i: score_by_photo.get(i, 0.0)))
+            
     return promover
 
 
@@ -218,6 +236,13 @@ def apply_decision_logic(
                 "color": ratings_map.get(label, {}).get("color", "") if label else "",
                 "blur_score": round(analyses[idx].blur_score, 2) if idx < len(analyses) else 0,
                 "score": round(scores.get(idx, 0.0), 4),
+                "diagnostics": {
+                    "aesthetic_score": round(analyses[idx].aesthetic_score, 4) if idx < len(analyses) else 0.5,
+                    "valid_face_count": analyses[idx].valid_face_count if idx < len(analyses) else 0,
+                    "closed_eyes_count": analyses[idx].closed_eyes_count if idx < len(analyses) else 0,
+                    "looking_away_count": analyses[idx].looking_away_count if idx < len(analyses) else 0,
+                    "smiling_count": analyses[idx].smiling_count if idx < len(analyses) else 0
+                },
                 "reasons": build_reasons(
                     idx, is_representative, analyses, cluster.representative_index,
                     gate_reasons, decided_by,

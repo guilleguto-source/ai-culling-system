@@ -103,6 +103,25 @@ def _cache_file(path: str, mtime: float) -> Path:
     return CACHE_DIR / f"{key}.npy"
 
 
+def load_cached_embedding(path: str, mtime: float) -> np.ndarray | None:
+    """
+    Devuelve el embedding YA cacheado en disco (o None si no está / está
+    corrupto). No decodifica la imagen ni toca el archivo original — pensado
+    para consumidores que ya tienen el mtime en memoria (búsqueda semántica,
+    storyline) y no deben golpear el disco por foto, importante con el NAS.
+    """
+    cf = _cache_file(path, mtime)
+    if not cf.exists():
+        return None
+    try:
+        vec = np.load(cf)
+        if vec.shape == (EMBEDDING_DIM,):
+            return vec
+    except Exception:
+        pass  # caché corrupto
+    return None
+
+
 def embed_path(path: str, img_rgb: np.ndarray | None = None) -> np.ndarray | None:
     """
     Embedding de una foto con caché en disco. Re-correr un evento no re-embebe
@@ -119,14 +138,9 @@ def embed_path(path: str, img_rgb: np.ndarray | None = None) -> np.ndarray | Non
         # Archivo inaccesible: sin caché, embeber directo si hay píxeles
         return embed(img_rgb) if img_rgb is not None else None
 
-    cf = _cache_file(path, mtime)
-    if cf.exists():
-        try:
-            vec = np.load(cf)
-            if vec.shape == (EMBEDDING_DIM,):
-                return vec
-        except Exception:
-            pass  # caché corrupto: recalcular
+    cached = load_cached_embedding(path, mtime)
+    if cached is not None:
+        return cached
 
     if img_rgb is None:
         return None
@@ -134,7 +148,7 @@ def embed_path(path: str, img_rgb: np.ndarray | None = None) -> np.ndarray | Non
     if vec is not None:
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            np.save(cf, vec)
+            np.save(_cache_file(path, mtime), vec)
         except Exception as e:
             logger.warning(f"No se pudo guardar caché de embedding: {e}")
     return vec

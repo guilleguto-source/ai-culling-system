@@ -46,18 +46,20 @@ def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
 
     s = settings_manager.load_settings()
     rm = s["ratings_mapping"]
-    assert s["settings_version"] == 5
+    assert s["settings_version"] == 6
     assert rm["selected"]["flag"] == "pick"
     assert rm["blurry"]["flag"] == "reject"
     assert rm["blurry"]["color"] == "Rojo"          # v4: masculino (set real de LR)
     assert rm["duplicates"]["flag"] == "none"
     assert rm["duplicates"]["color"] == ""          # duplicadas nunca se marcan
-    assert rm["closed_eyes"]["color"] == "Morado"   # v5 no toca si duplicates ya estaba limpio
+    assert rm["closed_eyes"]["color"] == ""         # v6 limpia closed_eyes
+    assert rm["closed_eyes"]["flag"] == "none"
 
 
 def test_migracion_v5_corrige_rojo_mal_puesto_en_duplicadas(tmp_path, monkeypatch):
     """El nombre 'Trash' de la UI llevó a poner Rojo+rechazada en `duplicates`
-    (fotos buenas que perdieron su ráfaga). v5 mueve el rojo a los descartes."""
+    (fotos buenas que perdieron su ráfaga). v5 mueve el rojo a los descartes.
+    Luego v6 vuelve a limpiar closed_eyes."""
     old = {
         "settings_version": 4,
         "ratings_mapping": {
@@ -76,7 +78,7 @@ def test_migracion_v5_corrige_rojo_mal_puesto_en_duplicadas(tmp_path, monkeypatc
     rm = settings_manager.load_settings()["ratings_mapping"]
     assert rm["duplicates"] == {"stars": 0, "color": "", "flag": "none"}
     assert rm["blurry"]["color"] == "Rojo" and rm["blurry"]["flag"] == "reject"
-    assert rm["closed_eyes"]["color"] == "Rojo" and rm["closed_eyes"]["flag"] == "reject"
+    assert rm["closed_eyes"]["color"] == "" and rm["closed_eyes"]["flag"] == "none"
 
 
 def test_normalize_colors_canoniza_genero_e_idioma():

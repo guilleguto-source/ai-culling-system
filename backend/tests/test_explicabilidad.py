@@ -18,16 +18,21 @@ from services.decision import build_reasons
 
 def test_gate_ojos_reporta_motivo():
     # foto 1 con ojos cerrados, foto 0 sin ellos
+    attrs = [
+        [{"valid": True, "ear": 0.3}],
+        [{"valid": True, "ear": 0.1}],
+    ]
     sobreviven, motivos = apply_technical_gates_explained(
-        [0, 1], closed_flags=[False, True], face_sharpness=[[], []])
+        [0, 1], face_attrs_list=attrs, face_sharpness=[[], []])
     assert sobreviven == [0]
     assert motivos == {1: GATE_OJOS}
 
 
 def test_gate_nitidez_reporta_motivo():
     # foto 1 con rostro muy blando frente a la mediana del cluster
+    attrs = [[{"valid": True, "ear": 0.3}]] * 3
     sobreviven, motivos = apply_technical_gates_explained(
-        [0, 1, 2], closed_flags=[False] * 3,
+        [0, 1, 2], face_attrs_list=attrs,
         face_sharpness=[[100.0], [5.0], [120.0]])
     assert 1 not in sobreviven
     assert motivos[1] == GATE_NITIDEZ
@@ -35,8 +40,12 @@ def test_gate_nitidez_reporta_motivo():
 
 def test_si_todas_fallan_no_hay_motivos():
     """Si todas tienen ojos cerrados, el gate no se aplica: nadie 'perdió'."""
+    attrs = [
+        [{"valid": True, "ear": 0.1}],
+        [{"valid": True, "ear": 0.1}],
+    ]
     sobreviven, motivos = apply_technical_gates_explained(
-        [0, 1], closed_flags=[True, True], face_sharpness=[[], []])
+        [0, 1], face_attrs_list=attrs, face_sharpness=[[], []])
     assert sorted(sobreviven) == [0, 1] and motivos == {}
 
 

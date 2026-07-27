@@ -20,12 +20,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Rojo = descarte real (se borra): pérdida total, o la peor de la ráfaga
     # (más ojos cerrados que la ganadora). Las duplicadas son fotos BUENAS que
     # solo perdieron su grupo → sin marcar, para no ensuciar Lightroom.
-    "settings_version": 5,
+    "settings_version": 6,
     "ratings_mapping": {
         "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
         "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
         "blurry": {"stars": 0, "color": "Rojo", "flag": "reject"},
-        "closed_eyes": {"stars": 0, "color": "Rojo", "flag": "reject"},
+        "closed_eyes": {"stars": 0, "color": "", "flag": "none"},
         "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
@@ -135,6 +135,17 @@ def load_settings() -> dict[str, Any]:
                     rm[label]["color"] = "Rojo"
                     rm[label]["flag"] = "reject"
             data["settings_version"] = 5
+            save_settings(data)
+        # Migración v6: closed_eyes ya no se marca como Rojo/reject.
+        # Eran fotos buenas que perdieron por parpadeo comparativo, marcarlas
+        # en rojo las confunde con basura real (blurry/exposure).
+        if data.get("settings_version", 1) < 6 and "ratings_mapping" in data:
+            rm = data["ratings_mapping"]
+            ce = rm.get("closed_eyes", {})
+            if ce.get("color") == "Rojo" or ce.get("flag") == "reject":
+                ce["color"] = ""
+                ce["flag"] = "none"
+            data["settings_version"] = 6
             save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)

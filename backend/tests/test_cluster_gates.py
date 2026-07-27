@@ -16,52 +16,66 @@ from services.face_assessment import compute_face_sharpness
 
 def test_gate_ojos_descarta_si_hay_alternativa():
     indices = [0, 1, 2]
-    closed = [False, True, False]
+    attrs = [
+        [{"valid": True, "ear": 0.3, "blink": 0.1}],  # Abierto
+        [{"valid": True, "ear": 0.1, "blink": 0.8}],  # Cerrado
+        [{"valid": True, "ear": 0.3, "blink": 0.1}],  # Abierto
+    ]
     sharp = [[], [], []]
-    assert apply_technical_gates(indices, closed, sharp) == [0, 2]
+    assert apply_technical_gates(indices, attrs, sharp) == [0, 2]
 
 
 def test_gate_ojos_no_descarta_si_todas_cerradas():
     indices = [0, 1]
-    closed = [True, True]
+    attrs = [
+        [{"valid": True, "ear": 0.1, "blink": 0.8}],
+        [{"valid": True, "ear": 0.1, "blink": 0.8}],
+    ]
     sharp = [[], []]
-    assert apply_technical_gates(indices, closed, sharp) == [0, 1]
+    assert apply_technical_gates(indices, attrs, sharp) == [0, 1]
 
 
 def test_gate_nitidez_descarta_cara_borrosa():
     indices = [0, 1, 2]
-    closed = [False, False, False]
+    attrs = [
+        [{"valid": True, "ear": 0.3}],
+        [{"valid": True, "ear": 0.3}],
+        [{"valid": True, "ear": 0.3}],
+    ]
     # Imagen 1 tiene una cara muy borrosa (10) frente a mediana ~200 → umbral 100
     sharp = [[220.0, 210.0], [10.0, 250.0], [190.0]]
-    assert apply_technical_gates(indices, closed, sharp) == [0, 2]
+    assert apply_technical_gates(indices, attrs, sharp) == [0, 2]
 
 
 def test_gate_nitidez_no_descarta_si_todas_borrosas():
     indices = [0, 1]
-    closed = [False, False]
+    attrs = [[{"valid": True, "ear": 0.3}], [{"valid": True, "ear": 0.3}]]
     # Ambas igual de borrosas: mediana*0.5 no elimina a ninguna
     sharp = [[12.0], [10.0]]
-    assert apply_technical_gates(indices, closed, sharp) == [0, 1]
+    assert apply_technical_gates(indices, attrs, sharp) == [0, 1]
 
 
 def test_fotos_sin_caras_no_participan_del_gate_nitidez():
     indices = [0, 1, 2]
-    closed = [False, False, False]
+    attrs = [[{"valid": True, "ear": 0.3}], [], [{"valid": True, "ear": 0.3}]]
     sharp = [[200.0], [], [5.0]]  # la 1 no tiene caras
-    result = apply_technical_gates(indices, closed, sharp)
+    result = apply_technical_gates(indices, attrs, sharp)
     assert 1 in result           # se conserva
     assert 2 not in result       # cara borrosa descartada
 
 
 def test_cluster_de_una_foto_pasa_directo():
-    assert apply_technical_gates([7], [True] * 8, [[]] * 8) == [7]
+    assert apply_technical_gates([7], [[{"valid": True, "ear": 0.1}]] * 8, [[]] * 8) == [7]
 
 
 def test_gates_combinados_nunca_devuelven_vacio():
     indices = [0, 1]
-    closed = [True, True]
+    attrs = [
+        [{"valid": True, "ear": 0.1}],
+        [{"valid": True, "ear": 0.1}],
+    ]
     sharp = [[5.0], [4.0]]
-    result = apply_technical_gates(indices, closed, sharp)
+    result = apply_technical_gates(indices, attrs, sharp)
     assert result == [0, 1]
 
 
