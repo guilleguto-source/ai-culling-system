@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Loupe from './Loupe';
 
 const API = 'http://127.0.0.1:8000';
 
@@ -187,10 +188,12 @@ export default function CalibrationView({ directory }: { directory?: string }) {
         <div style={{ flex: 1, display: 'flex', gap: '16px', minHeight: 0 }}>
           {/* La cara */}
           <div className="glass-panel" style={{ flex: 1, minHeight: 0, display: 'flex',
-            flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
-            <img src={url} alt="cara"
-              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '6px' }} />
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+            flexDirection: 'column', padding: '12px' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <Loupe src={url} alt="cara"
+                style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '6px' }} />
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>
               {actual.photo_path.split(/[\\/]/).pop()} · cara {actual.face_index + 1}
               {' · '}duda {Math.round(actual.uncertainty * 100)}%
             </div>

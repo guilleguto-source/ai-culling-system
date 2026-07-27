@@ -20,50 +20,67 @@ export default function LearningPanel({ active }: { active: boolean }) {
       try {
         const r = await fetch(`${API}/learning/summary`);
         if (r.ok) setD(await r.json());
-      } catch { /* backend caído: el estado ya se muestra aparte */ }
+      } catch { }
     })();
   }, [active]);
 
   if (!d) return null;
 
   const filas: [string, string][] = [];
+  if (d.fotos_analizadas_ia)
+    filas.push(['Fotos analizadas (Fase Q)', fmt(d.fotos_analizadas_ia)]);
+  if (d.vectores_estilo)
+    filas.push(['Vectores CLIP (Estilo)', fmt(d.vectores_estilo)]);
   if (d.seleccionadas_aprendidas)
     filas.push(['Tus elecciones', fmt(d.seleccionadas_aprendidas)]);
   if (d.decisiones_gusto)
     filas.push(['Decisiones aprendidas', fmt(d.decisiones_gusto)]);
   if (d.escenas)
     filas.push(['Escenas descubiertas', String(d.escenas)]);
-  if (d.recorte_habitual_pct)
-    filas.push(['Tu recorte habitual', `${d.recorte_habitual_pct}% del cuadro`]);
   if (d.caras_calibradas)
     filas.push(['Rostros calibrados', fmt(d.caras_calibradas)]);
 
   if (filas.length === 0) return null;
 
+  // Calculo dummy de madurez basado en decisiones aprendidas (ejemplo: 5000 es 100%)
+  const madurez = Math.min(100, Math.max(5, (d.decisiones_gusto || d.seleccionadas_aprendidas || 0) / 50));
+
   return (
-    <div className="glass-panel" style={{ padding: '12px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px' }}>
-        <span style={{ fontSize: '0.95rem' }}>🧠</span>
-        <strong style={{ fontSize: '0.85rem' }}>Tu estilo</strong>
+    <div style={{
+      backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+      borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-amber), var(--accent-active))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-deep)', fontSize: '1.2rem', fontWeight: 'bold'
+        }}>
+          🧠
+        </div>
+        <div>
+          <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)', display: 'block' }}>Tu Estilo</strong>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Perfil IA de Culling</span>
+        </div>
       </div>
 
-      {filas.map(([etiqueta, valor]) => (
-        <div key={etiqueta} className="flex-between" style={{ fontSize: '0.75rem', padding: '3px 0' }}>
-          <span style={{ color: 'var(--text-muted)' }}>{etiqueta}</span>
-          <strong style={{ color: 'var(--text-primary)' }}>{valor}</strong>
-        </div>
-      ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {filas.map(([etiqueta, valor]) => (
+          <div key={etiqueta} className="flex-between" style={{ fontSize: '0.75rem' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>{etiqueta}</span>
+            <strong style={{ color: 'var(--text-primary)' }}>{valor}</strong>
+          </div>
+        ))}
+      </div>
 
-      {d.reconocimiento_personas && (
-        <div style={{ fontSize: '0.7rem', color: 'var(--status-selected-text)', marginTop: '8px' }}>
-          ✔ Reconocimiento de personas activo
+      <div style={{ marginTop: '4px' }}>
+        <div className="flex-between" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+          <span>Madurez del modelo</span>
+          <span>{Math.round(madurez)}%</span>
         </div>
-      )}
-      {d.eventos_pendientes_sync > 0 && (
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-          {d.eventos_pendientes_sync} evento(s) sin sincronizar
+        <div style={{ height: '4px', backgroundColor: 'var(--bg-surface)', borderRadius: '2px', overflow: 'hidden' }}>
+          <div style={{ width: `${madurez}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent-amber), var(--accent-hover))' }} />
         </div>
-      )}
+      </div>
     </div>
   );
 }

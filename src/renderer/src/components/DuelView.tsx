@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import Loupe from './Loupe';
 
 // El título dice QUIÉN decidió. Antes afirmaba siempre "mejor score", que es
 // falso cuando gana por un gate técnico (la elegida puede tener score menor).
@@ -234,10 +235,10 @@ export default function DuelView({ results }: { results: any[] }) {
                   : <strong>#{i + 1} · Alternativa</strong>}
               </div>
               <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
-                <img
+                <Loupe
                   src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}&size=duel`}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   alt={img.filename}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 />
               </div>
               <div className="flex-between" style={{ padding: '12px', fontSize: '0.85rem' }}>

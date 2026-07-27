@@ -1,0 +1,33 @@
+/* tokens.css */
+:root {
+  /* Fondos - 4 niveles de profundidad */
+  --bg-deep: #07080C;
+  --bg-surface: #0D0F14;
+  --bg-elevated: #13161D;
+  --bg-card: #181B24;
+  
+  /* Bordes - 3 niveles de intensidad (Ajustados para alto contraste) */
+  --border-subtle: rgba(255,255,255,0.10);
+  --border-default: rgba(255,255,255,0.16);
+  --border-strong: rgba(255,255,255,0.25);
+  
+  /* Texto - 4 niveles de jerarquía (Optimizado WCAG AA) */
+  --text-primary: #FFFFFF;
+  --text-secondary: #D1D7E6;
+  --text-tertiary: #A0ABC0;
+  --text-muted: #7E8B9B;
+  
+  /* Acentos funcionales */
+  --accent-amber: #E8923C;
+  --accent-teal: #2DD4A8;
+  --accent-rose: #E85D75;
+  --accent-blue: #5B8DEF;
+  
+  /* Radios */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  
+  /* Sombras */
+  --shadow-glow-amber: 0 0 20px rgba(232,146,60,0.08);
+}

@@ -24,8 +24,8 @@ function Fila({ titulo, ayuda, children }: { titulo: string; ayuda?: string; chi
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
       <div>
-        <div style={{ fontWeight: 500 }}>{titulo}</div>
-        {ayuda && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{ayuda}</div>}
+        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{titulo}</div>
+        {ayuda && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{ayuda}</div>}
       </div>
       {children}
     </div>
@@ -39,10 +39,10 @@ function Check({ checked, onChange, titulo, ayuda }: {
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+        style={{ width: '15px', height: '15px', flexShrink: 0, accentColor: 'var(--accent-amber)' }} />
       <div>
-        <div style={{ fontWeight: 500 }}>{titulo}</div>
-        {ayuda && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{ayuda}</div>}
+        <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{titulo}</div>
+        {ayuda && <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{ayuda}</div>}
       </div>
     </label>
   );
@@ -147,10 +147,10 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
           padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
         }}>
-          <h2 style={{ margin: 0, fontSize: '0.95rem' }}>Ajustes</h2>
+          <h2 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)' }}>Ajustes</h2>
           <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', color: 'var(--text-muted)',
-            cursor: 'pointer', fontSize: '0.95rem',
+            background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+            cursor: 'pointer', fontSize: '1.2rem', padding: '0 4px'
           }}>×</button>
         </div>
 

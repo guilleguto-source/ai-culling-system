@@ -1,46 +1,54 @@
+@import url('./styles/tokens.css');
+
 :root {
-  /* Guto Flow — gris oscuro azulado + acentos ámbar (logo) */
-  --bg-primary: #12151B;
-  --bg-secondary: #181C24;
-  --bg-tertiary: #20252F;
-  --bg-elevated: rgba(32, 37, 47, 0.6);
+  /* Legacy Mappings to new Dark Studio tokens */
+  --bg-primary: var(--bg-deep);
+  --bg-secondary: var(--bg-surface);
+  --bg-tertiary: var(--bg-elevated);
+  --bg-glass: rgba(13, 15, 20, 0.65);
 
-  --text-primary: #F5F3EE;
-  --text-secondary: #9BA1A6;
-  --text-muted: #62676D;
+  /* Accent Colors */
+  --accent-primary: var(--accent-amber);
+  --accent-hover: #FBBF24;
+  --accent-active: #D97706;
+  --accent-contrast: var(--bg-deep);
+  --accent-glow: rgba(232, 146, 60, 0.35);
 
-  --accent-primary: #E2A13B;   /* ámbar del logo */
-  --accent-hover: #F0B45A;
-  --accent-active: #C7882A;
-  --accent-contrast: #1A1408;  /* texto sobre ámbar */
-  
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  
-  /* Status Colors */
-  --status-selected-bg: rgba(34, 197, 94, 0.15);
-  --status-selected-text: #4ADE80;
-  --status-highlight-bg: rgba(59, 130, 246, 0.15);
-  --status-highlight-text: #60A5FA;
-  --status-blurry-bg: rgba(239, 68, 68, 0.15);
-  --status-blurry-text: #F87171;
-  --status-duplicate-bg: rgba(234, 179, 8, 0.15);
-  --status-duplicate-text: #FBBF24;
-  --status-closed-bg: rgba(168, 85, 247, 0.15);
-  --status-closed-text: #C084FC;
+  --border-subtle: var(--border-subtle);
+  --border-strong: var(--border-strong);
+  --border-focus: rgba(232, 146, 60, 0.5);
 
-  /* Geometry & Shadows */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-  --shadow-glow: 0 0 15px rgba(226, 161, 59, 0.3);
-  
-  /* Animations */
+  /* Status Colors mapped to Dark Studio semantic colors */
+  --status-selected-bg: rgba(45, 212, 168, 0.16);
+  --status-selected-text: var(--accent-teal);
+  --status-selected-border: rgba(45, 212, 168, 0.4);
+
+  --status-highlight-bg: rgba(91, 141, 239, 0.16);
+  --status-highlight-text: var(--accent-blue);
+  --status-highlight-border: rgba(91, 141, 239, 0.4);
+
+  --status-blurry-bg: rgba(232, 93, 117, 0.16);
+  --status-blurry-text: var(--accent-rose);
+  --status-blurry-border: rgba(232, 93, 117, 0.4);
+
+  --status-duplicate-bg: rgba(232, 146, 60, 0.16);
+  --status-duplicate-text: var(--accent-amber);
+
+  --status-closed-bg: rgba(232, 93, 117, 0.16);
+  --status-closed-text: var(--accent-rose);
+
+  /* Radii & Shadows */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5), 0 3px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 24px -4px rgba(0, 0, 0, 0.6), 0 8px 12px -4px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.3);
+
+  /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -53,25 +61,19 @@
 }
 
 body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden; /* App feels like a native desktop app */
-  user-select: none; /* Prevent text selection in UI elements */
-}
-
-/* Typography */
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  overflow: hidden;
+  user-select: none;
 }
 
 /* Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -86,14 +88,30 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Glassmorphism Utilities */
 .glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-card {
   background: var(--bg-elevated);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-normal);
 }
 
-/* Common Layout Utilities */
+.glass-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Layout Utilities */
 .flex-center {
   display: flex;
   align-items: center;
@@ -112,11 +130,11 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 18px;
   border-radius: var(--radius-md);
   font-family: inherit;
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   cursor: pointer;
   transition: all var(--transition-fast);
   border: 1px solid transparent;
@@ -124,57 +142,95 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .btn-primary {
-  background-color: var(--accent-primary);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-active));
   color: var(--accent-contrast);
   font-weight: 600;
-  box-shadow: 0 2px 4px rgba(226, 161, 59, 0.2);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-hover);
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent-primary));
   box-shadow: var(--shadow-glow);
 }
 
 .btn-secondary {
-  background-color: transparent;
-  border-color: var(--border-strong);
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-subtle);
   color: var(--text-primary);
 }
 .btn-secondary:hover:not(:disabled) {
-  background-color: var(--bg-tertiary);
-  border-color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
   transform: none;
 }
 
-/* Animations */
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+/* Neon Pulse Indicator */
+.pulse-indicator {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--status-selected-text);
 }
-.animate-pulse {
-  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.pulse-indicator::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--status-selected-text);
+  opacity: 0.4;
+  animation: pulse-ring 1.8s infinite cubic-bezier(0.45, 0, 0.55, 1);
 }
 
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(10px); }
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-slide-up {
-  animation: slide-up var(--transition-normal) forwards;
+.animate-fade-in-up {
+  animation: fade-in-up var(--transition-normal) forwards;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* Badge Styles */
+.badge {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.animate-fade-in {
-  animation: fade-in var(--transition-normal) forwards;
+.badge-selected {
+  background: var(--status-selected-bg);
+  color: var(--status-selected-text);
+  border: 1px solid var(--status-selected-border);
+}
+.badge-blurry {
+  background: var(--status-blurry-bg);
+  color: var(--status-blurry-text);
+  border: 1px solid var(--status-blurry-border);
+}
+.badge-highlight {
+  background: var(--status-highlight-bg);
+  color: var(--status-highlight-text);
+  border: 1px solid var(--status-highlight-border);
 }

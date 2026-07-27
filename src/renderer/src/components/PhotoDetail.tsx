@@ -84,7 +84,96 @@ export default function PhotoDetail({ foto, onClose }: { foto: any; onClose: () 
             <button className="btn btn-secondary" style={{ padding: '2px 8px' }} onClick={onClose}>✕</button>
           </div>
 
-          {Array.isArray(foto.reasons) && foto.reasons.length > 0 && (
+          {foto.diagnostics && (
+            <div style={{
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px',
+              marginBottom: '16px',
+            }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px', fontWeight: 600 }}>
+                Diagnóstico del Motor IA
+              </div>
+              
+              {/* Barras de Progreso */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                {foto.score !== undefined && (
+                  <div>
+                    <div className="flex-between" style={{ fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                      <span>Afinidad de Estilo</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{Math.round(Math.min(1, foto.score) * 100)}%</span>
+                    </div>
+                    <div style={{ height: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.round(Math.min(1, foto.score) * 100)}%`, height: '100%', backgroundColor: 'var(--accent-primary)' }} />
+                    </div>
+                  </div>
+                )}
+                {foto.diagnostics.aesthetic_score !== undefined && (
+                  <div>
+                    <div className="flex-between" style={{ fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                      <span>Composición (Estética)</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{Math.round(foto.diagnostics.aesthetic_score * 100)}%</span>
+                    </div>
+                    <div style={{ height: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.round(foto.diagnostics.aesthetic_score * 100)}%`, height: '100%', backgroundColor: 'var(--accent-hover)' }} />
+                    </div>
+                  </div>
+                )}
+                {foto.diagnostics.blur_score !== undefined && (
+                  <div>
+                    <div className="flex-between" style={{ fontSize: '0.75rem', marginBottom: '4px', color: 'var(--text-secondary)' }}>
+                      <span>Nitidez (Acutancia)</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{Math.round(Math.min(1, foto.diagnostics.blur_score / 500) * 100)}%</span>
+                    </div>
+                    <div style={{ height: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.round(Math.min(1, foto.diagnostics.blur_score / 500) * 100)}%`, height: '100%', backgroundColor: 'var(--accent-primary)' }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Insignias de Fallas / Análisis Facial */}
+              {foto.diagnostics.valid_face_count > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-strong)' }}>
+                    👤 {foto.diagnostics.valid_face_count} {foto.diagnostics.valid_face_count === 1 ? 'Cara' : 'Caras'}
+                  </span>
+                  {foto.diagnostics.closed_eyes_count > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'var(--status-closed-eyes-bg)', color: 'var(--status-closed-eyes-text)' }}>
+                      👁 {foto.diagnostics.closed_eyes_count} Ojos Cerrados
+                    </span>
+                  )}
+                  {foto.diagnostics.looking_away_count > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(255, 165, 0, 0.1)', color: 'orange', border: '1px solid rgba(255,165,0,0.3)' }}>
+                      👀 {foto.diagnostics.looking_away_count} Mirada Desviada
+                    </span>
+                  )}
+                  {foto.diagnostics.smiling_count > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(0, 200, 100, 0.1)', color: 'rgba(0, 255, 120, 0.9)', border: '1px solid rgba(0,255,120,0.3)' }}>
+                      🙂 {foto.diagnostics.smiling_count} Sonriendo
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Razones textuales */}
+              {Array.isArray(foto.reasons) && foto.reasons.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', lineHeight: 1.5 }}>
+                  {foto.reasons.map((r: string, i: number) => (
+                    <div key={i} style={{
+                      fontSize: '0.7rem',
+                      color: r.startsWith('✔') ? 'var(--status-selected-text)'
+                           : r.startsWith('✖') ? 'var(--status-blurry-text)' : 'var(--text-muted)',
+                      fontWeight: r.startsWith('✖') ? 600 : 'normal'
+                    }}>{r}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {(!foto.diagnostics && Array.isArray(foto.reasons) && foto.reasons.length > 0) && (
             <div style={{ marginBottom: '14px', lineHeight: 1.6 }}>
               {foto.reasons.map((r: string, i: number) => (
                 <div key={i} style={{

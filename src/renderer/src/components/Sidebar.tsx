@@ -51,57 +51,58 @@ export default function Sidebar({
       gap: '24px',
       zIndex: 10
     }}>
-      {/* Brand — wordmark Guto Flow */}
+      {/* Brand — wordmark Guto Flow con Glow */}
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
           <span style={{
             fontFamily: 'Georgia, "Times New Roman", serif',
-            fontWeight: 700, fontSize: '1.7rem', lineHeight: 1,
+            fontWeight: 700, fontSize: '1.8rem', lineHeight: 1,
             color: 'var(--accent-primary)', letterSpacing: '-0.02em',
+            textShadow: '0 0 16px rgba(245, 158, 11, 0.4)'
           }}>
             guto
           </span>
           <span style={{
             fontFamily: '"Segoe Script", "Brush Script MT", cursive',
-            fontSize: '1.45rem', lineHeight: 1,
+            fontSize: '1.5rem', lineHeight: 1,
             color: 'var(--text-primary)',
           }}>
             Flow
           </span>
         </div>
         <p style={{
-          color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '6px',
-          borderTop: '1px solid var(--border-strong)', paddingTop: '4px',
-          textTransform: 'uppercase', letterSpacing: '0.14em', fontWeight: 600,
+          color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '6px',
+          borderTop: '1px solid var(--border-strong)', paddingTop: '6px',
+          textTransform: 'uppercase', letterSpacing: '0.16em', fontWeight: 600,
         }}>
-          Smart Workflow
+          Smart Workflow Pro
         </p>
       </div>
 
-      {/* Lo que la IA aprendió de vos: el diferencial va arriba, donde el ojo
-          llega primero. Lo técnico (motor, hardware) baja a una línea discreta. */}
+      {/* Panel de Aprendizaje de IA */}
       <LearningPanel active={backendStatus === 'running'} />
 
-      <div className="flex-between" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}
+      {/* Indicador de Motor IA Neón */}
+      <div className="flex-between" style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', padding: '6px 10px', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}
         title={hardwareInfo
           ? `${hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} · ${hardwareInfo.physical_cores} núcleos`
           : ''}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{
-            display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%',
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className={backendStatus === 'running' ? 'pulse-indicator' : ''} style={{
+            display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
             backgroundColor: backendStatus === 'running'
               ? 'var(--status-selected-text)' : 'var(--status-blurry-text)',
           }} />
-          Motor {backendStatus === 'running' ? 'listo' : backendStatus}
+          Motor {backendStatus === 'running' ? 'IA Activo' : backendStatus}
         </span>
         {hardwareInfo && (
-          <span>{hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} · {hardwareInfo.physical_cores} núcleos</span>
+          <span>{hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} ({hardwareInfo.physical_cores}c)</span>
         )}
       </div>
 
-      {/* Start Job Area */}
+      {/* Área de Nueva Sesión */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <h3 style={{ fontSize: '0.82rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
           Nueva sesión
         </h3>
         
@@ -113,7 +114,8 @@ export default function Sidebar({
             border: '1px solid var(--border-strong)',
             borderRadius: 'var(--radius-md)',
             padding: '8px 12px',
-            gap: '8px'
+            gap: '8px',
+            transition: 'all var(--transition-fast)'
           }}>
             <div 
               onClick={handleSelectFolder}
@@ -124,10 +126,9 @@ export default function Sidebar({
                 padding: '4px',
                 borderRadius: '4px'
               }}
-              className="hover-bg-secondary"
               title="Elegir carpeta"
             >
-              <IconFolder size={18} className="text-primary" style={{ color: 'var(--accent-primary)' }} />
+              <IconFolder size={18} style={{ color: 'var(--accent-primary)' }} />
             </div>
             <input 
               type="text" 
@@ -140,7 +141,7 @@ export default function Sidebar({
                 border: 'none',
                 color: 'var(--text-primary)',
                 outline: 'none',
-                fontSize: '0.9rem'
+                fontSize: '0.85rem'
               }}
             />
           </div>
@@ -165,9 +166,9 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* View Toggles (only if we have results) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: hasResults ? 1 : 0.3, pointerEvents: hasResults ? 'auto' : 'none' }}>
-        <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+      {/* Modos de Vista */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: hasResults ? 1 : 0.35, pointerEvents: hasResults ? 'auto' : 'none' }}>
+        <h3 style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           Modo de vista
         </h3>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -198,7 +199,7 @@ export default function Sidebar({
 
       <div style={{ flex: 1 }} />
 
-      {/* Settings */}
+      {/* Ajustes */}
       <button className="btn btn-secondary" onClick={onOpenSettings} style={{ justifyContent: 'flex-start' }}>
         <IconSettings size={18} />
         Ajustes y preferencias

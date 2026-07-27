@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
 import CalibrationView from './CalibrationView';
+import SemanticSearchBar from './SemanticSearchBar';
+import StorylineTimeline from './StorylineTimeline';
 
 interface MainContentProps {
   jobState: any;
@@ -18,7 +20,7 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
   const [editsApplied, setEditsApplied] = useState(false);
   const [undoDisponible, setUndoDisponible] = useState(false);
   const [undoing, setUndoing] = useState(false);
-  const [avisoLightroom, setAvisoLightroom] = useState('');
+  const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
 
   // ¿Hay respaldo del último culling para este evento?
   useEffect(() => {
@@ -31,8 +33,6 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
     })();
   }, [directory, jobResults]);
 
-  // Deshacer devuelve las fotos al XMP que tenían ANTES del culling. Toca
-  // archivos reales del fotógrafo, así que se confirma explícitamente.
   const handleUndo = async () => {
     if (!directory) return;
     const ok = window.confirm(
@@ -88,9 +88,6 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
     setSyncing(true);
     setSyncMsg('');
 
-    // Si el catálogo está configurado, avisar ANTES de sincronizar: Lightroom
-    // guarda los cambios en su base hasta que hacés Ctrl+S, y sin eso leemos
-    // archivos que no cambiaron y no se aprende nada.
     const catalogo = settings?.selection_preferences?.lightroom_catalog_path;
     if (catalogo) {
       try {
@@ -103,7 +100,7 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
           if (d.pendientes > 0) {
             setSyncMsg(d.mensaje);
             setSyncing(false);
-            return;   // sincronizar ahora no aprendería nada
+            return;
           }
         }
       } catch { /* si el chequeo falla, seguimos con el sync normal */ }
@@ -117,17 +114,15 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
       });
       const data = await res.json();
       if (res.ok) {
-        {
-          const guardadas = data.estilo_aprendido?.guardadas || 0;
-          const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
-          setSyncMsg(
-            data.corrections === 0 && !guardadas
-              ? (data.hint || 'Sin cambios nuevos en Lightroom')
-              : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
-                (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)') +
-                estilo
-          );
-        }
+        const guardadas = data.estilo_aprendido?.guardadas || 0;
+        const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
+        setSyncMsg(
+          data.corrections === 0 && !guardadas
+            ? (data.hint || 'Sin cambios nuevos en Lightroom')
+            : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
+              (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)') +
+              estilo
+        );
       } else {
         setSyncMsg(data.detail || 'Error al sincronizar');
       }
@@ -138,7 +133,9 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
     }
   };
   
-  if (!jobState && !jobResults) {
+  const isIdle = !jobState || ['idle', 'stopped', 'unknown'].includes(jobState.status);
+  
+  if (isIdle && !jobResults) {
     return (
       <div className="flex-center" style={{ height: '100%', flexDirection: 'column', gap: '16px', color: 'var(--text-muted)' }}>
         <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -146,8 +143,8 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <h2>Elegí una carpeta para empezar</h2>
-        <p>Tus fotos se analizan localmente, sin salir de tu equipo.</p>
+        <h2 style={{ color: 'var(--text-primary)' }}>Elegí una carpeta para empezar</h2>
+        <p style={{ color: 'var(--text-secondary)' }}>Tus fotos se analizan 100% localmente de forma privada en tu equipo.</p>
       </div>
     );
   }
@@ -156,8 +153,8 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
   if (jobState && jobState.status === 'running') {
     return (
       <div className="flex-center" style={{ height: '100%', flexDirection: 'column', gap: '24px' }}>
-        <div className="glass-panel animate-fade-in" style={{ padding: '32px', width: '400px', textAlign: 'center' }}>
-          <h2 style={{ marginBottom: '8px' }}>Analizando fotos</h2>
+        <div className="glass-panel animate-fade-in-up" style={{ padding: '36px', width: '420px', textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '8px', color: 'var(--text-primary)' }}>Analizando fotos</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '24px' }}>
             {jobState.processed} / {jobState.total} procesadas
           </p>
@@ -166,12 +163,16 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
             <div style={{ 
               width: `${jobState.progress}%`, 
               height: '100%', 
-              backgroundColor: 'var(--accent-primary)',
+              background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-hover))',
               transition: 'width 0.3s ease'
             }} />
           </div>
-          <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <div style={{ marginTop: '12px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-primary)' }}>
             {Math.round(jobState.progress)}%
+          </div>
+
+          <div style={{ marginTop: '14px', fontSize: '0.82rem', color: 'var(--text-secondary)', fontStyle: 'italic', transition: 'all 0.3s ease' }}>
+            {jobState.phase_text || 'Seleccionando y analizando fotos...'}
           </div>
         </div>
       </div>
@@ -180,24 +181,39 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
 
   // Job completed (Results available)
   if (jobResults && jobResults.results) {
+    const displayResults = filteredResults || jobResults.results;
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Results Header Stats */}
-        <div style={{ padding: '16px 24px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '24px' }}>
+        {/* Results Header Stats + Search Bar */}
+        <div style={{ padding: '14px 24px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '24px' }}>
            <div style={{ display: 'flex', flexDirection: 'column' }}>
-             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Fotos</span>
-             <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{jobResults.stats.total_images}</span>
+             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Fotos</span>
+             <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>{jobResults.stats.total_images}</span>
            </div>
            <div style={{ display: 'flex', flexDirection: 'column' }}>
-             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ráfagas</span>
-             <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{jobResults.stats.total_clusters}</span>
+             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Ráfagas</span>
+             <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>{jobResults.stats.total_clusters}</span>
            </div>
-           <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '24px' }}>
-             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Velocidad</span>
-             <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>
-               {jobResults.stats.ingest?.images_per_second || 0} <span style={{ fontSize: '0.8rem', fontWeight: 'normal' }}>img/s</span>
+           <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--border-subtle)', paddingLeft: '20px' }}>
+             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Velocidad</span>
+             <span style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+               {jobResults.stats.ingest?.images_per_second || 0} <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-muted)' }}>img/s</span>
              </span>
            </div>
+
+           {/* Buscador Semántico con IA */}
+           <SemanticSearchBar
+             directory={directory}
+             onSearchResults={(searchResults) => {
+               // Filtrar o resaltar fotos según la búsqueda
+               const matchedPaths = new Set(searchResults.map((sr: any) => sr.path));
+               const filtered = jobResults.results.filter((photo: any) => matchedPaths.has(photo.path));
+               setFilteredResults(filtered);
+             }}
+             onClearSearch={() => setFilteredResults(null)}
+           />
+
            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
              {syncMsg && (
                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{syncMsg}</span>
@@ -220,7 +236,6 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
              >
                {syncing ? 'Sincronizando…' : 'Sincronizar desde Lightroom'}
              </button>
-             {/* Red de seguridad: devuelve las fotos al estado previo al culling */}
              {undoDisponible && (
                <button
                  className="btn btn-secondary"
@@ -235,10 +250,13 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
            </div>
         </div>
 
+        {/* Storyline Event Timeline */}
+        <StorylineTimeline directory={directory} />
+
         {/* View Area */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {viewMode === 'grid' && <GridView results={jobResults.results} />}
-          {viewMode === 'duel' && <DuelView results={jobResults.results} />}
+          {viewMode === 'grid' && <GridView results={displayResults} />}
+          {viewMode === 'duel' && <DuelView results={displayResults} />}
           {viewMode === 'calib' && <CalibrationView directory={directory} />}
         </div>
       </div>
