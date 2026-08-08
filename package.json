@@ -9,9 +9,12 @@
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:electron\"",
     "build:frontend": "vite build",
     "build:electron": "tsc -p tsconfig.json",
-    "build:backend": "pyinstaller --clean --noconfirm --onedir --windowed -n backend backend/run.py",
-    "build": "npm run build:frontend && npm run build:electron && npm run build:backend && electron-builder",
-    "test:backend": "pytest backend/tests"
+    "build:backend": "pyinstaller backend.spec --clean --noconfirm",
+    "build:all": "npm run build:frontend && npm run build:electron && npm run build:backend && electron-builder",
+    "dist": "npm run build:all",
+    "dist:win": "npm run build:all -- --win",
+    "test:backend": "pytest backend/tests",
+    "verify:build": "python scripts/verify_build.py"
   },
   "dependencies": {
     "tree-kill": "^1.2.2"
@@ -27,19 +30,53 @@
     "vite": "^5.2.11"
   },
   "build": {
+    "productName": "Guto Flow",
+    "appId": "com.gutogutierrez.gutoflow",
+    "copyright": "Copyright © 2025 Guto Gutiérrez",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
     "extraResources": [
       {
         "from": "dist/backend",
         "to": "backend",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
+      },
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": ["**/*"]
       }
     ],
-    "productName": "Guto Flow",
-    "appId": "com.gutogutierrez.gutoflow",
     "win": {
-      "icon": "assets/icon.ico"
-    }
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Guto Flow",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "include": "scripts/installer.nsh",
+      "artifactName": "GutoFlow-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": null
   }
 }

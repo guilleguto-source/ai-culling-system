@@ -22,15 +22,98 @@ class TechnicalQualityResult:
     overexposed_pct: float     # % de píxeles quemados (255)
     underexposed_pct: float    # % de píxeles empastados (0)
     dynamic_range_score: float # 0-1, mayor = mejor rango dinámico
+    cpbd_score: float = 0.0    # Métrica CPBD (0-1, edge-aware sharpness)
 
 
 # --- Nitidez ---
 
 import math
 
+CPBD_RESCUE_THRESHOLD = 0.25  # Si CPBD >= 0.25 en la imagen, hay bordes nítidos inequívocos (bokeh en f/1.4, no fallo de toma)
+
 def _laplacian_variance(gray: np.ndarray) -> float:
     """Calcula la varianza del Laplaciano de una región en escala de grises."""
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _cpbd_sharpness(gray: np.ndarray) -> float:
+    """
+    Calcula la métrica CPBD (Cumulative Probability of Blur Detection).
+    Evalúa la nitidez analizando la dispersión del gradiente exclusivamente en
+    los bordes del sujeto (edge-aware), evitando falsos positivos de desenfoque
+    en fotos con diafragma abierto (bokeh profundo a f/1.2 - f/1.8).
+    Retorna un valor normalizado entre 0.0 (totalmente borrosa) y 1.0 (muy nítida).
+    """
+    if gray is None or gray.size == 0:
+        return 0.0
+    h, w = gray.shape
+    if h < 16 or w < 16:
+        return 0.0
+
+    # Detección de bordes mediante Canny
+    edges = cv2.Canny(gray, 40, 120)
+    edge_y, edge_x = np.where(edges > 0)
+    num_edges = len(edge_y)
+    if num_edges < 30:
+        return 0.0
+
+    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+
+    # Muestreo determinista para velocidad constante y repetibilidad (~1200 puntos)
+    if num_edges > 1200:
+        step = max(1, num_edges // 1200)
+        edge_y = edge_y[::step][:1200]
+        edge_x = edge_x[::step][:1200]
+
+    sharp_count = 0.0
+    total_valid = 0
+    M = 5
+
+    for y, x in zip(edge_y, edge_x):
+        if y < M or y >= h - M or x < M or x >= w - M:
+            continue
+        vx, vy = gx[y, x], gy[y, x]
+
+        if abs(vx) > abs(vy):
+            # Transición horizontal dominante
+            line_g = gx[y, x - M:x + M + 1]
+            sign = np.sign(vx)
+            if sign == 0:
+                continue
+            pos = M
+            l = pos
+            while l > 0 and line_g[l - 1] * sign > 0.15 * abs(vx):
+                l -= 1
+            r = pos
+            while r < 2 * M and line_g[r + 1] * sign > 0.15 * abs(vx):
+                r += 1
+            width = r - l + 1
+        else:
+            # Transición vertical dominante
+            line_g = gy[y - M:y + M + 1, x]
+            sign = np.sign(vy)
+            if sign == 0:
+                continue
+            pos = M
+            l = pos
+            while l > 0 and line_g[l - 1] * sign > 0.15 * abs(vy):
+                l -= 1
+            r = pos
+            while r < 2 * M and line_g[r + 1] * sign > 0.15 * abs(vy):
+                r += 1
+            width = r - l + 1
+
+        total_valid += 1
+        # Modelo JNB (Just Noticeable Blur): bordes <= 3px son nítidos
+        if width <= 3:
+            sharp_count += 1.0
+        elif width <= 4:
+            sharp_count += 0.5
+
+    if total_valid == 0:
+        return 0.0
+    return float(sharp_count / total_valid)
 
 
 def _fft_acutance(gray: np.ndarray) -> float:
@@ -132,15 +215,17 @@ def evaluate_blur(
     saliency_region: tuple[int, int, int, int] | None,
     blur_threshold: float,
     iso: int = 100,
-) -> tuple[bool, float, str]:
+) -> tuple[bool, float, str, float]:
     """
-    Determina si la imagen es borrosa, adaptándose al tipo de escena.
+    Determina si la imagen es borrosa, adaptándose al tipo de escena con doble verificación CPBD.
 
     - portrait: mide nitidez en el primer rostro detectado.
     - detail: mide nitidez en la región de saliencia mediante acutancia FFT.
+    - doble verificación CPBD: si el Laplaciano dice "borrosa" pero CPBD detecta bordes
+      nítidos inequívocos (bokeh a f/1.4), la foto se rescata evitando el falso descarte.
 
     Returns:
-        (is_blurry, blur_score, region_label)
+        (is_blurry, blur_score, region_label, cpbd_score)
     """
     # Compensación por ISO: a ISOs altos, el ruido infla la varianza.
     # Aumentamos el umbral para ser más estrictos y no dejar pasar fotos borrosas ruidosas.
@@ -164,10 +249,25 @@ def evaluate_blur(
         score, label = analyze_sharpness(img_rgb, None, "full", use_fft=True)
 
     is_blurry = score < adjusted_threshold
-    if is_blurry:
-        logger.debug(f"BORROSA — score={score:.1f} < umbral_ajustado={adjusted_threshold:.1f} (ISO {iso}) [{label}]")
+    
+    gray_full = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    cpbd_score = _cpbd_sharpness(gray_full)
 
-    return is_blurry, score, label
+    if is_blurry:
+        # Árbitro CPBD: si hay bordes nítidos reales (bokeh), rescatamos la foto
+        if cpbd_score >= CPBD_RESCUE_THRESHOLD:
+            logger.debug(
+                f"FOTO RESCATADA por CPBD — laplacian={score:.1f} < umbral={adjusted_threshold:.1f}, "
+                f"pero cpbd={cpbd_score:.2f} >= {CPBD_RESCUE_THRESHOLD} (bokeh detectado) [{label}]"
+            )
+            is_blurry = False
+        else:
+            logger.debug(
+                f"BORROSA — score={score:.1f} < umbral_ajustado={adjusted_threshold:.1f} "
+                f"(cpbd={cpbd_score:.2f}, ISO {iso}) [{label}]"
+            )
+
+    return is_blurry, score, label, cpbd_score
 
 
 # --- Exposición y Rango Dinámico ---
@@ -231,9 +331,9 @@ def evaluate_technical_quality(
     iso: int = 100,
 ) -> TechnicalQualityResult:
     """
-    Evaluación técnica completa: nitidez + exposición.
+    Evaluación técnica completa: nitidez + exposición con soporte CPBD.
     """
-    is_blurry, blur_score, blur_region = evaluate_blur(
+    is_blurry, blur_score, blur_region, cpbd_score = evaluate_blur(
         img_rgb, scene_type, face_bboxes, saliency_region, blur_threshold, iso
     )
     is_overexposed, is_underexposed, over_pct, under_pct, dr_score = analyze_exposure(
@@ -249,4 +349,5 @@ def evaluate_technical_quality(
         overexposed_pct=over_pct,
         underexposed_pct=under_pct,
         dynamic_range_score=dr_score,
+        cpbd_score=cpbd_score,
     )

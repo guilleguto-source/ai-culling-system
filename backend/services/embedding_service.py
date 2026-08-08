@@ -13,11 +13,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from services.app_paths import get_models_dir as _get_models_dir, get_emb_cache_dir as _get_emb_cache_dir
+
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path(__file__).parent.parent / "models"
+MODELS_DIR = _get_models_dir()
 CLIP_MODEL_PATH = MODELS_DIR / "clip_vit_b32_visual.onnx"
-CACHE_DIR = MODELS_DIR / "emb_cache"
+CACHE_DIR = _get_emb_cache_dir()
 
 MODEL_VERSION = "clip-vit-b32"
 EMBEDDING_DIM = 512

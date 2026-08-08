@@ -46,7 +46,7 @@ def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
 
     s = settings_manager.load_settings()
     rm = s["ratings_mapping"]
-    assert s["settings_version"] == 6
+    assert s["settings_version"] == 7
     assert rm["selected"]["flag"] == "pick"
     assert rm["blurry"]["flag"] == "reject"
     assert rm["blurry"]["color"] == "Rojo"          # v4: masculino (set real de LR)

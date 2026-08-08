@@ -66,3 +66,14 @@ def test_raw_writes_sidecar(tmp_path):
     assert "Verde".encode() in sidecar.read_bytes()
     # No debe tocar (embeber) el RAW
     assert raw.read_bytes() == b"\x00\x01fake-raw"
+
+
+def test_atomic_write_creates_valid_file(tmp_path):
+    p = tmp_path / "test_atomic.xmp"
+    data = b"<x:xmpmeta>test_data</x:xmpmeta>"
+    xe._atomic_write(p, data)
+    assert p.exists()
+    assert p.read_bytes() == data
+    # Comprobar que no quedan archivos temporales residuales
+    tmp_files = list(tmp_path.glob("*.tmp"))
+    assert len(tmp_files) == 0

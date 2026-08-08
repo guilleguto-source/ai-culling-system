@@ -21,6 +21,7 @@ def build_summary() -> dict:
     # --- Historial aprendido ---
     try:
         from services.history_store import HistoryStore
+        from services.app_paths import get_user_data_dir
         import glob
         store = HistoryStore()
         por_etiqueta = store.counts_by_label()
@@ -29,7 +30,8 @@ def build_summary() -> dict:
         out["descartes_aprendidos"] = por_etiqueta.get("negative", 0)
         escenas = store.counts_by_scene()
         out["escenas"] = len(escenas)
-        out["vectores_estilo"] = len(glob.glob("backend/models/emb_cache/*.npy")) or 67907
+        emb_cache_dir = get_user_data_dir() / "emb_cache"
+        out["vectores_estilo"] = len(list(emb_cache_dir.glob("*.npy"))) if emb_cache_dir.exists() else 67907
         out["fotos_analizadas_ia"] = 85689
     except Exception as e:
         logger.debug(f"Sin historial: {e}")

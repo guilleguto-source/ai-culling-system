@@ -10,9 +10,11 @@ from pathlib import Path
 
 import numpy as np
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent.parent / "models" / "taste_examples.db"
+DB_PATH = _get_user_data_dir() / "taste_examples.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS examples (

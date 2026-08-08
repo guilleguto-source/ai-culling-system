@@ -223,6 +223,42 @@ def test_lineas_en_desacuerdo_devuelve_none():
     assert detect_horizon_angle(img) is None
 
 
+def test_verticales_arquitectonicas_inclinadas():
+    """Detecta inclinación a partir de columnas o marcos verticales."""
+    img = np.zeros((600, 900), dtype=np.uint8)
+    # Columna inclinada +3° (cae a la derecha, x disminuye al bajar)
+    tan3 = math_tan(3.0)
+    for y in range(600):
+        x1 = int(250 - tan3 * (y - 300))
+        x2 = int(650 - tan3 * (y - 300))
+        if 0 <= x1 < 900:
+            img[y, max(0, x1 - 2):min(900, x1 + 3)] = 255
+        if 0 <= x2 < 900:
+            img[y, max(0, x2 - 2):min(900, x2 + 3)] = 255
+            
+    ang = detect_horizon_angle(img)
+    assert ang is not None
+    assert ang == pytest.approx(3.0, abs=0.8)
+
+
+def test_perspectiva_convergente_keystone_se_descarta():
+    """Líneas que fugan hacia el centro (keystone vertical) no deben rotar la toma."""
+    img = np.zeros((600, 900), dtype=np.uint8)
+    tan4 = math_tan(4.0)
+    for y in range(600):
+        # Izquierda inclina hacia la derecha (arriba)
+        x_izq = int(250 + tan4 * (y - 300))
+        # Derecha inclina hacia la izquierda (arriba)
+        x_der = int(650 - tan4 * (y - 300))
+        if 0 <= x_izq < 900:
+            img[y, max(0, x_izq - 2):min(900, x_izq + 3)] = 255
+        if 0 <= x_der < 900:
+            img[y, max(0, x_der - 2):min(900, x_der + 3)] = 255
+            
+    ang = detect_horizon_angle(img)
+    assert ang is None
+
+
 # --- CropProposal ---
 
 def test_cambio_minimo_no_significativo():

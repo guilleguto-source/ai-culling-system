@@ -17,10 +17,12 @@ from pathlib import Path
 
 from services.history_store import HistoryStore
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
 MIN_PER_SCENE = 15
-CROP_STYLE_PATH = Path(__file__).parent.parent / "models" / "crop_style.json"
+CROP_STYLE_PATH = _get_user_data_dir() / "crop_style.json"
 
 
 def descriptors(crop: dict) -> dict:

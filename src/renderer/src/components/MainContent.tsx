@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
 import CalibrationView from './CalibrationView';
 import SemanticSearchBar from './SemanticSearchBar';
 import StorylineTimeline from './StorylineTimeline';
+import { AdvancedPanel } from './AdvancedPanel';
+import { apiClient } from '../api/client';
+import { useToast } from './Toast';
 
 interface MainContentProps {
   jobState: any;
@@ -11,49 +14,38 @@ interface MainContentProps {
   settings: any;
   viewMode: 'grid' | 'duel' | 'calib';
   directory?: string;
+  undoAvailable?: boolean;
+  onUndoExport?: (dir: string) => Promise<void>;
+  onRefreshResults?: () => void;
 }
 
-export default function MainContent({ jobState, jobResults, settings, viewMode, directory }: MainContentProps) {
+export default function MainContent({
+  jobState,
+  jobResults,
+  settings,
+  viewMode,
+  directory,
+  undoAvailable = false,
+  onUndoExport,
+  onRefreshResults
+}: MainContentProps) {
   const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string>('');
   const [applying, setApplying] = useState(false);
   const [editsApplied, setEditsApplied] = useState(false);
-  const [undoDisponible, setUndoDisponible] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
-
-  // ¿Hay respaldo del último culling para este evento?
-  useEffect(() => {
-    if (!directory) { setUndoDisponible(false); return; }
-    (async () => {
-      try {
-        const r = await fetch(`http://127.0.0.1:8000/undo_export/available?directory=${encodeURIComponent(directory)}`);
-        if (r.ok) setUndoDisponible((await r.json()).disponible);
-      } catch { /* backend caído */ }
-    })();
-  }, [directory, jobResults]);
+  const { showToast } = useToast();
 
   const handleUndo = async () => {
-    if (!directory) return;
+    if (!directory || !onUndoExport) return;
     const ok = window.confirm(
       'Se devolverán las estrellas y etiquetas de estas fotos al estado que tenían ANTES del último culling.\n\n¿Continuar?'
     );
     if (!ok) return;
     setUndoing(true);
-    setSyncMsg('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/undo_export', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory }),
-      });
-      const d = await res.json();
-      setSyncMsg(res.ok
-        ? `Deshecho: ${d.restauradas} restauradas` +
-          (d.limpiadas ? `, ${d.limpiadas} sin marcas` : '') +
-          (d.fallidas ? ` · ${d.fallidas} fallaron` : '')
-        : (d.detail || 'No se pudo deshacer'));
-    } catch {
-      setSyncMsg('Error de conexión con el backend');
+      await onUndoExport(directory);
     } finally {
       setUndoing(false);
     }
@@ -62,22 +54,16 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
   const handleApplyEdits = async () => {
     if (!directory) return;
     setApplying(true);
-    setSyncMsg('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/apply_edits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory })
-      });
-      const data = await res.json();
-      if (res.ok) {
+      const data = await apiClient.applyEdits(directory);
+      if (data.success) {
         setEditsApplied(true);
-        setSyncMsg(`Edición aplicada a ${data.edited} fotos` + (data.preset ? ` · preset ${data.preset}` : ''));
+        showToast(`Edición aplicada a ${data.edited} fotos` + (data.preset ? ` · preset ${data.preset}` : ''), 'success');
       } else {
-        setSyncMsg(data.detail || 'Error al aplicar edición');
+        showToast('Error al aplicar edición', 'error');
       }
-    } catch (e) {
-      setSyncMsg('Error de conexión con el backend');
+    } catch (e: any) {
+      showToast(e.message || 'Error de conexión con el backend', 'error');
     } finally {
       setApplying(false);
     }
@@ -86,48 +72,35 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
   const handleLightroomSync = async () => {
     if (!directory) return;
     setSyncing(true);
-    setSyncMsg('');
 
     const catalogo = settings?.selection_preferences?.lightroom_catalog_path;
     if (catalogo) {
       try {
-        const r = await fetch('http://127.0.0.1:8000/lightroom/pending_changes', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ directory, catalog_path: catalogo }),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          if (d.pendientes > 0) {
-            setSyncMsg(d.mensaje);
-            setSyncing(false);
-            return;
-          }
+        const d = await apiClient.getLightroomPendingChanges(directory, catalogo);
+        if (d.pendientes > 0) {
+          showToast(`Hay ${d.pendientes} cambios pendientes en Lightroom. Guarde los metadatos primero.`, 'info');
+          setSyncing(false);
+          return;
         }
       } catch { /* si el chequeo falla, seguimos con el sync normal */ }
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/reimport_xmp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const guardadas = data.estilo_aprendido?.guardadas || 0;
+      const data = await apiClient.reimportXmp(directory);
+      if (data.success) {
+        const guardadas = (data as any).estilo_aprendido?.guardadas || 0;
         const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
-        setSyncMsg(
-          data.corrections === 0 && !guardadas
-            ? (data.hint || 'Sin cambios nuevos en Lightroom')
-            : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
-              (data.embeddings_available ? ` · ${data.total_examples} ejemplos` : ' · sin aprendizaje (falta modelo CLIP)') +
-              estilo
-        );
+        const msg = data.corrections === 0 && !guardadas
+          ? (data.hint || 'Sin cambios nuevos en Lightroom')
+          : `${data.corrections} correcciones (↑${data.upgraded} ↓${data.downgraded})` +
+            (data.total_examples ? ` · ${data.total_examples} ejemplos` : '') +
+            estilo;
+        showToast(msg, 'success');
       } else {
-        setSyncMsg(data.detail || 'Error al sincronizar');
+        showToast('Error al sincronizar con Lightroom', 'error');
       }
-    } catch (e) {
-      setSyncMsg('Error de conexión con el backend');
+    } catch (e: any) {
+      showToast(e.message || 'Error de conexión con el backend', 'error');
     } finally {
       setSyncing(false);
     }
@@ -206,7 +179,6 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
            <SemanticSearchBar
              directory={directory}
              onSearchResults={(searchResults) => {
-               // Filtrar o resaltar fotos según la búsqueda
                const matchedPaths = new Set(searchResults.map((sr: any) => sr.path));
                const filtered = jobResults.results.filter((photo: any) => matchedPaths.has(photo.path));
                setFilteredResults(filtered);
@@ -215,9 +187,18 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
            />
 
            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
-             {syncMsg && (
-               <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{syncMsg}</span>
-             )}
+             <button
+               className="btn btn-secondary"
+               onClick={() => setIsAdvancedOpen(true)}
+               style={{
+                 borderColor: 'rgba(56, 189, 248, 0.4)',
+                 backgroundColor: 'rgba(56, 189, 248, 0.08)',
+                 color: '#38bdf8'
+               }}
+               title="Módulos de Revelado Avanzado: 3D-LUT, re-iluminación y retoque de piel"
+             >
+               ✦ Revelado y Retoque
+             </button>
              {jobResults.stats?.edits_applied === false && !editsApplied && (
                <button
                  className="btn btn-primary"
@@ -236,7 +217,7 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
              >
                {syncing ? 'Sincronizando…' : 'Sincronizar desde Lightroom'}
              </button>
-             {undoDisponible && (
+             {undoAvailable && (
                <button
                  className="btn btn-secondary"
                  onClick={handleUndo}
@@ -259,6 +240,13 @@ export default function MainContent({ jobState, jobResults, settings, viewMode, 
           {viewMode === 'duel' && <DuelView results={displayResults} />}
           {viewMode === 'calib' && <CalibrationView directory={directory} />}
         </div>
+
+        {/* Modal de Revelado Avanzado y Retoque */}
+        <AdvancedPanel
+          isOpen={isAdvancedOpen}
+          onClose={() => setIsAdvancedOpen(false)}
+          onRefreshResults={onRefreshResults}
+        />
       </div>
     );
   }

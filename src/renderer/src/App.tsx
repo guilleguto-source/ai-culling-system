@@ -1,68 +1,67 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import SettingsModal from './components/SettingsModal';
 import SyncReminder from './components/SyncReminder';
+import { ModelDownloadWizard } from './components/ModelDownloadWizard';
+import { ToastProvider, useToast } from './components/Toast';
+import { apiClient, BACKEND_URL } from './api/client';
 import './index.css';
 
 // Fallback for browser testing connected to real FastAPI backend
 if (typeof window !== 'undefined' && !window.api) {
-  const BACKEND_URL = 'http://127.0.0.1:8000';
   (window as any).api = {
     getBackendStatus: async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/health`);
-        if (res.ok) return { running: true, status: 'running', url: BACKEND_URL };
-      } catch (e) {}
-      return { running: false, status: 'stopped', url: BACKEND_URL };
+        const res = await apiClient.getHealth();
+        return { running: true, status: 'running', url: BACKEND_URL };
+      } catch (e) {
+        return { running: false, status: 'stopped', url: BACKEND_URL };
+      }
     },
     getHardwareInfo: async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/hardware`);
-        return await res.json();
+        return await apiClient.getHardware();
       } catch (e) {
         return { using_gpu: false, gpu_provider: null, physical_cores: 0, logical_cores: 0 };
       }
     },
     sendSettings: async (settings: any) => {
-      const res = await fetch(`${BACKEND_URL}/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      });
-      return await res.json();
+      return await apiClient.saveSettings(settings);
     },
     getSettings: async () => {
-      const res = await fetch(`${BACKEND_URL}/settings`);
-      return await res.json();
+      return await apiClient.getSettings();
     },
     ingestMedia: async (directory: string, mode: string = 'cull_edit') => {
-      const res = await fetch(`${BACKEND_URL}/ingest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory, mode })
-      });
-      return await res.json();
+      return await apiClient.startIngest(directory, mode as any);
     },
     getJobStatus: async () => {
-      const res = await fetch(`${BACKEND_URL}/status`);
-      return await res.json();
+      return await apiClient.getStatus();
     },
     getJobResults: async () => {
-      const res = await fetch(`${BACKEND_URL}/results`);
-      return await res.json();
+      return await apiClient.getResults();
     },
-    selectFolder: async (defaultPath?: string) => {
+    checkUndoAvailable: async (directory: string) => {
+      try {
+        return await apiClient.checkUndo(directory);
+      } catch (e) {
+        return { disponible: false };
+      }
+    },
+    undoExport: async (directory: string) => {
+      return await apiClient.undoExport(directory);
+    },
+    selectFolder: async (_defaultPath?: string) => {
       return null;
     },
-    onBackendLog: (cb: any) => {
+    onBackendLog: (_cb: any) => {
       return () => {};
     },
     onBackendStatusChange: (cb: any) => {
       const interval = setInterval(async () => {
         try {
-          const res = await fetch(`${BACKEND_URL}/health`);
-          cb(res.ok ? 'running' : 'stopped');
+          const res = await apiClient.getHealth();
+          cb(res ? 'running' : 'stopped');
         } catch (e) {
           cb('stopped');
         }
@@ -72,7 +71,7 @@ if (typeof window !== 'undefined' && !window.api) {
   };
 }
 
-export default function App() {
+function MainApp() {
   const [backendStatus, setBackendStatus] = useState<'starting' | 'running' | 'stopped' | 'error' | 'unknown'>('unknown');
   const [hardwareInfo, setHardwareInfo] = useState<any>(null);
   const [settings, setSettings] = useState<any>(null);
@@ -82,16 +81,19 @@ export default function App() {
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'grid' | 'duel' | 'calib'>('grid');
-  const [lastDirectory, setLastDirectory] = useState<string>('');
+  const [lastDirectory, setLastDirectory] = useState<string>(() => localStorage.getItem('lastDirectory') || '');
+  const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
   const [staleBackend, setStaleBackend] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showModelWizard, setShowModelWizard] = useState(false);
+  const { showToast } = useToast();
 
   // El backend corre desde que se abre la app: si el código en disco cambió
   // después (actualización), este proceso sirve lógica vieja sin avisar.
   useEffect(() => {
     const check = async () => {
       try {
-        const r = await fetch('http://127.0.0.1:8000/health');
-        const d = await r.json();
+        const d = await apiClient.getHealth();
         setStaleBackend(!!d.stale_code);
       } catch { /* backend caído: ya lo muestra el status normal */ }
     };
@@ -99,8 +101,6 @@ export default function App() {
     const t = setInterval(check, 30000);
     return () => clearInterval(t);
   }, []);
-  
-  const [logs, setLogs] = useState<string[]>([]);
 
   // 1. Initialize backend connection & hardware info
   useEffect(() => {
@@ -128,6 +128,14 @@ export default function App() {
         setHardwareInfo(hw);
         const st = await window.api.getSettings();
         setSettings(st);
+        // Verificar si los modelos requeridos están presentes
+        try {
+          const res = await fetch(`http://127.0.0.1:8000/setup/required_ready`);
+          const data = await res.json();
+          if (!data.ready) {
+            setShowModelWizard(true);
+          }
+        } catch { /* si falla, no bloqueamos la app */ }
       }
     });
 
@@ -154,6 +162,7 @@ export default function App() {
         if (state.status === 'completed' && !jobResults) {
           const res = await window.api.getJobResults();
           setJobResults(res);
+          showToast('¡Culling completado con éxito!', 'success');
         } else if (state.status !== 'completed') {
           // Clear old results if running a new job
           setJobResults(null);
@@ -165,18 +174,39 @@ export default function App() {
 
     const interval = setInterval(pollJob, 1000);
     return () => clearInterval(interval);
-  }, [backendStatus, jobResults]);
+  }, [backendStatus, jobResults, showToast]);
+
+  // 3. Centralized Undo Check
+  const checkUndo = useCallback(async (dir?: string) => {
+    const targetDir = dir || lastDirectory;
+    if (!targetDir.trim() || backendStatus !== 'running') {
+      setUndoAvailable(false);
+      return;
+    }
+    try {
+      const res = await apiClient.checkUndo(targetDir.trim());
+      setUndoAvailable(!!res?.disponible);
+    } catch {
+      setUndoAvailable(false);
+    }
+  }, [lastDirectory, backendStatus]);
+
+  useEffect(() => {
+    checkUndo();
+  }, [checkUndo, jobResults]);
 
   // Actions
   const handleIngest = async (directory: string, mode: string = 'cull_edit') => {
     try {
       await window.api.ingestMedia(directory, mode);
       setLastDirectory(directory);
+      localStorage.setItem('lastDirectory', directory);
       setJobResults(null); // Reset results for new job
       setCurrentView('grid'); // Reset view
-    } catch (err) {
+      showToast(`Iniciando procesamiento en: ${directory}`, 'info');
+    } catch (err: any) {
       console.error('Ingest error:', err);
-      alert(`Error starting culling: ${err}`);
+      showToast(`Error al iniciar culling: ${err?.message || err}`, 'error');
     }
   };
 
@@ -185,9 +215,28 @@ export default function App() {
       const res = await window.api.sendSettings(newSettings);
       setSettings(res.settings);
       setIsSettingsOpen(false);
-    } catch (err) {
+      showToast('Configuración guardada correctamente', 'success');
+    } catch (err: any) {
       console.error('Error saving settings:', err);
-      alert(`Error saving settings: ${err}`);
+      showToast(`Error guardando configuración: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleUndoExport = async (directory?: string) => {
+    const targetDir = directory || lastDirectory;
+    if (!targetDir.trim()) return;
+    try {
+      const res = await apiClient.undoExport(targetDir.trim());
+      if (res.detail || !res.success) {
+        showToast(res.detail || 'Error al deshacer exportación', 'error');
+      } else {
+        const msg = `Rollback exitoso: ${res.restauradas || 0} restauradas` +
+          (res.limpiadas ? `, ${res.limpiadas} limpiadas` : '');
+        showToast(msg, 'success');
+        setUndoAvailable(false);
+      }
+    } catch (e: any) {
+      showToast(`Error de conexión al deshacer: ${e.message || e}`, 'error');
     }
   };
 
@@ -202,6 +251,14 @@ export default function App() {
         currentView={currentView}
         onViewChange={setCurrentView}
         hasResults={!!jobResults}
+        lastDirectory={lastDirectory}
+        onDirectoryChange={(dir) => {
+          setLastDirectory(dir);
+          localStorage.setItem('lastDirectory', dir);
+          checkUndo(dir);
+        }}
+        undoAvailable={undoAvailable}
+        onUndoExport={handleUndoExport}
       />
       
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -222,6 +279,8 @@ export default function App() {
           settings={settings}
           viewMode={currentView}
           directory={lastDirectory}
+          undoAvailable={undoAvailable}
+          onUndoExport={handleUndoExport}
         />
       </div>
 
@@ -232,6 +291,20 @@ export default function App() {
           onSave={handleSaveSettings}
         />
       )}
+
+      {showModelWizard && (
+        <ModelDownloadWizard
+          onComplete={() => setShowModelWizard(false)}
+        />
+      )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <MainApp />
+    </ToastProvider>
   );
 }

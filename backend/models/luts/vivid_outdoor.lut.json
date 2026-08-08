@@ -1,0 +1,15 @@
+{
+  "name": "vivid_outdoor",
+  "display_name": "Exterior Vívido",
+  "description": "Mayor definición y viveza de color para exteriores luminosos y paisajes",
+  "settings": {
+    "Contrast2012": 15,
+    "Highlights2012": -25,
+    "Shadows2012": 10,
+    "Whites2012": 5,
+    "Blacks2012": -5,
+    "Clarity2012": 10,
+    "Vibrance": 18,
+    "Saturation": 4
+  }
+}

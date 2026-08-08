@@ -21,9 +21,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from services.app_paths import get_models_dir as _get_models_dir
+
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent.parent / "models" / "face_landmarker.task"
+MODEL_PATH = _get_models_dir() / "face_landmarker.task"
 
 # Índices estándar de FaceMesh (468 puntos)
 _LEFT_EYE = dict(h=(33, 133), v1=(160, 144), v2=(158, 153))

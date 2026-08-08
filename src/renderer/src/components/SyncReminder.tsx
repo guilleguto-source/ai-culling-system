@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-
-const API = 'http://127.0.0.1:8000';
+import { apiClient } from '../api/client';
 
 interface Evento {
   directory: string;
@@ -12,9 +11,7 @@ interface Evento {
 }
 
 /**
- * Recordatorio al abrir la app: eventos culleados que faltan sincronizar con
- * Lightroom. Cada uno se puede sincronizar en el momento, posponer 8 h (vuelve
- * a recordar la próxima vez que se abra la app) o descartar ("ya terminé").
+ * Recordatorio al abrir la app: eventos culleados que faltan sincronizar con Lightroom.
  */
 export default function SyncReminder({ active }: { active: boolean }) {
   const [eventos, setEventos] = useState<Evento[]>([]);
@@ -22,8 +19,8 @@ export default function SyncReminder({ active }: { active: boolean }) {
 
   const cargar = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/sync/pending`);
-      if (r.ok) setEventos((await r.json()).events || []);
+      const data = await apiClient.getPendingSync();
+      setEventos(data.events || []);
     } catch { /* backend caído: no bloquea la app */ }
   }, []);
 
@@ -35,20 +32,15 @@ export default function SyncReminder({ active }: { active: boolean }) {
   const sincronizar = async (ev: Evento) => {
     setBusy(ev.directory);
     try {
-      const r = await fetch(`${API}/reimport_xmp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory: ev.directory }),
-      });
-      const d = await r.json();
-      const guardadas = d.estilo_aprendido?.guardadas || 0;
+      const d = await apiClient.reimportXmp(ev.directory);
+      const guardadas = (d as any).estilo_aprendido?.guardadas || 0;
       const estilo = guardadas ? ` · ${guardadas} ediciones aprendidas` : '';
-      const msg = !r.ok
-        ? (d.detail || 'Error al sincronizar')
+      const msg = !d.success
+        ? ((d as any).detail || 'Error al sincronizar')
         : d.corrections === 0 && !guardadas
           ? (d.hint || 'Sin cambios nuevos en Lightroom')
           : `${d.corrections} correcciones (↑${d.upgraded} ↓${d.downgraded})` +
-            (d.embeddings_available ? ` · ${d.total_examples} ejemplos aprendidos` : '') + estilo;
+            (d.total_examples ? ` · ${d.total_examples} ejemplos aprendidos` : '') + estilo;
       setEventos(evs => evs.map(e =>
         e.directory === ev.directory ? { ...e, _status: 'done', _msg: msg } : e));
     } catch {
@@ -61,20 +53,14 @@ export default function SyncReminder({ active }: { active: boolean }) {
 
   const posponer = async (ev: Evento) => {
     try {
-      await fetch(`${API}/sync/snooze`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory: ev.directory, hours: 8 }),
-      });
+      await apiClient.snoozeSync(ev.directory, 8);
     } catch { /* si falla, igual lo ocultamos esta sesión */ }
     quitar(ev.directory);
   };
 
   const terminar = async (ev: Evento) => {
     try {
-      await fetch(`${API}/sync/dismiss`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory: ev.directory }),
-      });
+      await apiClient.dismissSync(ev.directory);
     } catch { /* idem */ }
     quitar(ev.directory);
   };

@@ -74,8 +74,10 @@ def candidates(directory: str, limit: int = 50) -> list[FaceCandidate]:
     return out[:limit]
 
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 MARK_COLOR = (255, 176, 46)   # ámbar del acento de la UI (RGB)
-_MODELS_DIR = Path(__file__).parent.parent / "models"
+_MODELS_DIR = _get_user_data_dir()
 _FACE_EMB_CACHE = _MODELS_DIR / "face_emb_cache"
 
 

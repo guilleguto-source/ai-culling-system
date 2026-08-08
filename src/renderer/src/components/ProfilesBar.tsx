@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from 'react';
-
-const API = 'http://127.0.0.1:8000';
+import { apiClient } from '../api/client';
 
 /**
  * Perfiles de workflow: bodas, infantil, corporativo…
- *
- * Un perfil empaqueta las preferencias de TRABAJO (selectividad, recorte,
- * detectores, pre-edición). No incluye el mapeo a estrellas/colores de
- * Lightroom: eso es del fotógrafo, no del tipo de evento.
  */
 export default function ProfilesBar() {
   const [perfiles, setPerfiles] = useState<string[]>([]);
@@ -16,37 +11,39 @@ export default function ProfilesBar() {
 
   const cargar = async () => {
     try {
-      const r = await fetch(`${API}/profiles`);
-      if (r.ok) setPerfiles((await r.json()).perfiles || []);
+      const data = await apiClient.getProfiles();
+      setPerfiles(data.perfiles || []);
     } catch { /* backend caído */ }
   };
   useEffect(() => { cargar(); }, []);
 
-  const llamar = async (ruta: string, nombre: string, exito: string) => {
+  const guardar = async () => {
+    const nombre = window.prompt('Nombre del perfil (p. ej. "Bodas", "Infantil"):');
+    if (!nombre?.trim()) return;
     setOcupado(true);
     try {
-      const r = await fetch(`${API}/profiles/${ruta}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre }),
-      });
-      const d = await r.json();
-      setMsg(r.ok ? exito : (d.detail || 'No se pudo completar'));
+      await apiClient.saveProfile(nombre.trim());
+      setMsg(`Perfil "${nombre.trim()}" guardado`);
       await cargar();
-    } catch {
-      setMsg('Error de conexión');
+    } catch (e: any) {
+      setMsg(e.message || 'Error guardando perfil');
     } finally {
       setOcupado(false);
     }
   };
 
-  const guardar = () => {
-    const nombre = window.prompt('Nombre del perfil (p. ej. "Bodas", "Infantil"):');
-    if (nombre?.trim()) llamar('save', nombre.trim(), `Perfil "${nombre.trim()}" guardado`);
-  };
-
-  const aplicar = (nombre: string) => {
+  const aplicar = async (nombre: string) => {
     if (!nombre) return;
-    llamar('apply', nombre, `Perfil "${nombre}" aplicado — reabrí Ajustes para verlo`);
+    setOcupado(true);
+    try {
+      await apiClient.applyProfile(nombre);
+      setMsg(`Perfil "${nombre}" aplicado — reabrí Ajustes para verlo`);
+      await cargar();
+    } catch (e: any) {
+      setMsg(e.message || 'Error aplicando perfil');
+    } finally {
+      setOcupado(false);
+    }
   };
 
   return (

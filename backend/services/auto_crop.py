@@ -79,52 +79,115 @@ class CropProposal:
         }
 
 
+def _extract_line_segments(img_gray: np.ndarray) -> list[tuple[float, float, float, float]]:
+    """
+    Extrae segmentos de línea (x1, y1, x2, y2) con LSD (Line Segment Detector)
+    y fallback a Canny + HoughLinesP.
+    """
+    h, w = img_gray.shape[:2]
+    segments: list[tuple[float, float, float, float]] = []
+
+    # 1. Intentar LSD de OpenCV (precisión sub-pixel sin umbralización fija)
+    try:
+        if hasattr(cv2, "createLineSegmentDetector"):
+            lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+            lines = lsd.detect(img_gray)[0]
+            if lines is not None and len(lines) > 0:
+                for l in lines:
+                    x1, y1, x2, y2 = l[0]
+                    segments.append((float(x1), float(y1), float(x2), float(y2)))
+                if len(segments) >= 2:
+                    return segments
+    except Exception as e:
+        logger.debug(f"LSD no disponible: {e}")
+
+    # 2. Fallback / Complemento: Canny + HoughLinesP
+    edges = cv2.Canny(img_gray, 50, 150)
+    min_len = int(min(w, h) * 0.15)
+    lines_hough = cv2.HoughLinesP(
+        edges, rho=1, theta=np.pi / 180, threshold=80,
+        minLineLength=min_len, maxLineGap=int(min(w, h) * 0.02),
+    )
+    if lines_hough is not None:
+        for l in lines_hough[:, 0]:
+            segments.append((float(l[0]), float(l[1]), float(l[2]), float(l[3])))
+    return segments
+
+
 def detect_horizon_angle(img_gray: np.ndarray) -> float | None:
     """
-    Ángulo de inclinación del horizonte en grados (positivo = horizonte cae a
-    la derecha). None si no hay líneas suficientemente largas y horizontales.
+    Ángulo de inclinación en grados (positivo = la escena cae a la derecha).
+    Motor híbrido: combina detección de horizonte natural (líneas horizontales)
+    y verticales arquitectónicas (columnas, marcos de puertas/ventanas) usando
+    LSD y Hough. Descarta convergencia por perspectiva / fuga angular.
     """
     h, w = img_gray.shape[:2]
     if w < 100 or h < 100:
         return None
-    edges = cv2.Canny(img_gray, 50, 150)
-    min_len = int(w * _HORIZON_MIN_LEN)
-    lines = cv2.HoughLinesP(
-        edges, rho=1, theta=np.pi / 180, threshold=80,
-        minLineLength=min_len, maxLineGap=int(w * 0.02),
-    )
-    if lines is None:
+
+    segments = _extract_line_segments(img_gray)
+    if not segments:
         return None
 
-    candidates = []  # (ángulo, longitud)
-    for (x1, y1, x2, y2) in lines[:, 0]:
+    min_len_h = w * _HORIZON_MIN_LEN
+    min_len_v = h * _HORIZON_MIN_LEN
+
+    horiz_candidates: list[tuple[float, float]] = []  # (inclinacion, longitud)
+    vert_candidates: list[tuple[float, float, float]] = []  # (inclinacion, longitud, center_x)
+
+    for (x1, y1, x2, y2) in segments:
         dx, dy = x2 - x1, y2 - y1
         length = math.hypot(dx, dy)
-        if length < min_len:
+        if length < min(min_len_h, min_len_v):
             continue
+
         ang = math.degrees(math.atan2(dy, dx))
         # Normalizar a [-90, 90]
         if ang > 90:
             ang -= 180
         elif ang < -90:
             ang += 180
-        if abs(ang) <= _HORIZON_MAX_TILT:
-            candidates.append((ang, length))
+
+        # Eje Horizontal (|ang| <= 15°)
+        if abs(ang) <= _HORIZON_MAX_TILT and length >= min_len_h:
+            horiz_candidates.append((ang, length))
+
+        # Eje Vertical (columnas / arquitectura, ||ang| - 90| <= 15°)
+        elif abs(abs(ang) - 90.0) <= _HORIZON_MAX_TILT and length >= min_len_v:
+            tilt = ang - 90.0 if ang > 0 else ang + 90.0
+            cx = (x1 + x2) / 2.0
+            vert_candidates.append((tilt, length, cx))
+
+    # Filtrar convergencia de perspectiva en verticales (lentes angulares hacia arriba/abajo)
+    if len(vert_candidates) >= 2:
+        mid_x = w / 2.0
+        left_v = [t for t, l, cx in vert_candidates if cx < mid_x]
+        right_v = [t for t, l, cx in vert_candidates if cx >= mid_x]
+        if left_v and right_v:
+            mean_l = sum(left_v) / len(left_v)
+            mean_r = sum(right_v) / len(right_v)
+            # Si fugan en direcciones opuestas con magnitud notable, es keystone/perspectiva
+            if (mean_l * mean_r < -0.5) and abs(mean_l - mean_r) > 2.5:
+                vert_candidates = []
+
+    clean_verts = [(t, l) for t, l, _ in vert_candidates]
+    candidates = horiz_candidates + clean_verts
 
     if not candidates:
         return None
-    # Una sola línea solo es fiable si es MUY larga (p.ej. horizonte real)
-    if len(candidates) == 1 and candidates[0][1] < w * 0.5:
+
+    # Una sola línea solo es fiable si es MUY larga (p.ej. horizonte o pared dominante)
+    if len(candidates) == 1 and candidates[0][1] < min(w, h) * 0.5:
         return None
 
     med = _weighted_median(candidates)
-    # Excluir outliers (líneas que no son el horizonte: diagonales, sombras)
+    # Excluir outliers (líneas diagonales que no corresponden a la estructura)
     trimmed = [(a, l) for a, l in candidates if abs(a - med) <= _HORIZON_TRIM]
     if not trimmed:
         return None
     med = _weighted_median(trimmed)
-    # Consenso: si las líneas restantes discrepan mucho entre sí (típico de
-    # interiores con perspectiva), el nivelado no es fiable → no tocar.
+
+    # Consenso: si las líneas restantes discrepan mucho entre sí, no es fiable
     total = sum(l for _, l in trimmed)
     var = sum(l * (a - med) ** 2 for a, l in trimmed) / total
     if var ** 0.5 > _HORIZON_MAX_SPREAD:
@@ -361,12 +424,14 @@ def propose_crop(
     horizon_angle: float | None = None,
     person_bboxes: list[list[int]] | None = None,
     img_rgb: np.ndarray | None = None,
+    crop_style: dict | None = None,
 ) -> CropProposal | None:
     """
     Propone un reencuadre según el tipo de escena y el nivel configurado.
     Retorna None si no hay mejora que valga la pena o si es inseguro.
     `person_bboxes`: cuerpos detectados (YOLOv8) — protegen gente sin rostro
     visible. `img_rgb`: si se pasa, activa la guardia de piel en los bordes.
+    `crop_style`: estilo aprendido de reencuadre por tipo de escena.
     """
     if level not in LEVEL_LIMITS:
         return None
@@ -422,6 +487,18 @@ def propose_crop(
             return None
         prop = CropProposal(*window, angle, "nivelado")
         return prop if prop.is_meaningful() else None
+
+    # Ajuste por estilo aprendido de reencuadre (Fase 3 / Fase K)
+    if crop_style and scene_type in crop_style:
+        s = crop_style[scene_type]
+        off_x = s.get("offset_x", 0.0)
+        off_y = s.get("offset_y", 0.0)
+        if abs(off_x) > 0.01 or abs(off_y) > 0.01:
+            target = (
+                float(np.clip(target[0] + off_x * 0.4, 0.15, 0.85)),
+                float(np.clip(target[1] + off_y * 0.4, 0.15, 0.85))
+            )
+            reason += " (estilo aprendido)"
 
     window = None
     if budget >= MIN_CHANGE and (abs(subject[0] - target[0]) > 0.02 or abs(subject[1] - target[1]) > 0.02):

@@ -1,0 +1,15 @@
+{
+  "name": "warm_golden",
+  "display_name": "Cálido / Golden Hour",
+  "description": "Gradación suave con contraste templado y sombras abiertas para eventos y retratos",
+  "settings": {
+    "Contrast2012": 8,
+    "Highlights2012": -15,
+    "Shadows2012": 12,
+    "Whites2012": -5,
+    "Blacks2012": 10,
+    "Clarity2012": 4,
+    "Vibrance": 12,
+    "Saturation": -2
+  }
+}

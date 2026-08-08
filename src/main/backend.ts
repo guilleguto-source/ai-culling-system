@@ -79,31 +79,26 @@ export function startBackend() {
     setBackendStatus('stopped');
   });
 
-  // Periodically poll /health to check if running
-  const checkInterval = setInterval(() => {
-    if (backendStatus !== 'starting') {
-      clearInterval(checkInterval);
-      return;
-    }
+  // Continual health monitoring to auto-recover status when backend is responsive
+  setInterval(() => {
     const req = http.get(`${BACKEND_URL}/health`, (res) => {
       if (res.statusCode === 200) {
-        setBackendStatus('running');
-        clearInterval(checkInterval);
+        if (backendStatus !== 'running') {
+          setBackendStatus('running');
+        }
+      } else {
+        if (backendStatus === 'running') {
+          setBackendStatus('stopped');
+        }
       }
     });
     req.on('error', () => {
-      // Not running yet
+      if (backendStatus === 'running') {
+        setBackendStatus('stopped');
+      }
     });
     req.end();
-  }, 500);
-
-  // Stop checking after 10 seconds to avoid infinite loop
-  setTimeout(() => {
-    clearInterval(checkInterval);
-    if (backendStatus === 'starting') {
-      setBackendStatus('error');
-    }
-  }, 10000);
+  }, 1500);
 }
 
 export async function stopBackend(): Promise<void> {
@@ -236,6 +231,11 @@ export function setupBackendIpc() {
   ipcMain.handle('backend:job:status', () => makeGetRequest('/status'));
   ipcMain.handle('backend:job:results', () => makeGetRequest('/results'));
   
+  ipcMain.handle('backend:undo:available', (_, directory: string) =>
+    makeGetRequest(`/undo_export/available?directory=${encodeURIComponent(directory)}`));
+  ipcMain.handle('backend:undo:run', (_, directory: string) =>
+    makePostRequest('/undo_export', { directory }));
+
   ipcMain.handle('backend:select-folder', async (_, defaultPath?: string) => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],

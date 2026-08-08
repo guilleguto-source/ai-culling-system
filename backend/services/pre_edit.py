@@ -73,7 +73,7 @@ def _linear_luminance(img_rgb: np.ndarray) -> np.ndarray:
 
 
 def _skin_patches(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> np.ndarray | None:
-    """Pixeles de piel: región central de cada bbox (mejillas/nariz)."""
+    """Pixeles de piel: región central de cada bbox (mejillas/nariz), ponderada por importancia facial y filtrada."""
     h, w = img_rgb.shape[:2]
     patches = []
     for (x, y, fw, fh) in face_bboxes:
@@ -82,7 +82,19 @@ def _skin_patches(img_rgb: np.ndarray, face_bboxes: list[list[int]]) -> np.ndarr
         y1 = max(0, y + int(fh * 0.40))
         y2 = min(h, y + int(fh * 0.70))
         if x2 > x1 and y2 > y1:
-            patches.append(img_rgb[y1:y2, x1:x2].reshape(-1, 3))
+            patch = img_rgb[y1:y2, x1:x2].reshape(-1, 3)
+            # Filtrar brillos especulares (>245) y sombras muy profundas (<20)
+            max_c = patch.max(axis=-1)
+            min_c = patch.min(axis=-1)
+            valid = (max_c < 245) & (min_c > 20)
+            if valid.sum() > 10:
+                filtered = patch[valid]
+                # Ponderación por tamaño del rostro (rostro protagonista = mayor peso)
+                weight = int(max(1, min(5, round(math.sqrt(max(1, fw * fh)) / 40.0))))
+                for _ in range(weight):
+                    patches.append(filtered)
+            else:
+                patches.append(patch)
     if not patches:
         return None
     return np.concatenate(patches)

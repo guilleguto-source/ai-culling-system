@@ -13,10 +13,10 @@ def thumb_url(file_path: str, size: str = "ui") -> str:
     features en silencio."""
     return f"/thumbnail?path={quote(file_path)}&size={size}"
 
-# Anclado al módulo, NO al cwd: el backend puede arrancar desde la raíz del
-# repo, desde backend/ (tests) o empaquetado — una ruta relativa crearía
-# directorios fantasma como backend/backend/models/.
-CACHE_ROOT = Path(__file__).parent.parent / "models" / "cache" / "thumbnails"
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
+# Anclado a get_user_data_dir() para compatibilidad empaquetada y dev
+CACHE_ROOT = _get_user_data_dir() / "cache" / "thumbnails"
 
 def _get_hashes(file_path: str) -> tuple[str, str]:
     p = Path(file_path)

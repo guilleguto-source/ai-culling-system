@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ProfilesBar from './ProfilesBar';
+import { apiClient } from '../api/client';
 
 interface SettingsModalProps {
   settings: any;
@@ -54,19 +55,15 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
   const [tab, setTab] = useState('seleccion');
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/cache/projects')
-      .then(res => res.json())
+    apiClient.getCacheProjects()
       .then(data => setCachedProjects(data))
       .catch(err => console.error('Error fetching cache projects:', err));
   }, []);
 
   const handleClearCache = async (directory: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/cache/clear', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory }),
-      });
-      if (res.ok) setCachedProjects(prev => prev.filter(p => p.directory !== directory));
+      await apiClient.clearCache(directory);
+      setCachedProjects(prev => prev.filter(p => p.directory !== directory));
     } catch (e) {
       console.error('Error clearing cache:', e);
     }
@@ -74,7 +71,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
   const handleOpenCacheFolder = async () => {
     try {
-      await fetch('http://127.0.0.1:8000/cache/open', { method: 'POST' });
+      await apiClient.openCacheFolder();
     } catch (e) {
       console.error('Error opening cache folder:', e);
     }
@@ -116,18 +113,10 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
   const usePresetFile = async (path: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/presets/use', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        handlePrefChange('pre_edit', { ...preEdit, preset_path: data.active, recent_presets: data.recent });
-      } else {
-        alert(data.detail || 'Preset no válido');
-      }
-    } catch (e) {
-      alert('Error de conexión con el backend');
+      const data = await apiClient.usePreset(path);
+      handlePrefChange('pre_edit', { ...preEdit, preset_path: data.active, recent_presets: data.recent });
+    } catch (e: any) {
+      alert(e.message || 'Error con el preset');
     }
   };
 
@@ -154,7 +143,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
           }}>×</button>
         </div>
 
-        {/* Perfiles: aplican a todas las pestañas, van arriba */}
+        {/* Perfiles */}
         <div style={{ padding: '12px 14px 0' }}>
           <ProfilesBar />
         </div>
@@ -271,19 +260,79 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                   <Fila titulo="Sesgo de exposición" ayuda="Se suma a la exposición medida en las personas">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <input type="range" min={-0.5} max={0.5} step={0.05}
-                        value={preEdit.exposure_bias ?? 0.3}
+                        value={preEdit.exposure_bias ?? 0.0}
                         onChange={e => handlePreEditChange('exposure_bias', parseFloat(e.target.value))} />
                       <span style={{ width: '52px', textAlign: 'right' }}>
-                        {(preEdit.exposure_bias ?? 0.3) >= 0 ? '+' : ''}{(preEdit.exposure_bias ?? 0.3).toFixed(2)} EV
+                        {(preEdit.exposure_bias ?? 0.0) >= 0 ? '+' : ''}{(preEdit.exposure_bias ?? 0.0).toFixed(2)} EV
                       </span>
                     </div>
                   </Fila>
+
+                  {/* Neural 3D-LUT */}
+                  <div style={{
+                    border: '1px solid var(--border-subtle)', borderRadius: '6px',
+                    padding: '10px', marginTop: '4px', backgroundColor: 'rgba(255,255,255,0.02)'
+                  }}>
+                    <Check
+                      checked={preEdit.neural_lut?.enabled !== false}
+                      onChange={v => {
+                        const cur = preEdit.neural_lut || { enabled: true, strength: 0.8, fallback_lut: 'warm_golden' };
+                        handlePreEditChange('neural_lut', { ...cur, enabled: v });
+                      }}
+                      titulo="Neural 3D-LUT (Look de Color Adaptativo)"
+                      ayuda="Aprende el estilo de contraste y tonos de tus sesiones pasadas (coexiste con tu preset)"
+                    />
+                    {preEdit.neural_lut?.enabled !== false && (
+                      <div style={{ marginTop: '8px', paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <Fila titulo="Intensidad de color/tono" ayuda="0% usa solo tu preset base; 100% aplica todo el estilo aprendido">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input type="range" min={0.0} max={1.0} step={0.05}
+                              value={preEdit.neural_lut?.strength ?? 0.8}
+                              onChange={e => {
+                                const cur = preEdit.neural_lut || { enabled: true, strength: 0.8, fallback_lut: 'warm_golden' };
+                                handlePreEditChange('neural_lut', { ...cur, strength: parseFloat(e.target.value) });
+                              }} />
+                            <span style={{ width: '45px', textAlign: 'right' }}>
+                              {Math.round((preEdit.neural_lut?.strength ?? 0.8) * 100)}%
+                            </span>
+                          </div>
+                        </Fila>
+                        <Fila titulo="Perfil Base / Fallback" ayuda="Se usa cuando aún no hay historial suficiente para un tipo de escena">
+                          <select
+                            value={preEdit.neural_lut?.fallback_lut || 'warm_golden'}
+                            style={selStyle}
+                            onChange={e => {
+                              const cur = preEdit.neural_lut || { enabled: true, strength: 0.8, fallback_lut: 'warm_golden' };
+                              handlePreEditChange('neural_lut', { ...cur, fallback_lut: e.target.value });
+                            }}
+                          >
+                            <option value="warm_golden">Cálido / Golden Hour</option>
+                            <option value="cool_indoor">Interior / Tungsteno Frío</option>
+                            <option value="flat_matte">Editorial / Flat Matte</option>
+                            <option value="vivid_outdoor">Exterior Vívido</option>
+                            <option value="neutral">Neutro / Sin Alteración</option>
+                          </select>
+                        </Fila>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rescate Tonal Automático */}
+                  <Check
+                    checked={preEdit.tonal_rescue?.enabled !== false}
+                    onChange={v => {
+                      const cur = preEdit.tonal_rescue || { enabled: true, highlights_threshold: 0.05, shadows_threshold: 0.10 };
+                      handlePreEditChange('tonal_rescue', { ...cur, enabled: v });
+                    }}
+                    titulo="Rescate Tonal Automático"
+                    ayuda="Recupera automáticamente detalle en fotos con altas luces quemadas (>5%) o sombras empastadas (>10%)"
+                  />
                 </>
               )}
 
               <Fila titulo="Auto-encuadre"
                 ayuda="Recorte propuesto (reversible en Lightroom). En grupos: solo nivelado.">
-                <select value={prefs.auto_crop || 'minimo'} style={selStyle}
+                <select value={prefs.auto_crop || 'off'} style={selStyle}
                   onChange={e => handlePrefChange('auto_crop', e.target.value)}>
                   <option value="off">Desactivado</option>
                   <option value="minimo">Mínimo (10%)</option>
@@ -363,8 +412,6 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
               <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)', margin: '6px 0' }} />
 
-              {/* Con el catálogo configurado se puede avisar ANTES de sincronizar
-                  si Lightroom tiene cambios que nunca se volcaron al archivo. */}
               <div>
                 <div style={{ fontWeight: 500 }}>Catálogo de Lightroom (.lrcat)</div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '6px' }}>

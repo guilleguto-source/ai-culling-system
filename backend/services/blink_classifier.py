@@ -3,9 +3,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from services.app_paths import get_models_dir as _get_models_dir
+
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path(__file__).parent.parent / "models"
+MODELS_DIR = _get_models_dir()
 ONNX_MODEL_PATH = MODELS_DIR / "blink_detector.onnx"
 
 _session = None

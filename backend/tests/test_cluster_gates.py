@@ -110,3 +110,25 @@ def test_sharpness_bbox_fuera_de_rango_no_crashea():
     img, _ = _synthetic_face_image(blur_face=False)
     scores = compute_face_sharpness(img, [[190, 190, 50, 50]])
     assert len(scores) == 1 and scores[0] >= 0.0
+
+
+def test_vip_face_weighting_preserves_photo_when_background_face_blinks():
+    """
+    Si en la foto 0 el protagonista (VIP) tiene ojos abiertos y una persona al fondo pestañea,
+    pero en la foto 1 el protagonista pestañea, la foto 0 DEBE ganar y la foto 1 ser descartada.
+    """
+    indices = [0, 1]
+    # Foto 0: Cara 0 (VIP, área 200x200) ojos abiertos; Cara 1 (fondo, área 30x30) ojos cerrados
+    # Foto 1: Cara 0 (VIP, área 200x200) ojos cerrados; Cara 1 (fondo, área 30x30) ojos abiertos
+    attrs = [
+        [{"valid": True, "ear": 0.3, "blink": 0.1}, {"valid": True, "ear": 0.1, "blink": 0.9}],
+        [{"valid": True, "ear": 0.1, "blink": 0.9}, {"valid": True, "ear": 0.3, "blink": 0.1}],
+    ]
+    bboxes = [
+        [[100, 100, 200, 200], [500, 50, 30, 30]],
+        [[100, 100, 200, 200], [500, 50, 30, 30]],
+    ]
+    sharp = [[200.0, 150.0], [200.0, 150.0]]
+    result = apply_technical_gates(indices, attrs, sharp, bboxes)
+    assert result == [0]
+

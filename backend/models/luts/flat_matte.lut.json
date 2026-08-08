@@ -1,0 +1,15 @@
+{
+  "name": "flat_matte",
+  "display_name": "Editorial / Flat Matte",
+  "description": "Estilo cinematográfico con negros levantados y contraste atenuado",
+  "settings": {
+    "Contrast2012": -12,
+    "Highlights2012": -10,
+    "Shadows2012": 25,
+    "Whites2012": -15,
+    "Blacks2012": 25,
+    "Clarity2012": -5,
+    "Vibrance": 10,
+    "Saturation": -8
+  }
+}

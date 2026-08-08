@@ -11,9 +11,11 @@ import logging
 import sqlite3
 from pathlib import Path
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent.parent / "models" / "history.db"
+DB_PATH = _get_user_data_dir() / "history.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS history (

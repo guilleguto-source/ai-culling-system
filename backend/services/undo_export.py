@@ -18,15 +18,17 @@ import json
 import logging
 from pathlib import Path
 
+from services.app_paths import get_undo_dir as _get_undo_dir
+
 logger = logging.getLogger(__name__)
 
-UNDO_DIR = Path(__file__).parent.parent / "models" / "undo"
+UNDO_DIR = _get_undo_dir()
 MANIFEST = "manifest.json"
 
 
 def _event_dir(directory: str) -> Path:
     key = hashlib.sha1(str(Path(directory).resolve()).lower().encode("utf-8")).hexdigest()
-    return UNDO_DIR / key
+    return _get_undo_dir() / key
 
 
 def _packet_name(path: str) -> str:

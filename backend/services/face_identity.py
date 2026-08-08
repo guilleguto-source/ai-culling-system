@@ -15,9 +15,11 @@ from pathlib import Path
 
 import numpy as np
 
+from services.app_paths import get_models_dir as _get_models_dir
+
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent.parent / "models" / "arcface_r50.onnx"
+MODEL_PATH = _get_models_dir() / "arcface_r50.onnx"
 INPUT_SIZE = 112          # ArcFace estándar
 IDENTITY_THRESHOLD = 0.38  # distancia coseno máx. para "misma persona" (calibrable)
 

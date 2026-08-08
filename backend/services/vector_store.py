@@ -12,10 +12,12 @@ except ImportError:
 
 from services.embedding_service import EMBEDDING_DIM
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
 # Directorio donde guardaremos los índices faiss y los mapas de id
-VECTOR_STORE_DIR = Path(__file__).parent.parent / "models" / "vector_store"
+VECTOR_STORE_DIR = _get_user_data_dir() / "vector_store"
 
 class VectorStore:
     def __init__(self, directory: str):

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import InspectorPanel from './inspector/InspectorPanel';
 import { getDynamicStyles } from '../utils/dynamicStyles';
+import { apiClient } from '../api/client';
 
 const ETIQUETA: Record<string, string> = {
   selected: 'Elegida',
@@ -42,14 +43,10 @@ export default function GridView({ results }: { results: any[] }) {
         
         if (rival) {
           try {
-            await fetch('http://127.0.0.1:8000/learn_preference', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                winner_path: isApprove ? detalle.path : rival.path,
-                loser_path: isApprove ? rival.path : detalle.path,
-              })
-            });
+            await apiClient.learnPreference(
+              isApprove ? detalle.path : rival.path,
+              isApprove ? rival.path : detalle.path
+            );
             
             detalle.label = isApprove ? 'selected' : 'blurry';
             setDetalle({ ...detalle });
@@ -75,11 +72,8 @@ export default function GridView({ results }: { results: any[] }) {
         const firstPath = results[0]?.path || '';
         const dir = firstPath.substring(0, Math.max(firstPath.lastIndexOf('\\'), firstPath.lastIndexOf('/')));
         
-        const r = await fetch(`http://127.0.0.1:8000/search/semantic?q=${encodeURIComponent(searchQuery)}&directory=${encodeURIComponent(dir)}`);
-        if (r.ok) {
-          const data = await r.json();
-          setSemanticPaths(new Set(data.results.map((x: any) => x.path)));
-        }
+        const data = await apiClient.searchSemantic(searchQuery, dir);
+        setSemanticPaths(new Set(data.results.map((x: any) => x.path)));
       } catch (e) {
         console.error('Semantic search error', e);
       }
@@ -150,7 +144,7 @@ export default function GridView({ results }: { results: any[] }) {
               }}>
                 <div style={{ width: '100%', aspectRatio: '3 / 4', backgroundColor: '#000', position: 'relative' }}>
                   <img
-                    src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}`}
+                    src={apiClient.getThumbnailUrl(img.path)}
                     style={{ width: '100%', height: '100%', objectFit: 'cover', ...getDynamicStyles(img) }}
                     alt={img.filename}
                     title={Array.isArray(img.reasons) ? img.reasons.join('\n') : undefined}

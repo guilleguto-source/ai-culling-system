@@ -1,0 +1,15 @@
+{
+  "name": "cool_indoor",
+  "display_name": "Interior / Tungsteno Frío",
+  "description": "Gradación para interiores con control de altas luces y tonos piel equilibrados",
+  "settings": {
+    "Contrast2012": 10,
+    "Highlights2012": -20,
+    "Shadows2012": 15,
+    "Whites2012": -8,
+    "Blacks2012": 5,
+    "Clarity2012": 6,
+    "Vibrance": 8,
+    "Saturation": -4
+  }
+}

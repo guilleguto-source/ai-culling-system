@@ -20,7 +20,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Rojo = descarte real (se borra): pérdida total, o la peor de la ráfaga
     # (más ojos cerrados que la ganadora). Las duplicadas son fotos BUENAS que
     # solo perdieron su grupo → sin marcar, para no ensuciar Lightroom.
-    "settings_version": 6,
+    "settings_version": 7,
     "ratings_mapping": {
         "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
         "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
@@ -50,6 +50,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "exposure_deadband": 0.15,      # no emitir correcciones de exposición menores a esto (EV)
             "auto_wb": False,               # WB por piel: opera en espacio incremental que el usuario (RAW) no usa
             "recent_presets": [],           # [{name, path}] MRU máx 5
+            "neural_lut": {
+                "enabled": True,            # Coexiste con preset, aprende de recetas pasadas
+                "strength": 0.8,            # 0.0..1.0 mezcla de tono/contraste aprendido
+                "fallback_lut": "warm_golden",
+            },
+            "tonal_rescue": {
+                "enabled": True,            # Rescate automático en pre-revelado
+                "highlights_threshold": 0.05,
+                "shadows_threshold": 0.10,
+            },
         },
     },
     "last_import_directory": "",
@@ -154,6 +164,21 @@ def load_settings() -> dict[str, Any]:
                 ce["color"] = ""
                 ce["flag"] = "none"
             data["settings_version"] = 6
+            save_settings(data)
+        # Migración v7: neural_lut y tonal_rescue dentro de pre_edit
+        if data.get("settings_version", 1) < 7:
+            pe = data.setdefault("selection_preferences", {}).setdefault("pre_edit", {})
+            pe.setdefault("neural_lut", {
+                "enabled": True,
+                "strength": 0.8,
+                "fallback_lut": "warm_golden",
+            })
+            pe.setdefault("tonal_rescue", {
+                "enabled": True,
+                "highlights_threshold": 0.05,
+                "shadows_threshold": 0.10,
+            })
+            data["settings_version"] = 7
             save_settings(data)
         # Merge con defaults para garantizar que nuevas claves estén presentes
         merged = _deep_merge(DEFAULT_SETTINGS, data)

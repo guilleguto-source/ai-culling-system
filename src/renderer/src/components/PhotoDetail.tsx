@@ -1,19 +1,11 @@
 import React, { useState, useEffect } from 'react';
-
-const API = 'http://127.0.0.1:8000';
+import { apiClient } from '../api/client';
 
 const ETIQUETAS: [string, string][] = [
   ['camara', 'Cámara'], ['lente', 'Lente'], ['apertura', 'Apertura'],
   ['iso', 'ISO'], ['velocidad', 'Velocidad'], ['focal', 'Focal'],
 ];
 
-/**
- * Detalle de una foto: datos de toma y previsualización de la pre-edición.
- *
- * El preview es una APROXIMACIÓN de lo que hará Camera Raw (exposición, WB y
- * recorte sobre el thumb), no un motor de revelado. Sirve para decidir sí/no
- * antes de escribir el XMP — hasta ahora "Aplicar edición" trabajaba a ciegas.
- */
 export default function PhotoDetail({ foto, onClose }: { foto: any; onClose: () => void }) {
   const [exif, setExif] = useState<any>(null);
   const [conEdicion, setConEdicion] = useState(true);
@@ -23,8 +15,8 @@ export default function PhotoDetail({ foto, onClose }: { foto: any; onClose: () 
     setExif(null);
     (async () => {
       try {
-        const r = await fetch(`${API}/exif?path=${encodeURIComponent(foto.path)}`);
-        if (r.ok) setExif(await r.json());
+        const data = await apiClient.getExif(foto.path);
+        setExif(data);
       } catch { /* sin EXIF: la sección simplemente no aparece */ }
     })();
   }, [foto]);
@@ -36,9 +28,11 @@ export default function PhotoDetail({ foto, onClose }: { foto: any; onClose: () 
   return (
     <div
       onClick={onClose}
+      className="toast-enter"
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+        backdropFilter: 'blur(4px)'
       }}
     >
       <div
@@ -52,7 +46,7 @@ export default function PhotoDetail({ foto, onClose }: { foto: any; onClose: () 
         {/* Imagen */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
           <img
-            src={`${API}/preview?path=${encodeURIComponent(foto.path)}&con_edicion=${conEdicion}`}
+            src={apiClient.getPreviewUrl(foto.path, conEdicion)}
             alt={foto.filename}
             style={{ maxWidth: '70vw', maxHeight: '78vh', objectFit: 'contain', borderRadius: '6px' }}
           />

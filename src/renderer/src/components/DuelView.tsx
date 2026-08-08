@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Loupe from './Loupe';
+import FaceGridAlignment from './FaceGridAlignment';
+import { apiClient } from '../api/client';
 
-// El título dice QUIÉN decidió. Antes afirmaba siempre "mejor score", que es
-// falso cuando gana por un gate técnico (la elegida puede tener score menor).
 const TITULO_ELEGIDA: Record<string, string> = {
   gate: 'Elegida por la IA (única sin defectos)',
   gusto: 'Elegida por la IA (tu criterio aprendido)',
   score: 'Elegida por la IA (mejor score)',
+  vlm: 'Elegida por la IA (desempate VLM)',
+  elo: 'Elegida por la IA (desempate ELO en RAM)',
 };
 
-// Preferencias de vista del duelo, recordadas entre sesiones.
 const leerPref = (clave: string, porDefecto: number) => {
   const v = Number(localStorage.getItem(clave));
   return Number.isFinite(v) && v > 0 ? v : porDefecto;
@@ -18,7 +19,6 @@ const leerPref = (clave: string, porDefecto: number) => {
 export default function DuelView({ results }: { results: any[] }) {
   if (!results || results.length === 0) return null;
 
-  // Group by cluster_id
   const clusters = useMemo(() => {
     const map = new Map<number, any[]>();
     for (const img of results) {
@@ -27,18 +27,16 @@ export default function DuelView({ results }: { results: any[] }) {
       }
       map.get(img.cluster_id)!.push(img);
     }
-    return Array.from(map.values()).filter(group => group.length > 1); // Only groups with > 1 img
+    return Array.from(map.values()).filter(group => group.length > 1);
   }, [results]);
 
   const [currentClusterIdx, setCurrentClusterIdx] = useState(0);
   const [learnedOverrides, setLearnedOverrides] = useState<Record<number, string>>({});
   const [isLearning, setIsLearning] = useState(false);
+  const [showFaceGrid, setShowFaceGrid] = useState(true);
 
-  // Columnas y alto de fila. En fotos verticales lo que agranda la imagen es el
-  // ALTO de la celda (el ancho sobrante se va en barras negras), por eso el
-  // tamaño se regula aparte de las columnas.
   const [cols, setCols] = useState(() => leerPref('duelCols', 2));
-  const [rowH, setRowH] = useState(() => leerPref('duelRowH', 62));
+  const [rowH, setRowH] = useState(() => leerPref('duelRowH', 75));
   useEffect(() => { localStorage.setItem('duelCols', String(cols)); }, [cols]);
   useEffect(() => { localStorage.setItem('duelRowH', String(rowH)); }, [rowH]);
 
@@ -52,13 +50,11 @@ export default function DuelView({ results }: { results: any[] }) {
 
   const currentGroup = clusters[currentClusterIdx];
   const clusterId = currentGroup[0].cluster_id;
-  
+
   const representative = currentGroup.find(img => img.path === learnedOverrides[clusterId])
     || currentGroup.find(img => img.is_cluster_representative)
     || currentGroup[0];
 
-  // La elegida primero; el resto por score de la IA (mejor calificadas antes),
-  // así las 4 primeras — las visibles sin scroll — son las que importan.
   const ordered = [
     representative,
     ...currentGroup
@@ -66,21 +62,14 @@ export default function DuelView({ results }: { results: any[] }) {
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
   ];
 
-  // Aprobar: hasta ahora solo aprendíamos cuando el usuario CORREGÍA; si estaba
-  // de acuerdo, esa señal se perdía. Confirmar genera el par positivo
-  // (elegida > mejor alternativa), que es la mitad del aprendizaje que faltaba.
   const [approved, setApproved] = useState<Record<number, boolean>>({});
   const handleApprove = async () => {
     const rival = ordered.find(img => img !== representative);
     if (!rival) return;
     setIsLearning(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/learn_preference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ winner_path: representative.path, loser_path: rival.path }),
-      });
-      if (res.ok) setApproved(prev => ({ ...prev, [clusterId]: true }));
+      await apiClient.learnPreference(representative.path, rival.path);
+      setApproved(prev => ({ ...prev, [clusterId]: true }));
     } catch (e) {
       console.error('Error approving:', e);
     } finally {
@@ -88,8 +77,6 @@ export default function DuelView({ results }: { results: any[] }) {
     }
   };
 
-  // Atajos: cullear con teclado es mucho más rápido que con el mouse.
-  // 1-9 elegir alternativa · ←/→ navegar · Enter aprobar.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
@@ -102,6 +89,9 @@ export default function DuelView({ results }: { results: any[] }) {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         handleApprove();
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        setShowFaceGrid(prev => !prev);
       } else if (/^[1-9]$/.test(e.key)) {
         const elegida = ordered[Number(e.key) - 1];
         if (elegida && elegida !== representative) {
@@ -115,19 +105,12 @@ export default function DuelView({ results }: { results: any[] }) {
   });
 
   const handleLearnPreference = async (alt: any) => {
+    const target = typeof alt === 'string' ? ordered.find(img => img.path === alt) : alt;
+    if (!target || target.path === representative.path) return;
     setIsLearning(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/learn_preference', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          winner_path: alt.path,
-          loser_path: representative.path
-        })
-      });
-      if (res.ok) {
-        setLearnedOverrides(prev => ({ ...prev, [clusterId]: alt.path }));
-      }
+      await apiClient.learnPreference(target.path, representative.path);
+      setLearnedOverrides(prev => ({ ...prev, [clusterId]: target.path }));
     } catch (e) {
       console.error("Error learning preference:", e);
     } finally {
@@ -136,13 +119,23 @@ export default function DuelView({ results }: { results: any[] }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px', overflow: 'hidden' }}>
       
       {/* Duel Header */}
-      <div className="flex-between glass-panel" style={{ padding: '12px 24px', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0 }}>Comparar la ráfaga</h3>
+      <div className="flex-between glass-panel" style={{ padding: '10px 20px', marginBottom: '10px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Comparar la ráfaga</h3>
+          <button
+            className={showFaceGrid ? 'btn btn-primary' : 'btn btn-secondary'}
+            style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+            onClick={() => setShowFaceGrid(v => !v)}
+            title="Atajo: tecla [F]"
+          >
+            👁️ Caras [F]
+          </button>
+        </div>
 
-        {/* Controles de vista: cuántas por fila y qué tan grandes */}
+        {/* Controles de vista: columnas y tamaño dinámico de foto */}
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Columnas</span>
           {[2, 3, 4].map(n => (
@@ -156,13 +149,13 @@ export default function DuelView({ results }: { results: any[] }) {
             </button>
           ))}
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '6px' }}
-            title="Alto de cada foto: subilo para ver detalle (foco, ojos)">
-            Tamaño
+            title="Alto de las fotos: auméntalo para ver detalles en fotos verticales">
+            Tamaño Foto
           </span>
           <input
-            type="range" min={35} max={110} step={5} value={rowH}
+            type="range" min={45} max={140} step={5} value={rowH}
             onChange={e => setRowH(Number(e.target.value))}
-            style={{ width: '110px' }}
+            style={{ width: '130px', accentColor: 'var(--accent-amber)' }}
           />
         </div>
 
@@ -174,13 +167,12 @@ export default function DuelView({ results }: { results: any[] }) {
           >
             Anterior
           </button>
-          {/* Progreso: cuánto falta para terminar de revisar el evento */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               {currentClusterIdx + 1} de {clusters.length}
             </span>
             <div style={{
-              width: '120px', height: '4px', borderRadius: '2px',
+              width: '100px', height: '4px', borderRadius: '2px',
               backgroundColor: 'var(--bg-tertiary)', overflow: 'hidden',
             }}>
               <div style={{
@@ -191,7 +183,7 @@ export default function DuelView({ results }: { results: any[] }) {
             </div>
           </div>
           <button 
-            className="btn btn-secondary"
+            className="btn btn-secondary" 
             disabled={currentClusterIdx === clusters.length - 1}
             onClick={() => setCurrentClusterIdx(c => c + 1)}
           >
@@ -200,17 +192,27 @@ export default function DuelView({ results }: { results: any[] }) {
         </div>
       </div>
 
-      {/* Arena — ordenadas por score: las mejores entran primero. Columnas y
-          alto los elige el usuario. Filas de alto fijo: si no, con muchas fotos
-          el grid las aplasta en vez de desbordar y no habría scroll. */}
+      {/* Grilla Facial Alineada Side-by-Side */}
+      {showFaceGrid && (
+        <div style={{ marginBottom: '10px', flexShrink: 0 }}>
+          <FaceGridAlignment
+            clusterId={clusterId}
+            selectedPhotoPath={representative.path}
+            onSelectPhoto={(path) => handleLearnPreference(path)}
+          />
+        </div>
+      )}
+
+      {/* Arena de Comparación */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${Math.min(ordered.length, cols)}, 1fr)`,
-        gridAutoRows: `minmax(0, ${rowH}vh)`,
+        gridAutoRows: `minmax(420px, ${rowH}vh)`,
         gap: '16px',
         flex: 1,
         overflowY: 'auto',
         alignContent: 'start',
+        paddingRight: '4px',
       }}>
         {ordered.map((img, i) => {
           const isSelected = img === representative;
@@ -223,27 +225,34 @@ export default function DuelView({ results }: { results: any[] }) {
                 flexDirection: 'column',
                 minHeight: 0,
                 border: isSelected ? '2px solid var(--status-selected-text)' : '2px solid transparent',
+                borderRadius: '8px',
+                overflow: 'hidden',
               }}
             >
               <div style={{
-                padding: '12px',
+                padding: '8px 12px',
                 borderBottom: '1px solid var(--border-subtle)',
                 color: isSelected ? 'var(--status-selected-text)' : 'var(--text-primary)',
+                fontSize: '0.88rem',
+                flexShrink: 0,
               }}>
                 {isSelected
                   ? <strong>{TITULO_ELEGIDA[img.decided_by] || 'Elegida por la IA'}</strong>
                   : <strong>#{i + 1} · Alternativa</strong>}
               </div>
-              <div style={{ flex: 1, minHeight: 0, backgroundColor: '#000' }}>
+
+              {/* Visor de Foto */}
+              <div style={{ flex: 1, minHeight: '300px', backgroundColor: '#050507', position: 'relative' }}>
                 <Loupe
-                  src={`http://127.0.0.1:8000/thumbnail?path=${encodeURIComponent(img.path)}&size=duel`}
+                  src={apiClient.getThumbnailUrl(img.path, 'duel')}
                   alt={img.filename}
                   style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 />
               </div>
-              <div className="flex-between" style={{ padding: '12px', fontSize: '0.85rem' }}>
+
+              <div className="flex-between" style={{ padding: '10px 12px', fontSize: '0.82rem', flexShrink: 0, background: 'rgba(0, 0, 0, 0.4)' }}>
                 <div style={{ color: 'var(--text-secondary)' }}>
-                  <div style={{ color: 'var(--text-primary)' }}>
+                  <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                     {img.filename}
                     {img.has_crop && <span title="Reencuadre propuesto — editable en Lightroom"> ✂</span>}
                   </div>
@@ -251,12 +260,11 @@ export default function DuelView({ results }: { results: any[] }) {
                     {img.score != null && <>Score: {img.score.toFixed(2)} · </>}
                     Nitidez: {Math.round(Math.min(1, (img.blur_score || 0) / 500) * 100)}%
                   </div>
-                  {/* Por qué ganó o perdió: hechos medidos, no adjetivos. */}
                   {Array.isArray(img.reasons) && img.reasons.length > 0 && (
-                    <div style={{ marginTop: '4px', lineHeight: 1.5 }}>
+                    <div style={{ marginTop: '4px', lineHeight: 1.4 }}>
                       {img.reasons.map((r: string, k: number) => (
                         <div key={k} style={{
-                          fontSize: '0.75rem',
+                          fontSize: '0.74rem',
                           color: r.startsWith('✔') ? 'var(--status-selected-text)'
                                : r.startsWith('✖') ? 'var(--status-blurry-text)'
                                : 'var(--text-muted)',
@@ -268,7 +276,7 @@ export default function DuelView({ results }: { results: any[] }) {
                 </div>
                 {isSelected ? (
                   approved[clusterId] ? (
-                    <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem' }}>✓ Aprobada</span>
+                    <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem', fontWeight: 600 }}>✓ Aprobada</span>
                   ) : (
                     <button
                       className="btn btn-secondary"

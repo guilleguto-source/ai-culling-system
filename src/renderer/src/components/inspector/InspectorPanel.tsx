@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getDynamicStyles } from '../../utils/dynamicStyles';
-
-const API = 'http://127.0.0.1:8000';
+import { apiClient } from '../../api/client';
 
 const ETIQUETAS: [string, string][] = [
   ['camara', 'Cámara'], ['lente', 'Lente'], ['apertura', 'Apertura'],
@@ -16,8 +15,8 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
     setExif(null);
     (async () => {
       try {
-        const r = await fetch(`${API}/exif?path=${encodeURIComponent(foto.path)}`);
-        if (r.ok) setExif(await r.json());
+        const data = await apiClient.getExif(foto.path);
+        setExif(data);
       } catch { }
     })();
   }, [foto]);
@@ -34,14 +33,17 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
   const filas = ETIQUETAS.filter(([k]) => exif?.[k]);
 
   return (
-    <div style={{
-      width: '320px',
-      backgroundColor: 'var(--bg-elevated)',
-      borderLeft: '1px solid var(--border-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflowY: 'auto'
-    }}>
+    <div 
+      className="inspector-slide-in"
+      style={{
+        width: '320px',
+        backgroundColor: 'var(--bg-elevated)',
+        borderLeft: '1px solid var(--border-subtle)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflowY: 'auto'
+      }}
+    >
       <div className="flex-between" style={{ padding: '16px', borderBottom: '1px solid var(--border-subtle)' }}>
         <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>Inspector</h3>
         <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={onClose}>✕</button>
@@ -52,7 +54,7 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
         {/* Vista previa miniatura */}
         <div style={{ width: '100%', aspectRatio: '3/2', backgroundColor: 'var(--bg-deep)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
           <img 
-            src={`${API}/thumbnail?path=${encodeURIComponent(foto.path)}`} 
+            src={apiClient.getThumbnailUrl(foto.path)} 
             style={{ width: '100%', height: '100%', objectFit: 'contain', ...getDynamicStyles(foto) }}
             alt="Preview"
           />

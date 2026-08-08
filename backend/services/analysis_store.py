@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 from typing import Optional
 import os
+import numpy as np
 
 from services.analysis import PhotoAnalysis
 
@@ -15,20 +16,21 @@ logger = logging.getLogger(__name__)
 # v5: face_attrs — atributos POR cara (calibración y entrenamiento)
 # v6: face_attrs se mide SIEMPRE (antes dependía de detect_closed_eyes: las
 #     filas v5 creadas con la casilla apagada tienen face_attrs vacío y son
-#     inservibles para la calibración). REGLA: si cambia QUÉ se mide o CÓMO,
-#     hay que subir esta versión — el caché no distingue "no medido" de
-#     "medido y vacío".
-ANALYSIS_VERSION = 6
+#     inservibles para la calibración).
+from services.app_paths import get_analysis_dir as _get_analysis_dir
 
-# Anclado al módulo, NO al cwd (ver nota en thumbnail_store.py).
-ANALYSIS_DIR = Path(__file__).parent.parent / "models" / "analysis"
+# v8: Motor Estético 7-ejes + Ponderación VIP de rostros.
+# v9: Rescate Tonal IA (tonal_adjustments) altas luces y sombras.
+ANALYSIS_VERSION = 9
+
+ANALYSIS_DIR = _get_analysis_dir()
 
 
 def _get_db_path(directory: str) -> Path:
     # Hash the directory to create a unique db file
     dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
-    ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
-    return ANALYSIS_DIR / f"{dir_hash}.db"
+    _get_analysis_dir().mkdir(parents=True, exist_ok=True)
+    return _get_analysis_dir() / f"{dir_hash}.db"
 
 def _schema_columns() -> list[str]:
     """Columnas que el código espera (se derivan del propio CREATE TABLE)."""
@@ -36,9 +38,9 @@ def _schema_columns() -> list[str]:
         "path", "mtime", "version", "index_val", "scene_type", "face_bboxes",
         "eye_landmarks", "face_sharpness", "any_closed_eyes", "closed_eyes_count",
         "face_count", "valid_face_count", "looking_away_count", "smiling_count",
-        "face_attrs", "phash", "exif_datetime", "blur_score", "blur_flag",
-        "sharp_anywhere", "aesthetic_score", "saliency_region", "pre_skin_lum",
-        "pre_global_lum", "pre_clip_frac", "pre_wb", "error",
+        "face_attrs", "face_identities", "phash", "exif_datetime", "blur_score", "blur_flag",
+        "sharp_anywhere", "aesthetic_score", "aesthetic_breakdown", "saliency_region", "pre_skin_lum",
+        "pre_global_lum", "pre_clip_frac", "pre_wb", "tonal_adjustments", "error",
     ]
 
 
@@ -83,17 +85,20 @@ def init_store(directory: str) -> sqlite3.Connection:
             looking_away_count INTEGER,
             smiling_count INTEGER,
             face_attrs TEXT,
+            face_identities TEXT,
             phash TEXT,
             exif_datetime TEXT,
             blur_score REAL,
             blur_flag BOOLEAN,
             sharp_anywhere REAL,
             aesthetic_score REAL,
+            aesthetic_breakdown TEXT,
             saliency_region TEXT,
             pre_skin_lum REAL,
             pre_global_lum REAL,
             pre_clip_frac REAL,
             pre_wb TEXT,
+            tonal_adjustments TEXT,
             error TEXT
         )
     """)
@@ -104,6 +109,12 @@ def _row_to_analysis(data: dict) -> PhotoAnalysis:
     """Reconstruye un PhotoAnalysis desde una fila del caché (dict col→valor).
     Único lugar que conoce el mapeo columnas→objeto: load_analysis y
     get_all_analysis lo comparten para no divergir."""
+    face_identities_raw = json.loads(data["face_identities"]) if data.get("face_identities") else []
+    face_identities = [
+        np.array(e, dtype=np.float32) if e is not None else None
+        for e in face_identities_raw
+    ] if face_identities_raw else []
+
     return PhotoAnalysis(
         index=data["index_val"],
         path=data["path"],
@@ -119,17 +130,20 @@ def _row_to_analysis(data: dict) -> PhotoAnalysis:
         looking_away_count=data["looking_away_count"] or 0,
         smiling_count=data["smiling_count"] or 0,
         face_attrs=json.loads(data["face_attrs"]) if data["face_attrs"] else [],
+        face_identities=face_identities,
         phash=data["phash"] if data["phash"] else "",
         exif_datetime=data["exif_datetime"] if data["exif_datetime"] else "",
         blur_score=data["blur_score"],
         blur_flag=bool(data["blur_flag"]),
         sharp_anywhere=data["sharp_anywhere"],
         aesthetic_score=data["aesthetic_score"],
+        aesthetic_breakdown=json.loads(data["aesthetic_breakdown"]) if data.get("aesthetic_breakdown") else {},
         saliency_region=json.loads(data["saliency_region"]) if data["saliency_region"] else None,
         pre_skin_lum=data["pre_skin_lum"],
         pre_global_lum=data["pre_global_lum"],
         pre_clip_frac=data["pre_clip_frac"],
         pre_wb=tuple(json.loads(data["pre_wb"])) if data["pre_wb"] else None,
+        tonal_adjustments=json.loads(data["tonal_adjustments"]) if data.get("tonal_adjustments") else {},
         error=data["error"] if data["error"] else ""
     )
 
@@ -183,14 +197,19 @@ def refresh_mtimes(conn: sqlite3.Connection, paths: list[str]) -> int:
 
 
 def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: float):
+    face_identities_json = json.dumps([
+        e.tolist() if isinstance(e, np.ndarray) else e
+        for e in analysis.face_identities
+    ]) if getattr(analysis, "face_identities", None) else None
+
     conn.execute("""
         INSERT OR REPLACE INTO photo_analysis (
             path, mtime, version, index_val, scene_type, face_bboxes, eye_landmarks,
             face_sharpness, any_closed_eyes, closed_eyes_count, face_count,
-            valid_face_count, looking_away_count, smiling_count, face_attrs, phash, exif_datetime,
+            valid_face_count, looking_away_count, smiling_count, face_attrs, face_identities, phash, exif_datetime,
             blur_score, blur_flag, sharp_anywhere,
-            aesthetic_score, saliency_region, pre_skin_lum, pre_global_lum, pre_clip_frac, pre_wb, error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            aesthetic_score, aesthetic_breakdown, saliency_region, pre_skin_lum, pre_global_lum, pre_clip_frac, pre_wb, tonal_adjustments, error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         analysis.path,
         mtime,
@@ -207,17 +226,20 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         analysis.looking_away_count,
         analysis.smiling_count,
         json.dumps(analysis.face_attrs),
+        face_identities_json,
         analysis.phash,
         analysis.exif_datetime,
         analysis.blur_score,
         analysis.blur_flag,
         analysis.sharp_anywhere,
         analysis.aesthetic_score,
+        json.dumps(getattr(analysis, "aesthetic_breakdown", {})),
         json.dumps(analysis.saliency_region) if analysis.saliency_region else None,
         analysis.pre_skin_lum,
         analysis.pre_global_lum,
         analysis.pre_clip_frac,
         json.dumps(analysis.pre_wb) if analysis.pre_wb else None,
+        json.dumps(getattr(analysis, "tonal_adjustments", {})),
         analysis.error
     ))
     conn.commit()

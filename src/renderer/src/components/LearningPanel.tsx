@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react';
-
-const API = 'http://127.0.0.1:8000';
+import { apiClient } from '../api/client';
 
 const fmt = (n: number) => n.toLocaleString('es');
 
 /**
  * Panel "Tu estilo": lo que la IA aprendió de ESTE fotógrafo.
- *
- * Sustituye al indicador de "Backend Engine", que hablaba de infraestructura
- * donde debe estar el diferencial del producto. Solo muestra cifras reales:
- * si un dato no existe (p.ej. sin historial), esa fila no aparece.
  */
 export default function LearningPanel({ active }: { active: boolean }) {
   const [d, setD] = useState<any>(null);
@@ -18,8 +13,8 @@ export default function LearningPanel({ active }: { active: boolean }) {
     if (!active) return;
     (async () => {
       try {
-        const r = await fetch(`${API}/learning/summary`);
-        if (r.ok) setD(await r.json());
+        const data = await apiClient.getLearningSummary();
+        setD(data);
       } catch { }
     })();
   }, [active]);
@@ -42,7 +37,6 @@ export default function LearningPanel({ active }: { active: boolean }) {
 
   if (filas.length === 0) return null;
 
-  // Calculo dummy de madurez basado en decisiones aprendidas (ejemplo: 5000 es 100%)
   const madurez = Math.min(100, Math.max(5, (d.decisiones_gusto || d.seleccionadas_aprendidas || 0) / 50));
 
   return (

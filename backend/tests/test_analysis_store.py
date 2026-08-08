@@ -186,3 +186,27 @@ def test_version_vieja_invalida_el_cache(tmp_path):
         assert load_analysis(conn, "x.jpg", 5.0) is None
     finally:
         analysis_store.ANALYSIS_VERSION = original
+
+
+def test_face_identities_persisten(tmp_path):
+    """Verifica que los embeddings de ArcFace (np.ndarray) se guarden y recuperen correctamente."""
+    import numpy as np
+    conn = init_store(str(tmp_path))
+    emb1 = np.random.randn(512).astype(np.float32)
+    emb1 /= np.linalg.norm(emb1)
+    
+    a = PhotoAnalysis(
+        index=1,
+        path="identities.jpg",
+        face_bboxes=[[10, 20, 30, 40], [50, 60, 70, 80]],
+        face_attrs=[{"valid": True}, {"valid": True}],
+        face_identities=[emb1, None]
+    )
+    save_analysis(conn, a, 10.0)
+    loaded = load_analysis(conn, "identities.jpg", 10.0)
+    
+    assert loaded is not None
+    assert len(loaded.face_identities) == 2
+    assert isinstance(loaded.face_identities[0], np.ndarray)
+    assert np.allclose(loaded.face_identities[0], emb1, atol=1e-5)
+    assert loaded.face_identities[1] is None

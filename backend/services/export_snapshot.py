@@ -12,14 +12,16 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from services.app_paths import get_exports_dir as _get_exports_dir
+
 logger = logging.getLogger(__name__)
 
-EXPORTS_DIR = Path(__file__).parent.parent / "models" / "exports"
+EXPORTS_DIR = _get_exports_dir()
 
 
 def _snapshot_path(directory: str) -> Path:
     key = hashlib.sha1(str(Path(directory).resolve()).lower().encode("utf-8")).hexdigest()
-    return EXPORTS_DIR / f"{key}.json"
+    return _get_exports_dir() / f"{key}.json"
 
 
 def save_snapshot(directory: str, results: list[dict], preset_path: str = "",

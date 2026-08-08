@@ -1,0 +1,15 @@
+{
+  "name": "neutral",
+  "display_name": "Neutro / Referencia",
+  "description": "Gradación transparente sin alteraciones tonales",
+  "settings": {
+    "Contrast2012": 0,
+    "Highlights2012": 0,
+    "Shadows2012": 0,
+    "Whites2012": 0,
+    "Blacks2012": 0,
+    "Clarity2012": 0,
+    "Vibrance": 0,
+    "Saturation": 0
+  }
+}

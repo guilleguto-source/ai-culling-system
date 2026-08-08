@@ -21,13 +21,15 @@ from services.history_store import HistoryStore
 
 logger = logging.getLogger(__name__)
 
+from services.app_paths import get_develop_recipes_path as _get_develop_recipes_path
+
 # Campos de "look" (crs). Exposición/temperatura/tint quedan para pre_edit.
 STYLE_FIELDS = (
     "Contrast2012", "Highlights2012", "Shadows2012", "Whites2012",
     "Blacks2012", "Clarity2012", "Vibrance", "Saturation", "Dehaze",
 )
 MIN_PER_SCENE = 15   # menos ejemplos que esto: la receta es ruido, no se aprende
-RECIPES_PATH = Path(__file__).parent.parent / "models" / "develop_recipes.json"
+RECIPES_PATH = _get_develop_recipes_path()
 
 
 def learn_recipes(store: HistoryStore | None = None) -> dict:

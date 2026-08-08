@@ -43,7 +43,8 @@ def build_reasons(
             "gate": "✔ Única sin defectos técnicos de la ráfaga",
             "gusto": "✔ La que más se parece a lo que sueles elegir",
             "score": "✔ Mejor combinación de nitidez y composición",
-            "vlm": "✔ Elegida por IA visual profunda para desempatar (mejor expresión)"
+            "vlm": "✔ Elegida por IA visual profunda para desempatar (mejor expresión)",
+            "elo": "✔ Desempate ELO: mejor combinación de expresión y nitidez relativa",
         }.get(criterio, "✔ Elegida de la ráfaga"))
         if a and a.valid_face_count:
             if not a.closed_eyes_count:
@@ -164,6 +165,9 @@ def apply_decision_logic(
     # 4.8° vs 1.3° del usuario y torcía el 80% de sus fotos derechas. Off por
     # defecto aunque el crop esté activo.
     auto_straighten = prefs.get("auto_straighten", False)
+    
+    from services.crop_style import load_crop_style
+    learned_crop_style = load_crop_style()
     results = []
 
     for cluster in clusters:
@@ -225,6 +229,7 @@ def apply_decision_logic(
                     analyses[idx].saliency_region, record.thumb_ai.shape,
                     auto_crop_level, horizonte,
                     person_bboxes=persons, img_rgb=record.thumb_ai,
+                    crop_style=learned_crop_style,
                 )
                 if prop is not None:
                     crop_dict = prop.to_dict()

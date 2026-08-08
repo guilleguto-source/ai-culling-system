@@ -13,9 +13,11 @@ from lxml import etree
 
 from services.settings_manager import load_settings, save_settings
 
+from services.app_paths import get_presets_dir as _get_presets_dir
+
 logger = logging.getLogger(__name__)
 
-PRESETS_DIR = Path(__file__).parent.parent / "models" / "presets"
+PRESETS_DIR = _get_presets_dir()
 MAX_RECENT = 5
 
 NS_CRS = "http://ns.adobe.com/camera-raw-settings/1.0/"

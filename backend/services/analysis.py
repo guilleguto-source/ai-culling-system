@@ -7,8 +7,9 @@ from services.scene_classifier import classify_scene, compute_saliency_region
 from services.face_assessment import compute_face_sharpness
 from services import face_mesh
 from services.technical_quality import evaluate_technical_quality, max_region_sharpness
-from services.aesthetic_assessment import evaluate_aesthetics_fast
+from services.aesthetic_assessment import evaluate_aesthetics_fast, evaluate_aesthetics_detailed
 from services.pre_edit import measure_luminance, estimate_wb, TARGET_MID
+from services import tonal_rescue
 
 logger = logging.getLogger("analysis")
 
@@ -42,9 +43,7 @@ class PhotoAnalysis:
     # caras dudosas en la calibración y para entrenar sobre ellas.
     face_attrs: list = field(default_factory=list)
     # Embeddings de IDENTIDAD (ArcFace) por cara, mismo orden que face_bboxes.
-    # NO se persiste en el caché de análisis (pesa y cambia poco el valor): en
-    # una corrida con análisis cacheado queda vacío y la cobertura por persona
-    # simplemente no actúa.
+    # Persistido en SQLite para garantizar cobertura VIP y consistencia de personas en caché.
     face_identities: list = field(default_factory=list)
     phash: str = ""
     exif_datetime: str = ""
@@ -53,12 +52,14 @@ class PhotoAnalysis:
     blur_flag: bool = False
     sharp_anywhere: float = 0.0
     aesthetic_score: float = 0.5
+    aesthetic_breakdown: dict = field(default_factory=dict)
     saliency_region: Any = None
     
     pre_skin_lum: float | None = None
     pre_global_lum: float = TARGET_MID
     pre_clip_frac: float = 0.0
     pre_wb: tuple[float, float] | None = None
+    tonal_adjustments: dict = field(default_factory=dict)
     
     error: str = ""
 
@@ -176,7 +177,9 @@ def analyze_photo(
     analysis.sharp_anywhere = max_region_sharpness(arr) if tq.is_blurry else tq.blur_score
 
     # Análisis estético
-    analysis.aesthetic_score = evaluate_aesthetics_fast(arr)
+    breakdown = evaluate_aesthetics_detailed(arr)
+    analysis.aesthetic_score = breakdown.overall_score
+    analysis.aesthetic_breakdown = breakdown.to_dict()
 
     # Firma de luz (pre-edición)
     skin_lum, global_lum, clip_frac = measure_luminance(arr, analysis.face_bboxes)
@@ -185,5 +188,10 @@ def analyze_photo(
     analysis.pre_clip_frac = clip_frac
     if pre_edit_enabled:
         analysis.pre_wb = estimate_wb(arr, analysis.face_bboxes)
+
+    # Rescate tonal (altas luces y sombras - Fase 3)
+    if pre_edit_enabled:
+        tonal_rep = tonal_rescue.analyze_tonal_range(arr, analysis.face_bboxes)
+        analysis.tonal_adjustments = tonal_rescue.suggest_tonal_adjustments(tonal_rep)
 
     return analysis

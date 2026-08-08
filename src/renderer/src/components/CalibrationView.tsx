@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Loupe from './Loupe';
+import { apiClient } from '../api/client';
 
-const API = 'http://127.0.0.1:8000';
-
-// Etiquetas legibles por atributo. `teclas` son los atajos de la fila, en el
-// mismo orden que `valores` (1ª tecla = 1er valor).
+// Etiquetas legibles por atributo
 const OPCIONES: Record<string, { titulo: string; teclas: string; valores: [string, string][] }> = {
   eyes: {
     titulo: 'Ojos', teclas: 'qwe',
@@ -24,12 +22,8 @@ const OPCIONES: Record<string, { titulo: string; teclas: string; valores: [strin
   },
 };
 
-// Lo que se pre-marca cuando el detector no opina (no tiene señal geométrica).
-// Lentes → "sin": es el caso normal; el usuario solo toca la fila si hay lentes.
 const DEFAULTS: Record<string, string> = { glasses: 'sin' };
 
-// Descartes: la cara no se juzga, se etiqueta como lo que es.
-// [tecla, valor, texto, ayuda] — la tecla es también la que muestra el botón.
 const DESCARTES: [string, string, string, string][] = [
   ['1', 'no_cara', 'No es una cara', 'Un estampado, un muñeco, un dibujo: el detector se equivocó'],
   ['2', 'ilegible', 'Indistinguible', 'Cara real pero lejana, movida o tapada: ni el ojo humano la juzga'],
@@ -55,9 +49,9 @@ export default function CalibrationView({ directory }: { directory?: string }) {
 
   const cargarStats = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/calibration/stats`);
-      if (r.ok) setStats(await r.json());
-    } catch { /* backend caído: no bloquea la vista */ }
+      const data = await apiClient.getCalibrationStats();
+      setStats(data);
+    } catch { /* backend caído */ }
   }, []);
 
   const cargar = useCallback(async () => {
@@ -65,14 +59,12 @@ export default function CalibrationView({ directory }: { directory?: string }) {
     setCargando(true);
     setMsg('');
     try {
-      const r = await fetch(`${API}/calibration/candidates?directory=${encodeURIComponent(directory)}&limit=40`);
-      const d = await r.json();
-      if (!r.ok) { setMsg(d.detail || 'Error cargando caras'); return; }
+      const d = await apiClient.getCalibrationCandidates(directory, 40);
       setCands(d.candidatas || []);
       setI(0);
       if (!d.candidatas?.length) setMsg('No hay caras pendientes. Corre un culling primero.');
-    } catch {
-      setMsg('Error de conexión con el backend');
+    } catch (e: any) {
+      setMsg(e.message || 'Error cargando caras');
     } finally {
       setCargando(false);
     }
@@ -80,8 +72,6 @@ export default function CalibrationView({ directory }: { directory?: string }) {
 
   useEffect(() => { cargar(); cargarStats(); }, [cargar, cargarStats]);
 
-  // Al cambiar de cara, pre-marcar lo que propone el detector. Una predicción
-  // vacía = el detector no opina sobre ese atributo: ahí manda el default.
   useEffect(() => {
     if (!actual) return;
     const opina = Object.entries(actual.predictions).filter(([, v]) => v);
@@ -96,32 +86,21 @@ export default function CalibrationView({ directory }: { directory?: string }) {
   const enviar = async (labels: Record<string, string>) => {
     if (!actual) return;
     try {
-      await fetch(`${API}/calibration/label`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          photo_path: actual.photo_path,
-          face_index: actual.face_index,
-          face_bbox: actual.face_bbox,
-          labels,
-          predictions: actual.predictions,
-        })
+      await apiClient.labelCalibrationFace({
+        photo_path: actual.photo_path,
+        face_index: actual.face_index,
+        face_bbox: actual.face_bbox,
+        labels,
+        predictions: actual.predictions,
       });
       cargarStats();
-    } catch { /* se pierde una etiqueta, no vale bloquear el flujo */ }
+    } catch { }
     siguiente();
   };
 
-  // Cara buena: atributos + subject=persona (el ejemplo positivo que el
-  // clasificador necesita para aprender a distinguir la basura).
   const guardar = () => enviar({ ...sel, subject: 'persona' });
-
-  // Descarte: solo subject. Los ojos o la boca de un estampado no significan
-  // nada y ensuciarían el entrenamiento.
   const descartar = (valor: string) => enviar({ subject: valor });
 
-  // Atajos: las teclas de cada fila (ver OPCIONES y DESCARTES),
-  // Enter = confirmar, Espacio = saltar.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') { e.preventDefault(); guardar(); return; }
@@ -147,8 +126,13 @@ export default function CalibrationView({ directory }: { directory?: string }) {
   }
 
   const url = actual
-    ? `${API}/calibration/face?path=${encodeURIComponent(actual.photo_path)}` +
-      `&x=${actual.face_bbox[0]}&y=${actual.face_bbox[1]}&w=${actual.face_bbox[2]}&h=${actual.face_bbox[3]}`
+    ? apiClient.getCalibrationFaceUrl(
+        actual.photo_path,
+        actual.face_bbox[0],
+        actual.face_bbox[1],
+        actual.face_bbox[2],
+        actual.face_bbox[3]
+      )
     : '';
 
   return (
@@ -235,8 +219,7 @@ export default function CalibrationView({ directory }: { directory?: string }) {
               </button>
             </div>
 
-            {/* Descartes: no es una cara juzgable. Se etiquetan (no se saltan)
-                para que el clasificador aprenda a filtrarlas. */}
+            {/* Descartes */}
             <div style={{ display: 'flex', gap: '8px' }}>
               {DESCARTES.map(([tecla, valor, texto, ayuda]) => (
                 <button key={valor} className="btn btn-secondary" title={ayuda}

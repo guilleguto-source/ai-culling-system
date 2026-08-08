@@ -16,10 +16,12 @@ import numpy as np
 
 from services.history_store import HistoryStore
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_K = 10
-_CENTROIDS_PATH = Path(__file__).parent.parent / "models" / "scene_centroids.npy"
+_CENTROIDS_PATH = _get_user_data_dir() / "scene_centroids.npy"
 
 
 def save_centroids(centers: np.ndarray) -> None:

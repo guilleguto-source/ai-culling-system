@@ -3,14 +3,15 @@ from pathlib import Path
 import numpy as np
 import os
 
+from services.app_paths import get_models_dir as _get_models_dir, get_resource as _get_resource
+
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path(__file__).parent.parent / "models"
+MODELS_DIR = _get_models_dir()
 CLIP_TEXT_MODEL_PATH = MODELS_DIR / "clip_vit_b32_text.onnx"
-# Tokenizador empaquetado localmente (vocab/merges de CLIP, ~3,5 MB). Se carga
-# SIN red: la búsqueda semántica funciona 100% offline. Si falta esta carpeta,
-# la feature se desactiva — nunca se descarga online en tiempo de uso.
-TOKENIZER_DIR = MODELS_DIR / "clip_tokenizer"
+# Tokenizador bundleado como recurso de sólo lectura (vocab/merges de CLIP, ~3.5 MB).
+# En dev: backend/models/clip_tokenizer/ ; en packaged: resources/models/clip_tokenizer/
+TOKENIZER_DIR = _get_resource("models/clip_tokenizer")
 
 _session = None
 _tokenizer = None

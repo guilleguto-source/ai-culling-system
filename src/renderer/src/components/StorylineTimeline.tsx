@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiClient } from '../api/client';
 
 interface Chapter {
   id: string;
@@ -22,8 +23,7 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
   useEffect(() => {
     if (!directory) return;
     setLoading(true);
-    fetch(`http://127.0.0.1:8000/storyline?directory=${encodeURIComponent(directory)}&gap=30`)
-      .then((res) => (res.ok ? res.json() : null))
+    apiClient.getStoryline(directory, 30)
       .then((data) => {
         if (data && data.storyline) {
           setChapters(data.storyline);
@@ -45,7 +45,7 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
       gap: '16px',
       overflowX: 'auto'
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', shrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           📖 Storyline:
         </span>
@@ -76,7 +76,7 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
               className="glass-card"
             >
               <img
-                src={`http://127.0.0.1:8000${ch.medoid_thumb}`}
+                src={apiClient.getStorylineUrl(ch.medoid_thumb)}
                 alt="Medoid"
                 style={{
                   width: '36px',

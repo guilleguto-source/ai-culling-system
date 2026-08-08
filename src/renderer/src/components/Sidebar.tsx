@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IconFolder, IconSettings, IconGrid, IconDuel } from './icons';
 import LearningPanel from './LearningPanel';
 
@@ -11,6 +11,10 @@ interface SidebarProps {
   currentView: 'grid' | 'duel' | 'calib';
   onViewChange: (view: 'grid' | 'duel' | 'calib') => void;
   hasResults: boolean;
+  lastDirectory?: string;
+  onDirectoryChange?: (dir: string) => void;
+  undoAvailable?: boolean;
+  onUndoExport?: (dir: string) => Promise<void>;
 }
 
 export default function Sidebar({
@@ -21,22 +25,54 @@ export default function Sidebar({
   onStartIngest,
   currentView,
   onViewChange,
-  hasResults
+  hasResults,
+  lastDirectory = '',
+  onDirectoryChange,
+  undoAvailable = false,
+  onUndoExport
 }: SidebarProps) {
-  const [folderInput, setFolderInput] = useState('\\\\MYCLOUDEX2ULTRA\\Public\\Guto Gutierrez\\');
+  const [folderInput, setFolderInput] = useState(lastDirectory);
+  const [isUndoing, setIsUndoing] = useState(false);
+
+  useEffect(() => {
+    if (lastDirectory && lastDirectory !== folderInput) {
+      setFolderInput(lastDirectory);
+    }
+  }, [lastDirectory]);
 
   const handleSelectFolder = async () => {
-    if (window.api.selectFolder) {
+    if (window.api?.selectFolder) {
       const selected = await window.api.selectFolder(folderInput || undefined);
       if (selected) {
         setFolderInput(selected);
+        if (onDirectoryChange) onDirectoryChange(selected);
       }
     }
+  };
+
+  const handleInputChange = (val: string) => {
+    setFolderInput(val);
+    if (onDirectoryChange) onDirectoryChange(val);
   };
 
   const handleStart = (mode: string) => {
     if (folderInput.trim()) {
       onStartIngest(folderInput.trim(), mode);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!folderInput.trim() || isUndoing || !onUndoExport) return;
+    const confirm = window.confirm(
+      '¿Deseas deshacer la última exportación?\nEsto restaurará los archivos .XMP al estado exacto previo a este culling.'
+    );
+    if (!confirm) return;
+
+    setIsUndoing(true);
+    try {
+      await onUndoExport(folderInput.trim());
+    } finally {
+      setIsUndoing(false);
     }
   };
 
@@ -132,9 +168,9 @@ export default function Sidebar({
             </div>
             <input 
               type="text" 
-              placeholder="C:\Photos\Wedding..."
+              placeholder="C:\Fotos\Evento..."
               value={folderInput}
-              onChange={(e) => setFolderInput(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -163,6 +199,25 @@ export default function Sidebar({
           >
             Solo culling
           </button>
+
+          {undoAvailable && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleUndo}
+              disabled={isUndoing || jobState?.status === 'running'}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                fontSize: '0.8rem',
+                color: '#f59e0b',
+                borderColor: 'rgba(245, 158, 11, 0.4)',
+                backgroundColor: 'rgba(245, 158, 11, 0.08)'
+              }}
+              title="Restaura los XMP al estado previo a la exportación más reciente."
+            >
+              {isUndoing ? 'Restaurando…' : '↺ Deshacer exportación XMP'}
+            </button>
+          )}
         </div>
       </div>
 

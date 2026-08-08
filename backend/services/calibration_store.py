@@ -17,9 +17,11 @@ from pathlib import Path
 
 import numpy as np
 
+from services.app_paths import get_user_data_dir as _get_user_data_dir
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent.parent / "models" / "calibration.db"
+DB_PATH = _get_user_data_dir() / "calibration.db"
 
 # Atributos y sus valores válidos (ver spec 2026-07-16-calibracion-design).
 # "alegría/felicidad" NO se etiqueta: en escala absoluta los datos salen
