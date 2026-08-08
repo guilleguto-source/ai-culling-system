@@ -1,118 +1,114 @@
-# AI Culling System
+# Guto Flow — AI Photo Culling & Auto-Editing System (v1.5)
 
-Sistema de escritorio offline de selección inteligente de fotografías (culling) asistido por IA. Electron + React/TypeScript (frontend) comunicándose con un backend local en Python + FastAPI + ONNX Runtime.
+[![Build & Tests](https://img.shields.io/badge/Tests-327%20passed%20%E2%9C%85-brightgreen)](#)
+[![License](https://img.shields.io/badge/License-Proprietary-blue)](#)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Electron%20%7C%20Python-orange)](#)
 
-## Requisitos
+**Guto Flow** es un sistema de escritorio profesional e inteligente para la selección (**culling**), organización y pre-edición automática de fotografías en volumen para fotógrafos de bodas, eventos y retratos. 
 
-### Backend (Python 3.10+)
+Funciona de forma **100% offline y local**, combinando un frontend moderno en Electron + React/TypeScript con un motor backend modular en Python + FastAPI y modelos optimizados en ONNX Runtime.
+
+---
+
+## 🌟 Características Principales (v1.5)
+
+### 🤖 1. Motor de Análisis e Inteligencia Artificial
+* **Calidad Técnica & Nitidez**: Evaluación por filtro Laplaciano de varianza, análisis de saliencia y nitidez facial focalizada.
+* **Motor Estético 7-Ejes**: Ponderación inteligente de composición, rango dinámico, exposición, colorimetría, expresión y prioridad de personas VIP.
+* **Landmarks & Micro-expresiones**: Integración de **YuNet** (detección facial rápida) y **MediaPipe Face Mesh** (parpadeo, sonrisa, dirección de mirada y micro-expresiones).
+* **Reconocimiento de Personas**: **ArcFace (ResNet-50)** para clustering persona-a-persona, garantizando que cada sujeto tenga fotos de calidad seleccionadas.
+* **Auto-Encuadre (YOLOv8)**: Detección de personas de espaldas y encuadre basado en la regla de tercios y espacio de mirada.
+* **Búsqueda Semántica Offline (CLIP)**: Consulta en lenguaje natural (ej: *"niños riendo"*, *"primer plano novia"*) sin conexión a internet.
+
+### 🧠 2. Aprendizaje Adaptativo de Estilo
+* **Gusto Visual (Duelo & Lightroom Sync)**: Aprende continuamente de los duelos 1v1 y de las correcciones del fotógrafo en Lightroom.
+* **Revelado por Escena (Neural LUT & Recetas CRS)**: Aprende la firma de tono, contraste y color por tipo de iluminación (interior cálido, atardecer, luz dura).
+* **Pre-edición Inteligente**: Balance de blancos neutro, rescate tonal de altas luces/sombras y retoque suave de piel (frecuencia dividida).
+
+### 🛡️ 3. Resiliencia, Seguridad & Deshacer
+* **Respaldo Atómico de XMP (`undo_export.py`)**: Guarda los bytes crudos del XMP antes de escribir. Permite **Deshacer el Culling en 1-Clic** exactamente al estado original.
+* **Rescatabilidad de Proyectos**: Re-lectura de XMPs para sincronización bidireccional desde Lightroom Classic.
+* **Manejo de Errores Granular**: Si un RAW individual está dañado, el sistema lo aísla y continúa procesando el lote sin detenerse.
+
+### 📦 4. Infraestructura de Empaquetado & Asistente de Primera Ejecución
+* **Asistente de Descarga SSE (`ModelDownloadWizard.tsx`)**: Descargador atómico de modelos IA con reporte de progreso en tiempo real mediante Server-Sent Events.
+* **Resolutor Central de Rutas (`app_paths.py`)**: Desacoplamiento total para producción. En Windows empaquetado opera en `%APPDATA%/GutoFlow/`.
+* **Pipeline Integrado (`scripts/build.ps1`)**: Script de automatización de compilación de frontend, bundle de PyInstaller con `hiddenimports`, verificador de salud (`verify_build.py`) e instalador standalone NSIS (~100 MB).
+
+---
+
+## 📊 Estado de Pruebas & Calidad de Código
+
+* **Pruebas de Backend (`pytest`)**: **327 / 327 pruebas aprobadas (100% en verde)** cubriendo modelos, routers, cálculo estético y servicios de exportación.
+* **Validación TypeScript**: `npx tsc --noEmit` superado sin errores de sintaxis o tipos.
+
+---
+
+## 🚀 Guía de Desarrollo Local
+
+### Requisitos Previos
+* **Node.js** 18+
+* **Python** 3.10 o 3.12 (Virtualenv aislado en `backend/.venv`)
+
+### 1. Clonar e Instalar Dependencias
+
 ```bash
-cd backend
-pip install -r requirements.txt
-```
-
-### Frontend (Node.js 18+)
-```bash
+# Frontend
 npm install
+
+# Backend
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+cd ..
 ```
 
-## Ejecución en Desarrollo
+### 2. Ejecutar en Modo Desarrollo
 
 ```bash
 npm run dev
 ```
 
-Esto inicia simultáneamente:
-- **Vite** (frontend React) en `http://localhost:5173`
-- **Electron** (proceso principal) que lanza el backend Python automáticamente en `http://127.0.0.1:8000`
-
-También puedes usar la interfaz directamente desde el navegador en `http://localhost:5173`.
-
-## Cómo Funciona
-
-1. Selecciona una carpeta con fotos (JPG, CR2, NEF, ARW, etc.).
-2. El motor analiza cada foto: detecta rostros, evalúa nitidez, agrupa ráfagas similares.
-3. Asigna calificaciones automáticas:
-   - **Verde (3★)** — Mejor foto de cada grupo (Selected).
-   - **Violeta (0★)** — Duplicados aceptables para revisión manual.
-   - **Rojo (0★)** — Borrosas o peores de cada ráfaga (candidatas a eliminar).
-4. Escribe los metadatos directamente en los archivos (JPEG embebido, RAW sidecar `.xmp`).
+Esto arranca automáticamente:
+1. **Vite Dev Server** (React UI) en `http://localhost:5173`.
+2. **Electron Main Process**, lanzando el backend FastAPI en `http://127.0.0.1:8000`.
 
 ---
 
-## Guía de Sincronización con Adobe Lightroom
-
-### 1. Configurar el Conjunto de Etiquetas de Color
-
-Los nombres de los colores escritos por la IA deben coincidir **exactamente** con el conjunto de etiquetas configurado en Lightroom.
-
-**En Lightroom Classic:**
-1. Ve a **Metadatos → Conjunto de etiquetas de color → Editar…**
-2. Verifica que los nombres de las etiquetas sean:
-   - Rojo: `Red` (o `Rojo` si usas LR en español)
-   - Verde: `Green` (o `Verde`)
-   - Azul: `Blue` (o `Azul`)
-   - Púrpura: `Purple` (o `Púrpura`)
-
-3. Si tu Lightroom está en español, edita el archivo `settings.json` en `%APPDATA%\ai_culling_system\` y cambia los valores de `color` para que coincidan:
-```json
-{
-  "ratings_mapping": {
-    "selected":    { "stars": 3, "color": "Verde" },
-    "highlighted": { "stars": 3, "color": "Azul" },
-    "blurry":      { "stars": 0, "color": "Rojo" },
-    "closed_eyes": { "stars": 0, "color": "Púrpura" },
-    "duplicates":  { "stars": 0, "color": "Púrpura" }
-  }
-}
-```
-
-### 2. Leer Metadatos Tras el Culling
-
-Después de ejecutar el culling:
-
-1. Abre la carpeta en Lightroom.
-2. Selecciona todas las fotos (`Ctrl+A`).
-3. Ve a **Metadatos → Leer metadatos de archivos** (o `Ctrl+Shift+R` en Windows).
-4. Lightroom actualizará las estrellas, etiquetas de color y flags de selección.
-
-> **Nota:** Si tienes activado "Escribir cambios automáticamente en XMP" en las preferencias de Lightroom, puede haber un conflicto de escritura. Recomendamos desactivar esa opción mientras usas el sistema de culling.
-
-### 3. Filtrar Rápidamente en Lightroom
-
-Tras la lectura de metadatos, puedes usar la barra de filtros de Lightroom:
-
-- **Ver solo las seleccionadas:** Filtrar por ★★★ (3 estrellas) o color Verde.
-- **Ver candidatas a eliminar:** Filtrar por color Rojo → revisar → eliminar las que confirmes.
-- **Ver duplicados para decidir:** Filtrar por color Púrpura.
-
----
-
-## Compatibilidad de Hardware
-
-- **GPU dedicada (NVIDIA/AMD):** Usa ONNX Runtime con `CUDAExecutionProvider` o `DirectMLExecutionProvider` automáticamente.
-- **Sin GPU:** Fallback automático a `CPUExecutionProvider` con optimización de hilos (75% de los núcleos físicos).
-
-## Estructura del Proyecto
+## 🛠️ Estructura del Proyecto
 
 ```
 ai_culling_system/
 ├── backend/
-│   ├── main.py                     # FastAPI — orquestador del pipeline
-│   ├── models/                     # Modelos ONNX (YuNet, etc.)
-│   ├── services/
-│   │   ├── ingester.py             # Lectura JPG/RAW + thumbnails
-│   │   ├── scene_classifier.py     # Detección de rostros (YuNet)
-│   │   ├── technical_quality.py    # Nitidez (Laplaciano) + saliencia
-│   │   ├── clustering.py           # pHash + DBSCAN
-│   │   ├── xmp_exporter.py         # Escritura XMP (embebido + sidecar)
-│   │   └── settings_manager.py     # Configuración persistente
-│   ├── utils/
-│   │   └── hardware.py             # Detección GPU/CPU
-│   └── requirements.txt
+│   ├── core/                      # Singleton JobManager y orquestación
+│   ├── models/                    # Modelos ONNX y LUTs predeterminados
+│   ├── routers/                   # Router FastAPI (culling, setup, calibration, media, export, etc.)
+│   ├── services/                  # Servicios de IA, aprendizaje, XMP y app_paths
+│   ├── tests/                     # Suite de 327 tests unitarios con pytest
+│   └── main.py                    # Servidor FastAPI
+├── scripts/
+│   ├── build.ps1                  # Automated build pipeline script
+│   ├── verify_build.py            # Executable health check smoke test
+│   └── installer.nsh              # Personalización del instalador NSIS
 ├── src/
-│   ├── main/                       # Electron main process
-│   ├── preload/                    # IPC bridge
-│   └── renderer/src/               # React UI (App, Sidebar, Grid, Duel)
-├── package.json
-└── README.md
+│   ├── main/                      # Proceso principal de Electron
+│   ├── preload/                   # IPC Bridge seguro
+│   └── renderer/src/              # Frontend React + TypeScript
+│       ├── api/                   # Cliente API centralizado
+│       └── components/            # UI Components (Grid, Duel, Wizard, Inspector)
+├── backend.spec                   # Especificación PyInstaller
+└── package.json                   # Configuración Electron-builder y NSIS
 ```
+
+---
+
+## 📄 Guía de Sincronización con Adobe Lightroom Classic
+
+1. En Lightroom Classic, ve a **Metadatos → Conjunto de etiquetas de color → Editar…**
+2. Configura los nombres de los colores (`Red`, `Green`, `Blue`, `Purple`).
+3. Tras ejecutar el culling en Guto Flow, abre Lightroom, selecciona las fotos (`Ctrl+A`) y presiona **Ctrl+Shift+R** (*Metadatos → Leer metadatos de archivos*).
+
+---
+
+© 2026 Guto Flow. Todos los derechos reservados.
