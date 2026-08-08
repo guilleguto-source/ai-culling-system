@@ -1,15 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import InspectorPanel from './inspector/InspectorPanel';
-import { getDynamicStyles } from '../utils/dynamicStyles';
+import PhotoThumbnail from './PhotoThumbnail';
+import PhotoDetail from './PhotoDetail';
 import { apiClient } from '../api/client';
-
-const ETIQUETA: Record<string, string> = {
-  selected: 'Elegida',
-  highlighted: 'Destacada',
-  duplicates: 'Repetida',
-  closed_eyes: 'Ojos cerrados',
-  blurry: 'Descartada',
-};
+import { useToast } from './Toast';
 
 const FILTROS: [string, string, (r: any) => boolean][] = [
   ['todas', 'Todas', () => true],
@@ -21,47 +15,69 @@ const FILTROS: [string, string, (r: any) => boolean][] = [
 
 export default function GridView({ results }: { results: any[] }) {
   const [filtro, setFiltro] = useState('todas');
-  const [detalle, setDetalle] = useState<any>(null);
-  const [learningPhoto, setLearningPhoto] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
+  const [modalPhoto, setModalPhoto] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [semanticPaths, setSemanticPaths] = useState<Set<string> | null>(null);
+  const [density, setDensity] = useState<'compact' | 'normal' | 'large'>(() => {
+    return (localStorage.getItem('guto_grid_density') as any) || 'normal';
+  });
 
+  const { showToast } = useToast();
+
+  const handleDensityChange = (newDensity: 'compact' | 'normal' | 'large') => {
+    setDensity(newDensity);
+    localStorage.setItem('guto_grid_density', newDensity);
+  };
+
+  const handlePreferenceAction = useCallback(async (photo: any, isPick: boolean) => {
+    if (!photo) return;
+    const clusterPhotos = results.filter(r => r.cluster_id === photo.cluster_id);
+    const rival = clusterPhotos.find(r => r.path !== photo.path);
+
+    // Optimistically update label
+    photo.label = isPick ? 'selected' : 'blurry';
+    setSelectedPhoto({ ...photo });
+
+    if (rival) {
+      try {
+        await apiClient.learnPreference(
+          isPick ? photo.path : rival.path,
+          isPick ? rival.path : photo.path
+        );
+        showToast(isPick ? 'Preferencia guardada (Pick)' : 'Preferencia guardada (Reject)', 'success');
+      } catch (err) {
+        console.error('Error learning preference:', err);
+      }
+    }
+  }, [results, showToast]);
+
+  // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if (!detalle) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
 
       const key = e.key.toLowerCase();
-      if (['a', 'p', 'd', 'x'].includes(key)) {
+      if (['p', 'a'].includes(key)) {
         e.preventDefault();
-        
-        const isApprove = key === 'a' || key === 'p';
-        setLearningPhoto(detalle.path);
-        
-        const clusterPhotos = results.filter(r => r.cluster_id === detalle.cluster_id);
-        const rival = clusterPhotos.find(r => r.path !== detalle.path);
-        
-        if (rival) {
-          try {
-            await apiClient.learnPreference(
-              isApprove ? detalle.path : rival.path,
-              isApprove ? rival.path : detalle.path
-            );
-            
-            detalle.label = isApprove ? 'selected' : 'blurry';
-            setDetalle({ ...detalle });
-          } catch (err) {
-            console.error('Error learning preference:', err);
-          }
-        }
-        setLearningPhoto(null);
+        if (selectedPhoto) handlePreferenceAction(selectedPhoto, true);
+      } else if (['x', 'd'].includes(key)) {
+        e.preventDefault();
+        if (selectedPhoto) handlePreferenceAction(selectedPhoto, false);
+      } else if (key === 'enter' && selectedPhoto) {
+        e.preventDefault();
+        setModalPhoto(selectedPhoto);
+      } else if (key === 'escape') {
+        if (modalPhoto) setModalPhoto(null);
+        else if (selectedPhoto) setSelectedPhoto(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [detalle, results]);
+  }, [selectedPhoto, modalPhoto, handlePreferenceAction]);
 
+  // Semantic search debounced
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSemanticPaths(null);
@@ -71,17 +87,14 @@ export default function GridView({ results }: { results: any[] }) {
       try {
         const firstPath = results[0]?.path || '';
         const dir = firstPath.substring(0, Math.max(firstPath.lastIndexOf('\\'), firstPath.lastIndexOf('/')));
-        
-        const data = await apiClient.searchSemantic(searchQuery, dir);
-        setSemanticPaths(new Set(data.results.map((x: any) => x.path)));
+        const data = await apiClient.semanticSearch(searchQuery, dir);
+        setSemanticPaths(new Set((data.results || []).map((x: any) => x.path)));
       } catch (e) {
         console.error('Semantic search error', e);
       }
     }, 500);
     return () => clearTimeout(timer);
   }, [searchQuery, results]);
-
-  if (!results || results.length === 0) return null;
 
   const visibles = useMemo(() => {
     const f = FILTROS.find(([k]) => k === filtro)?.[2] || (() => true);
@@ -92,122 +105,160 @@ export default function GridView({ results }: { results: any[] }) {
     return arr;
   }, [results, filtro, semanticPaths]);
 
-  const cuenta = (fn: (r: any) => boolean) => results.filter(fn).length;
+  const countByFilter = (fn: (r: any) => boolean) => results.filter(fn).length;
+
+  if (!results || results.length === 0) return null;
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+      {/* Main Grid Column */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-        <div style={{
-          display: 'flex', gap: '8px', padding: '12px 16px', flexWrap: 'wrap',
-          borderBottom: '1px solid var(--border-subtle)', alignItems: 'center'
-        }}>
-          {FILTROS.map(([clave, texto, fn]) => {
-            const n = cuenta(fn);
-            return (
-              <button
-                key={clave}
-                className={filtro === clave ? 'btn btn-primary' : 'btn btn-secondary'}
-                style={{ fontSize: '0.78rem', padding: '5px 12px' }}
-                onClick={() => setFiltro(clave)}
-                disabled={n === 0 && clave !== 'todas'}
-              >
-                {texto} <span style={{ opacity: 0.6 }}>{n}</span>
-              </button>
-            );
-          })}
-          
-          <div style={{ flex: 1 }} />
-          <input 
-            type="text" 
-            placeholder="🔍 Buscar escena..." 
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{ 
-              padding: '6px 12px', borderRadius: 'var(--radius-sm)', 
-              border: '1px solid var(--border-strong)', background: 'var(--bg-deep)', 
-              color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none', width: '200px'
-            }}
-          />
+        {/* Toolbar Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 16px',
+            backgroundColor: 'var(--color-surface)',
+            borderBottom: '1px solid var(--border-subtle)',
+            gap: 'var(--space-3)',
+            flexWrap: 'wrap'
+          }}
+        >
+          {/* Filters */}
+          <div className="flex items-center gap-1">
+            {FILTROS.map(([clave, texto, fn]) => {
+              const count = countByFilter(fn);
+              const isActive = filtro === clave;
+              return (
+                <button
+                  key={clave}
+                  className={`gf-btn gf-btn-sm ${isActive ? 'gf-btn-primary' : 'gf-btn-ghost'}`}
+                  style={{
+                    borderRadius: 'var(--radius-pill)',
+                    padding: '4px 10px',
+                    fontSize: 'var(--text-xs)'
+                  }}
+                  onClick={() => setFiltro(clave)}
+                  disabled={count === 0 && clave !== 'todas'}
+                >
+                  <span>{texto}</span>
+                  <span
+                    className="text-mono"
+                    style={{
+                      opacity: isActive ? 1 : 0.6,
+                      marginLeft: '2px',
+                      fontSize: '10px'
+                    }}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Right Controls: Density + Search */}
+          <div className="flex items-center gap-3">
+            {/* Density switch */}
+            <div
+              style={{
+                display: 'flex',
+                backgroundColor: 'var(--color-surface-elevated)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '2px',
+                border: '1px solid var(--border-subtle)'
+              }}
+            >
+              {(['compact', 'normal', 'large'] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => handleDensityChange(d)}
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 'var(--fw-medium)',
+                    borderRadius: 'var(--radius-xs)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    backgroundColor: density === d ? 'var(--color-surface-hover)' : 'transparent',
+                    color: density === d ? 'var(--accent-primary)' : 'var(--text-tertiary)'
+                  }}
+                >
+                  {d === 'compact' ? 'S' : d === 'normal' ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Search */}
+            <input
+              type="text"
+              placeholder="Buscar por contenido..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-xs)',
+                border: '1px solid var(--border-default)',
+                backgroundColor: 'var(--color-surface-elevated)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--text-xs)',
+                outline: 'none',
+                width: '180px'
+              }}
+            />
+          </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', padding: '16px',
-          flex: 1, overflowY: 'auto', alignContent: 'flex-start' }}>
-          {visibles.map((img, i) => {
-            const descartada = img.label === 'blurry' || img.label === 'closed_eyes';
-            const elegida = img.label === 'selected' || img.label === 'highlighted';
-            return (
-              <div key={i} className="glass-panel" onClick={() => setDetalle(img)}
-                style={{ cursor: 'pointer',
-                width: '220px', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                opacity: descartada ? 0.45 : 1,
-                border: elegida ? '2px solid var(--status-selected-text)' : '2px solid transparent',
-              }}>
-                <div style={{ width: '100%', aspectRatio: '3 / 4', backgroundColor: '#000', position: 'relative' }}>
-                  <img
-                    src={apiClient.getThumbnailUrl(img.path)}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', ...getDynamicStyles(img) }}
-                    alt={img.filename}
-                    title={Array.isArray(img.reasons) ? img.reasons.join('\n') : undefined}
-                  />
-                  {img.label && (
-                    <div style={{
-                      position: 'absolute', top: 8, left: 8,
-                      backgroundColor: `var(--status-${img.label.replace('_', '-')}-bg)`,
-                      color: `var(--status-${img.label.replace('_', '-')}-text)`,
-                      border: `1px solid var(--status-${img.label.replace('_', '-')}-border)`,
-                      padding: '3px 7px', borderRadius: 'var(--radius-sm)', fontSize: '0.65rem', fontWeight: 600,
-                      backdropFilter: 'blur(4px)',
-                      textTransform: 'uppercase'
-                    }}>
-                      {ETIQUETA[img.label] || img.label}
-                    </div>
-                  )}
-                  {img.score !== undefined && (
-                    <div style={{
-                      position: 'absolute', top: 8, right: 8,
-                      width: '28px', height: '28px', borderRadius: '50%',
-                      backgroundColor: 'var(--bg-elevated)', border: '2px solid var(--accent-amber)',
-                      color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.7rem', fontWeight: 700, backdropFilter: 'blur(4px)'
-                    }}>
-                      {(img.score * 10).toFixed(1)}
-                    </div>
-                  )}
-                  {img.has_crop && (
-                    <div title="Reencuadre propuesto" style={{
-                      position: 'absolute', bottom: '6px', right: '6px',
-                      backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: '4px',
-                      padding: '2px 6px', fontSize: '0.75rem',
-                    }}>✂</div>
-                  )}
-                  {learningPhoto === img.path && (
-                    <div style={{
-                      position: 'absolute', inset: 0,
-                      backgroundColor: 'rgba(232, 146, 60, 0.2)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backdropFilter: 'blur(2px)'
-                    }}>
-                      <span style={{ color: 'var(--accent-amber)', fontSize: '2rem' }}>✓</span>
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: '10px 12px', fontSize: '0.8rem' }}>
-                  <div style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap',
-                    overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
-                    {img.filename}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                    <span>{img.scene_type === 'portrait' ? 'Retrato' : 'Detalle'}</span>
-                    <span>Nitidez {Math.round(Math.min(1, (img.blur_score || 0) / 500) * 100)}%</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        {/* Thumbnails Flow Area */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: density === 'compact' ? 'var(--space-2)' : 'var(--space-3)',
+            padding: 'var(--space-4)',
+            overflowY: 'auto',
+            alignContent: 'flex-start',
+            backgroundColor: 'var(--color-bg)'
+          }}
+        >
+          {visibles.map((img) => (
+            <PhotoThumbnail
+              key={img.path}
+              photo={img}
+              size={density}
+              isActive={selectedPhoto?.path === img.path}
+              onClick={() => setSelectedPhoto(img)}
+              onPick={(e) => {
+                e.stopPropagation();
+                handlePreferenceAction(img, true);
+              }}
+              onReject={(e) => {
+                e.stopPropagation();
+                handlePreferenceAction(img, false);
+              }}
+            />
+          ))}
         </div>
       </div>
 
-      {detalle && <InspectorPanel foto={detalle} onClose={() => setDetalle(null)} />}
+      {/* Inspector Panel Drawer */}
+      {selectedPhoto && (
+        <InspectorPanel
+          foto={selectedPhoto}
+          onClose={() => setSelectedPhoto(null)}
+        />
+      )}
+
+      {/* Full Modal Viewer when pressing Enter */}
+      {modalPhoto && (
+        <PhotoDetail
+          foto={modalPhoto}
+          onClose={() => setModalPhoto(null)}
+        />
+      )}
     </div>
   );
 }

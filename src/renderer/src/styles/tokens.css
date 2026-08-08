@@ -1,33 +1,155 @@
-/* tokens.css */
+/* ==========================================================================
+   GUTO FLOW 2.0 — DESIGN TOKENS
+   Specification v1.0 — Dark Professional Studio Theme
+   ========================================================================== */
+
 :root {
-  /* Fondos - 4 niveles de profundidad */
-  --bg-deep: #07080C;
-  --bg-surface: #0D0F14;
-  --bg-elevated: #13161D;
-  --bg-card: #181B24;
-  
-  /* Bordes - 3 niveles de intensidad (Ajustados para alto contraste) */
-  --border-subtle: rgba(255,255,255,0.10);
-  --border-default: rgba(255,255,255,0.16);
-  --border-strong: rgba(255,255,255,0.25);
-  
-  /* Texto - 4 niveles de jerarquía (Optimizado WCAG AA) */
+  /* --- Fondos (5 niveles de profundidad) --- */
+  --color-bg: #0B0D10;
+  --color-surface: #101318;
+  --color-surface-elevated: #15191F;
+  --color-surface-hover: #1B2027;
+  --color-surface-active: #20262E;
+
+  /* Legacy & Alias Mappings */
+  --bg-deep: var(--color-bg);
+  --bg-primary: var(--color-bg);
+  --bg-surface: var(--color-surface);
+  --bg-secondary: var(--color-surface);
+  --bg-elevated: var(--color-surface-elevated);
+  --bg-tertiary: var(--color-surface-elevated);
+  --bg-card: var(--color-surface-elevated);
+  --bg-card-hover: var(--color-surface-hover);
+  --bg-glass: rgba(16, 19, 24, 0.75);
+
+  /* --- Bordes (3 niveles de intensidad sutil) --- */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-focus: rgba(231, 161, 58, 0.4);
+
+  /* --- Color de Marca (Dorado Premium) --- */
+  --accent-primary: #E7A13A;
+  --accent-hover: #F0B04D;
+  --accent-active: #C98227;
+  --accent-glow: rgba(231, 161, 58, 0.16);
+  --accent-amber: var(--accent-primary);
+
+  /* --- Colores Semánticos Fotográficos --- */
+  --success: #35C995;          /* Pick / Elegida / Completado */
+  --danger: #E26773;           /* Reject / Descarte / Error */
+  --info: #5D8FEA;             /* Sync / Información / Highlight */
+  --warning: #E7A13A;          /* IA / Recomendación */
+
+  --accent-teal: var(--success);
+  --accent-rose: var(--danger);
+  --accent-blue: var(--info);
+
+  /* Status Colors */
+  --status-selected-bg: rgba(53, 201, 149, 0.12);
+  --status-selected-text: var(--success);
+  --status-selected-border: rgba(53, 201, 149, 0.35);
+
+  --status-highlight-bg: rgba(93, 143, 234, 0.12);
+  --status-highlight-text: var(--info);
+  --status-highlight-border: rgba(93, 143, 234, 0.35);
+
+  --status-blurry-bg: rgba(226, 103, 115, 0.12);
+  --status-blurry-text: var(--danger);
+  --status-blurry-border: rgba(226, 103, 115, 0.35);
+
+  --status-duplicate-bg: rgba(231, 161, 58, 0.12);
+  --status-duplicate-text: var(--accent-primary);
+  --status-duplicate-border: rgba(231, 161, 58, 0.35);
+
+  --status-closed-bg: rgba(226, 103, 115, 0.12);
+  --status-closed-text: var(--danger);
+
+  /* --- Tipografía & Jerarquía --- */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --text-xs: 11px;             /* Metadata, badges secundarios */
+  --text-sm: 12px;             /* Etiquetas secundarias, breadcrumbs */
+  --text-base: 13px;           /* Texto general de interfaz */
+  --text-md: 14px;             /* Cuerpo principal, descripciones */
+  --text-lg: 15px;             /* Controles, botones principales */
+  --text-xl: 18px;             /* Títulos de sección */
+  --text-2xl: 22px;            /* Títulos de vista / página */
+  --text-3xl: 28px;            /* Métricas mayores */
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* Texto - Jerarquía WCAG AA */
   --text-primary: #FFFFFF;
-  --text-secondary: #D1D7E6;
-  --text-tertiary: #A0ABC0;
-  --text-muted: #7E8B9B;
-  
-  /* Acentos funcionales */
-  --accent-amber: #E8923C;
-  --accent-teal: #2DD4A8;
-  --accent-rose: #E85D75;
-  --accent-blue: #5B8DEF;
-  
-  /* Radios */
+  --text-secondary: #C4CBD8;
+  --text-tertiary: #8491A5;
+  --text-muted: #566171;
+
+  /* --- Espaciado (Escala Modular de 4px) --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* --- Layout Shell Dimensions --- */
+  --sidebar-width: 250px;
+  --topbar-height: 48px;
+
+  /* --- Border Radius --- */
+  --radius-xs: 4px;
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  
-  /* Sombras */
-  --shadow-glow-amber: 0 0 20px rgba(232,146,60,0.08);
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 9999px;
+  --radius-photo: 2px;         /* Las fotografías no deben tener redondeo excesivo */
+
+  /* --- Sombras Sutiles (Contraste fotográfico) --- */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-glow-amber: 0 0 20px rgba(231, 161, 58, 0.12);
+
+  /* --- Transiciones y Curvas --- */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --t-fast: 120ms;
+  --t-normal: 220ms;
+  --t-slow: 350ms;
+
+  --transition-fast: var(--t-fast) var(--ease-out);
+  --transition-normal: var(--t-normal) var(--ease-out);
+  --transition-slow: var(--t-slow) var(--ease-out);
+}
+
+/* Light theme support */
+[data-theme="light"] {
+  --color-bg: #F4F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #EBEDF2;
+  --color-surface-hover: #E2E5EB;
+  --color-surface-active: #D8DCE4;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.14);
+
+  --text-primary: #12161E;
+  --text-secondary: #424D5E;
+  --text-tertiary: #6E7B8E;
+  --text-muted: #95A1B1;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.14);
 }

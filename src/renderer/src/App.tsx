@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
 import MainContent from './components/MainContent';
 import SettingsModal from './components/SettingsModal';
+import ShortcutsModal from './components/ShortcutsModal';
 import SyncReminder from './components/SyncReminder';
 import { ModelDownloadWizard } from './components/ModelDownloadWizard';
 import { ToastProvider, useToast } from './components/Toast';
@@ -86,7 +88,20 @@ function MainApp() {
   const [staleBackend, setStaleBackend] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [showModelWizard, setShowModelWizard] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setIsShortcutsOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => window.removeEventListener('keydown', handleGlobalKeys);
+  }, []);
 
   // El backend corre desde que se abre la app: si el código en disco cambió
   // después (actualización), este proceso sirve lógica vieja sin avisar.
@@ -241,12 +256,11 @@ function MainApp() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div className="app-shell">
       <Sidebar 
         backendStatus={backendStatus}
         hardwareInfo={hardwareInfo}
         jobState={jobState}
-        onOpenSettings={() => setIsSettingsOpen(true)}
         onStartIngest={handleIngest}
         currentView={currentView}
         onViewChange={setCurrentView}
@@ -261,28 +275,41 @@ function MainApp() {
         onUndoExport={handleUndoExport}
       />
       
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <main className="main-viewport">
         {staleBackend && (
           <div style={{
             backgroundColor: 'var(--status-blurry-bg)', color: 'var(--status-blurry-text)',
-            padding: '8px 16px', fontSize: '0.85rem', textAlign: 'center',
+            padding: '8px 16px', fontSize: 'var(--text-sm)', textAlign: 'center',
             borderBottom: '1px solid var(--border-subtle)',
           }}>
             ⚠ El motor se actualizó desde que abriste la app — cierra y vuelve a abrir Guto Flow
             para usar la versión nueva. Lo que corras ahora usará la lógica anterior.
           </div>
         )}
-        <SyncReminder active={backendStatus === 'running'} />
-        <MainContent
+        
+        <Topbar
+          currentView={currentView}
+          directory={lastDirectory}
           jobState={jobState}
           jobResults={jobResults}
-          settings={settings}
-          viewMode={currentView}
-          directory={lastDirectory}
-          undoAvailable={undoAvailable}
-          onUndoExport={handleUndoExport}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
         />
-      </div>
+
+        <div className="content-viewport">
+          <SyncReminder active={backendStatus === 'running'} />
+          <MainContent
+            jobState={jobState}
+            jobResults={jobResults}
+            settings={settings}
+            viewMode={currentView}
+            directory={lastDirectory}
+            undoAvailable={undoAvailable}
+            onUndoExport={handleUndoExport}
+            onStartIngest={handleIngest}
+          />
+        </div>
+      </main>
 
       {isSettingsOpen && (
         <SettingsModal 
@@ -291,6 +318,11 @@ function MainApp() {
           onSave={handleSaveSettings}
         />
       )}
+
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
 
       {showModelWizard && (
         <ModelDownloadWizard
