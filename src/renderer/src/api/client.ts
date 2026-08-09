@@ -13,6 +13,7 @@ import {
   CalibrationStatsResponse,
   LearningSummary,
   CachedProject,
+  LibraryProject,
   StorylineChapter
 } from '../types/api';
 
@@ -195,6 +196,8 @@ export const apiClient = {
     ),
 
   getCachedProjects: () => request<CachedProject[]>('/cache/projects'),
+
+  getLibraryProjects: () => request<{ projects: LibraryProject[] }>('/library/projects'),
 
   clearCache: (directory: string) =>
     request<{ success: boolean }>('/cache/clear', {

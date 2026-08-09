@@ -7,6 +7,7 @@ import StorylineTimeline from './StorylineTimeline';
 import { AdvancedPanel } from './AdvancedPanel';
 import HomeScreen from './HomeScreen';
 import StyleProfileView from './StyleProfileView';
+import LibraryView from './LibraryView';
 import { apiClient } from '../api/client';
 import { useToast } from './Toast';
 import { Button } from './ui/Button';
@@ -15,12 +16,13 @@ interface MainContentProps {
   jobState: any;
   jobResults: any;
   settings: any;
-  viewMode: 'grid' | 'duel' | 'calib';
+  viewMode: 'library' | 'grid' | 'duel' | 'calib';
   directory?: string;
   undoAvailable?: boolean;
   onUndoExport?: (dir: string) => Promise<void>;
   onRefreshResults?: () => void;
   onStartIngest?: (dir: string, mode?: string) => void;
+  onSelectProject?: (dir: string) => void;
 }
 
 export default function MainContent({
@@ -111,6 +113,29 @@ export default function MainContent({
     }
   };
   
+  // 0. Dedicated top-level views (Library and Style Profile)
+  if (viewMode === 'library') {
+    return (
+      <LibraryView
+        directory={directory}
+        jobState={jobState}
+        jobResults={jobResults}
+        onSelectProject={onSelectProject}
+        onOpenFolderPicker={() => {
+          if (window.api?.selectFolder) {
+            window.api.selectFolder(directory).then((res) => {
+              if (res && onStartIngest) onStartIngest(res);
+            });
+          }
+        }}
+      />
+    );
+  }
+
+  if (viewMode === 'calib') {
+    return <StyleProfileView directory={directory} />;
+  }
+
   const isIdle = !jobState || ['idle', 'stopped', 'unknown'].includes(jobState.status);
   
   // 1. Empty State (HomeScreen)

@@ -1,14 +1,15 @@
-"""
-routers/culling.py — Endpoints y pipeline principal de culling, ingesta, estado y resultados.
-"""
+import asyncio
+import json
 import logging
 import os
+import queue
 import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from core.job_manager import job_manager
@@ -73,6 +74,43 @@ def start_ingest(data: IngestRequest, background_tasks: BackgroundTasks):
 def get_status():
     """Retorna el estado actual del job de culling en progreso."""
     return job_manager.get_status()
+
+
+@router.get("/events")
+async def stream_events():
+    """
+    Transmite eventos de progreso y cambios de fase en tiempo real usando Server-Sent Events (SSE).
+    """
+    async def event_generator():
+        q = job_manager.subscribe()
+        try:
+            while True:
+                try:
+                    event = q.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                sanitized = _sanitize_for_json(event)
+                payload = json.dumps(sanitized)
+                yield f"data: {payload}\n\n"
+
+                if event.get("type") in ("completed", "error"):
+                    break
+        except asyncio.CancelledError:
+            pass
+        finally:
+            job_manager.unsubscribe(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _sanitize_for_json(obj: Any) -> Any:
@@ -259,9 +297,17 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             job_manager.set_stat("face_learned", {"fotos_ajustadas": refinadas})
             logger.info(f"G3 (calibración) ajustó los conteos de cara en {refinadas} fotos.")
 
-        # FASE 3: Clustering
+        # FASE 3: Clustering y Detección de Duplicados Exactos
         job_manager.set_phase("Agrupando fotos por ráfaga y similitud...")
+        exact_duplicates_map = {}
         if prefs.get("detect_duplicates", True):
+            from services.clustering import find_exact_duplicates
+            exact_duplicates_map = find_exact_duplicates(
+                [r.phash for r in records],
+                [r.exif_datetime for r in records],
+            )
+            job_manager.set_stat("exact_duplicates", {"count": len(exact_duplicates_map)})
+
             clusters = cluster_images(
                 [r.phash for r in records],
                 [r.exif_datetime for r in records],
@@ -277,6 +323,7 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             ]
 
         # FASE 3b: Embeddings visuales
+        # FASE 3b: Embeddings CLIP (solo ráfagas multi-foto en lotes vectorizados)
         from services import embedding_service
         if embedding_service.is_available():
             job_manager.set_phase("Extrayendo vectores de estilo visual (CLIP)...")
@@ -285,28 +332,43 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 for idx in c.image_indices
             ]
             embedded = 0
-            for n, idx in enumerate(multi_indices):
-                rec = records[idx]
-                if rec.error:
-                    continue
-                
-                thumb_ai = None
-                from services.ingester import _extract_raw_preview, _load_jpg, THUMB_AI_SIZE
-                from PIL import Image
-                try:
-                    p = Path(rec.path)
-                    arr = _extract_raw_preview(p) if rec.is_raw else _load_jpg(p)
-                    if arr is not None:
-                        img = Image.fromarray(arr)
-                        img.thumbnail(THUMB_AI_SIZE, Image.LANCZOS)
-                        thumb_ai = np.array(img)
-                except Exception as e:
-                    logger.error(f"Error recargando thumb_ai temporal para embedding: {e}")
+            from services.thumbnail_store import read_thumbnail_from_disk
+            from PIL import Image
+            import io
 
-                if thumb_ai is not None:
-                    if embedding_service.embed_path(rec.path, thumb_ai) is not None:
-                        embedded += 1
-                job_manager.update_progress(progress=80.0 + (n / max(1, len(multi_indices))) * 10.0)
+            BATCH_SIZE = 16
+            for chunk_start in range(0, len(multi_indices), BATCH_SIZE):
+                chunk_indices = multi_indices[chunk_start:chunk_start + BATCH_SIZE]
+                batch_items = []
+                for idx in chunk_indices:
+                    rec = records[idx]
+                    if rec.error:
+                        continue
+                    thumb_ai = None
+                    try:
+                        duel_bytes = read_thumbnail_from_disk(rec.path, "duel")
+                        if duel_bytes:
+                            img = Image.open(io.BytesIO(duel_bytes)).convert("RGB")
+                            thumb_ai = np.array(img)
+                        else:
+                            from services.ingester import _extract_raw_preview, _load_jpg, THUMB_AI_SIZE
+                            p = Path(rec.path)
+                            arr = _extract_raw_preview(p) if rec.is_raw else _load_jpg(p)
+                            if arr is not None:
+                                img = Image.fromarray(arr)
+                                img.thumbnail(THUMB_AI_SIZE, Image.BILINEAR)
+                                thumb_ai = np.array(img)
+                    except Exception as e:
+                        logger.error(f"Error cargando thumbnail para batch embedding: {e}")
+
+                    batch_items.append((rec.path, thumb_ai))
+
+                if batch_items:
+                    res = embedding_service.embed_paths_batch(batch_items, batch_size=BATCH_SIZE)
+                    embedded += sum(1 for vec in res if vec is not None)
+
+                job_manager.update_progress(progress=80.0 + (min(len(multi_indices), chunk_start + BATCH_SIZE) / max(1, len(multi_indices))) * 10.0)
+
             job_manager.set_stat("embeddings", {"computed": embedded, "candidates": len(multi_indices)})
             logger.info(f"Embeddings listos: {embedded}/{len(multi_indices)} fotos en clusters.")
 
@@ -524,7 +586,8 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             trash_flags=trash_flags,
             prefs=prefs,
             settings=settings,
-            develop_by_idx=develop_by_idx
+            develop_by_idx=develop_by_idx,
+            exact_duplicates=exact_duplicates_map,
         )
 
         job_manager.set_stat("selectivity", {

@@ -22,6 +22,7 @@ def build_reasons(
     gate_reasons: dict[int, str],
     decided_by: dict[int, str],
     solo_en_cluster: bool,
+    exact_duplicates: dict[int, int] | None = None,
 ) -> list[str]:
     """
     Motivos legibles de por qué esta foto ganó o perdió su ráfaga.
@@ -53,6 +54,9 @@ def build_reasons(
                 razones.append(f"✔ {a.smiling_count} sonriendo")
         return razones
 
+    if exact_duplicates and idx in exact_duplicates:
+        razones.append("✖ Duplicado idéntico / cuasi-idéntico de ráfaga")
+
     # Perdedoras: primero el gate que la sacó (es el motivo real).
     motivo = gate_reasons.get(idx)
     if motivo == "ojos_cerrados":
@@ -77,41 +81,29 @@ def photos_for_group_coverage(
     score_by_photo: dict[int, float],
 ) -> set[int]:
     """
-    Fase 6: Garantía de Grupos Únicos.
-    Identifica combinaciones únicas de personas (frozensets de tamaño >= 2) y
-    personas individuales, y promueve la mejor foto de los grupos/personas
-    que no hayan salido ya en las selecciones base.
+    Fase 6: Garantía de Cobertura de Personas.
+    Identifica personas que no hayan salido en NINGUNA foto de las selecciones base,
+    y promueve la mejor foto de esa persona para que no quede excluida del evento.
     """
     from collections import Counter
     
     counts = Counter(i for ids in identities_by_photo.values() for i in ids)
+    promovidas = set()
     
-    # 1. Identificar grupos (tamaño >= 2)
-    grupos_por_foto: dict[int, frozenset] = {}
-    for idx, ids in identities_by_photo.items():
-        if len(ids) >= 2:
-            grupos_por_foto[idx] = frozenset(ids)
-            
-    cubiertos: set[frozenset] = {grupos_por_foto[i] for i in selected if i in grupos_por_foto}
-    todos_los_grupos = set(grupos_por_foto.values())
+    # Personas ya cubiertas por la selección base
+    personas_cubiertas = {p for i in selected for p in identities_by_photo.get(i, [])}
     
-    promover: set[int] = set()
-    # 2. Para cada grupo no cubierto, rescatar la mejor
-    for g in todos_los_grupos - cubiertos:
-        candidatas = [i for i, gr in grupos_por_foto.items() if gr == g]
-        if candidatas:
-            promover.add(max(candidatas, key=lambda i: score_by_photo.get(i, 0.0)))
-            
-    # 3. Cobertura de personas individuales (fallback de seguridad)
-    personas_cubiertas = {p for i in (selected | promover) for p in identities_by_photo.get(i, [])}
-    todas_las_personas = set(counts.keys())
-    
-    for p in todas_las_personas - personas_cubiertas:
-        cands = [i for i, ids in identities_by_photo.items() if p in ids]
-        if cands:
-            promover.add(max(cands, key=lambda i: score_by_photo.get(i, 0.0)))
-            
-    return promover
+    # Para cada persona identificada en el evento
+    for p, _ in counts.items():
+        if p not in personas_cubiertas:
+            candidatos = [idx for idx, ids in identities_by_photo.items() if p in ids]
+            if candidatos:
+                candidatos.sort(key=lambda i: score_by_photo.get(i, 0.0), reverse=True)
+                promovidas.add(candidatos[0])
+                # Al promover esta foto, también cubrimos a otras personas que salgan en ella
+                personas_cubiertas.update(identities_by_photo.get(candidatos[0], []))
+                
+    return promovidas
 
 
 def apply_decision_logic(
@@ -127,16 +119,18 @@ def apply_decision_logic(
     gate_reasons: dict[int, str] | None = None,
     decided_by: dict[int, str] | None = None,
     margins: dict[int, float] | None = None,
+    exact_duplicates: dict[int, int] | None = None,
 ) -> list[dict[str, Any]]:
 
     scores = all_scores if all_scores is not None else rep_scores
     gate_reasons = gate_reasons or {}
     decided_by = decided_by or {}
     margins = margins or {}
+    exact_duplicates = exact_duplicates or {}
     KEEP_FRACTION = {"few": 0.35, "standard": 0.55, "more": 0.75}
     HIGHLIGHT_FRACTION = 0.10
     
-    singleton_reps = [c.representative_index for c in clusters if len(c.image_indices) == 1]
+    all_reps = [c.representative_index for c in clusters]
     
     def _selectable(idx: int) -> bool:
         if records[idx].error:
@@ -145,7 +139,7 @@ def apply_decision_logic(
             return False
         return True
 
-    pool = sorted((i for i in singleton_reps if _selectable(i)),
+    pool = sorted((i for i in all_reps if _selectable(i)),
                   key=lambda i: rep_scores[i], reverse=True)
     keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.55)
     keep_n = max(1, int(round(len(pool) * keep_frac))) if pool else 0
@@ -241,6 +235,8 @@ def apply_decision_logic(
                 "scene_type": analyses[idx].scene_type if idx < len(analyses) else "detail",
                 "cluster_id": cluster.cluster_id,
                 "is_cluster_representative": is_representative,
+                "is_exact_duplicate": bool(exact_duplicates and idx in exact_duplicates),
+                "duplicate_of": exact_duplicates.get(idx) if exact_duplicates else None,
                 "label": label,
                 "stars": stars,
                 "color": ratings_map.get(label, {}).get("color", "") if label else "",
@@ -257,6 +253,7 @@ def apply_decision_logic(
                     idx, is_representative, analyses, cluster.representative_index,
                     gate_reasons, decided_by,
                     solo_en_cluster=len(cluster.image_indices) <= 1,
+                    exact_duplicates=exact_duplicates,
                 ),
                 "decided_by": decided_by.get(cluster.representative_index, ""),
                 # Margen chico = decisión reñida → candidata a repaso (Fase S)

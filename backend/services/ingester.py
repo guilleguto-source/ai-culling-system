@@ -4,11 +4,18 @@ Extrae previews JPEG embebidos de archivos RAW para evitar decodificación compl
 Genera thumbnails para la UI y para los modelos de IA.
 """
 import io
+import os
 import logging
 import time
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+
+# Control de sobre-suscripción de hilos en bibliotecas C/C++
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENCV_NUM_THREADS", "1")
 
 import rawpy
 import imageio.v3 as iio
@@ -117,35 +124,40 @@ def _load_jpg(path: Path) -> np.ndarray | None:
         return None
 
 
-def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, bytes, np.ndarray]:
+def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, bytes, np.ndarray, str]:
     """
-    Genera tres thumbnails a partir de un array RGB:
-    - thumb_ui: bytes WebP para mostrar en la galería (grid).
-    - thumb_duel: bytes WebP en alta resolución para el Duelo A/B.
+    Genera thumbnails en cascada desde mayor a menor resolución reutilizando operaciones:
+    - thumb_duel: bytes WebP en alta resolución (1600x1600) para el Duelo A/B.
     - thumb_ai: array numpy redimensionado para modelos de IA.
+    - thumb_ui: bytes WebP para la galería (grid, 320x240).
+    - phash_str: pHash calculado sobre la versión reducida (10x más rápido).
     """
     img = Image.fromarray(arr)
 
-    # Thumbnail para UI (mantiene aspecto)
-    img_ui = img.copy()
-    img_ui.thumbnail(THUMB_UI_SIZE, Image.LANCZOS)
-    buf_ui = io.BytesIO()
-    img_ui.save(buf_ui, format="WEBP", quality=85)
-    thumb_ui_bytes = buf_ui.getvalue()
+    # 1. Reducir primero a tamaño Duelo / IA (1600x1600)
+    img.thumbnail(THUMB_DUEL_SIZE, Image.BILINEAR)
 
-    # Thumbnail para Duelos en alta resolución
-    img_duel = img.copy()
-    img_duel.thumbnail(THUMB_DUEL_SIZE, Image.LANCZOS)
+    # Duelo WebP
     buf_duel = io.BytesIO()
-    img_duel.save(buf_duel, format="WEBP", quality=80)
+    img.save(buf_duel, format="WEBP", quality=80)
     thumb_duel_bytes = buf_duel.getvalue()
 
-    # Thumbnail para IA — aspecto preservado (NO cuadrado, no deforma rostros)
-    img_ai = img.copy()
-    img_ai.thumbnail(THUMB_AI_SIZE, Image.LANCZOS)
-    thumb_ai_arr = np.array(img_ai)
+    # IA array numpy
+    thumb_ai_arr = np.array(img)
 
-    return thumb_ui_bytes, thumb_duel_bytes, thumb_ai_arr
+    # pHash calculado sobre imagen ya reducida
+    try:
+        phash_str = str(imagehash.phash(img))
+    except Exception:
+        phash_str = ""
+
+    # 2. Reducir a UI Grid (320x240) en cascada
+    img.thumbnail(THUMB_UI_SIZE, Image.BILINEAR)
+    buf_ui = io.BytesIO()
+    img.save(buf_ui, format="WEBP", quality=85)
+    thumb_ui_bytes = buf_ui.getvalue()
+
+    return thumb_ui_bytes, thumb_duel_bytes, thumb_ai_arr, phash_str
 
 
 def _get_exif_metadata(path: Path) -> tuple[str, int]:
@@ -170,9 +182,10 @@ def _get_exif_metadata(path: Path) -> tuple[str, int]:
 
 
 def _compute_phash(arr: np.ndarray) -> str:
-    """Calcula el Perceptual Hash (pHash) de la imagen para detección de duplicados."""
+    """Calcula el Perceptual Hash (pHash) de la imagen."""
     try:
         img = Image.fromarray(arr)
+        img.thumbnail(THUMB_UI_SIZE, Image.BILINEAR)
         return str(imagehash.phash(img))
     except Exception:
         return ""
@@ -199,12 +212,13 @@ def process_single_image(path: Path, linked_raw_path: str | None = None) -> Imag
     record.width = arr.shape[1]
     record.height = arr.shape[0]
 
-    # 2. Generar thumbnails
+    # 2. Generar thumbnails y pHash en cascada
     try:
-        t_ui, t_duel, t_ai = _make_thumbnails(arr)
+        t_ui, t_duel, t_ai, p_hash = _make_thumbnails(arr)
         record.thumb_ui = t_ui
         record.thumb_duel = t_duel
         record.thumb_ai = t_ai
+        record.phash = p_hash
         
         # Guardar en disco cache
         from services.thumbnail_store import save_thumbnail_to_disk
@@ -213,11 +227,8 @@ def process_single_image(path: Path, linked_raw_path: str | None = None) -> Imag
         logger.error(f"Error procesando thumbnails {path.name}: {e}")
         record.error = "Error al redimensionar"
         return record
-        
-    # 3. Calcular pHash para detección de duplicados
-    record.phash = _compute_phash(arr)
 
-    # 4. Extraer metadatos EXIF (fecha e ISO)
+    # 3. Extraer metadatos EXIF (fecha e ISO)
     dt_str, iso_val = _get_exif_metadata(path)
     record.exif_datetime = dt_str
     record.iso = iso_val
@@ -252,17 +263,26 @@ def get_ingest_tasks(directory: str) -> list[tuple[Path, str | None]]:
     return tasks
 
 
+def _get_optimal_workers(max_workers: int | None = None) -> int:
+    """Calcula el número óptimo de workers dejando 1 core libre para la UI y el sistema."""
+    if max_workers is not None and max_workers > 0:
+        return max_workers
+    cpu = os.cpu_count() or 4
+    return max(1, cpu - 1)
+
+
 def ingest_directory(
     directory: str,
-    max_workers: int = 4,
+    max_workers: int | None = None,
     progress_callback=None,
 ) -> tuple[list[ImageRecord], dict]:
     """
-    Ingesta todos los archivos de imagen en un directorio de forma concurrente.
+    Ingesta todos los archivos de imagen en un directorio de forma concurrente
+    utilizando ProcessPoolExecutor para eludir el GIL durante el procesamiento.
 
     Args:
         directory: Ruta al directorio de imágenes.
-        max_workers: Hilos de procesamiento paralelo.
+        max_workers: Hilos/procesos de procesamiento paralelo (None = auto).
         progress_callback: Función opcional que recibe (procesadas, total).
 
     Returns:
@@ -294,16 +314,31 @@ def ingest_directory(
     records: list[ImageRecord] = []
     errors = 0
     start = time.perf_counter()
+    workers = _get_optimal_workers(max_workers)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_single_image, path, linked_raw): path for path, linked_raw in tasks}
-        for i, future in enumerate(as_completed(futures), 1):
-            record = future.result()
-            records.append(record)
-            if record.error:
-                errors += 1
-            if progress_callback:
-                progress_callback(i, total)
+    try:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(process_single_image, path, linked_raw): path for path, linked_raw in tasks}
+            for i, future in enumerate(as_completed(futures), 1):
+                record = future.result()
+                records.append(record)
+                if record.error:
+                    errors += 1
+                if progress_callback:
+                    progress_callback(i, total)
+    except Exception as e:
+        logger.warning(f"ProcessPoolExecutor fallback a ThreadPoolExecutor ({e})")
+        records = []
+        errors = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(process_single_image, path, linked_raw): path for path, linked_raw in tasks}
+            for i, future in enumerate(as_completed(futures), 1):
+                record = future.result()
+                records.append(record)
+                if record.error:
+                    errors += 1
+                if progress_callback:
+                    progress_callback(i, total)
 
     elapsed = time.perf_counter() - start
     stats = {

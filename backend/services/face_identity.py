@@ -12,6 +12,7 @@ es False y la función se desactiva sin romper el pipeline. El modelo
 """
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -39,6 +40,18 @@ _session = None
 _failed = False
 
 
+def _get_onnx_providers() -> list[str]:
+    """Retorna los mejores proveedores ONNX disponibles en orden de preferencia."""
+    try:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+        preferred = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+        selected = [p for p in preferred if p in available]
+        return selected if selected else ["CPUExecutionProvider"]
+    except Exception:
+        return ["CPUExecutionProvider"]
+
+
 def is_available() -> bool:
     return _get_session() is not None
 
@@ -57,8 +70,9 @@ def _get_session():
         return None
     try:
         import onnxruntime as ort
-        _session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
-        logger.info("Modelo ArcFace cargado.")
+        providers = _get_onnx_providers()
+        _session = ort.InferenceSession(str(MODEL_PATH), providers=providers)
+        logger.info(f"Modelo ArcFace cargado con proveedores: {providers}")
         return _session
     except Exception as e:
         logger.error(f"No se pudo cargar ArcFace: {e}")
@@ -119,6 +133,51 @@ def embed_face(img_rgb: np.ndarray, bbox: list[int],
     except Exception as e:
         logger.debug(f"ArcFace falló en un recorte: {e}")
         return None
+
+
+def embed_faces_batch(
+    faces_data: list[tuple[np.ndarray, list[int], Any]],
+    batch_size: int = 16,
+) -> list[np.ndarray | None]:
+    """
+    Embedding de identidad por lotes vectorizados para múltiples rostros.
+    faces_data: lista de tuplas (img_rgb, bbox, landmarks).
+    """
+    session = _get_session()
+    if session is None or not faces_data:
+        return [None] * len(faces_data)
+
+    results: list[np.ndarray | None] = [None] * len(faces_data)
+    valid_items = []
+
+    for idx, (img_rgb, bbox, landmarks) in enumerate(faces_data):
+        if img_rgb is None or img_rgb.size == 0:
+            continue
+        chip = _align(img_rgb, landmarks) if landmarks is not None else None
+        if chip is None and bbox:
+            chip = _crop_resize(img_rgb, bbox)
+        if chip is not None:
+            tensor = ((chip.astype(np.float32) / 255.0 - 0.5) / 0.5).transpose(2, 0, 1)[np.newaxis, ...]
+            valid_items.append((idx, tensor))
+
+    if not valid_items:
+        return results
+
+    in_name = session.get_inputs()[0].name
+    for i in range(0, len(valid_items), batch_size):
+        chunk = valid_items[i:i + batch_size]
+        indices = [item[0] for item in chunk]
+        stacked = np.concatenate([item[1] for item in chunk], axis=0)  # Shape (B, 3, 112, 112)
+        try:
+            outs = session.run(None, {in_name: stacked})[0]  # Shape (B, 512)
+            for out_idx, out_vec in zip(indices, outs):
+                vec = np.ravel(out_vec).astype(np.float32)
+                norm = np.linalg.norm(vec)
+                results[out_idx] = vec / norm if norm > 0 else vec
+        except Exception as e:
+            logger.debug(f"ArcFace batch run falló: {e}")
+
+    return results
 
 
 def group_identities(embeddings: list[np.ndarray],

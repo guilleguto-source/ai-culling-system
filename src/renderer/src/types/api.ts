@@ -221,6 +221,27 @@ export interface CachedProject {
   db_hash: string;
 }
 
+export interface LibraryProject {
+  directory: string;
+  folder_name: string;
+  last_accessed: number;
+  exported_at?: string;
+  size_mb: number;
+  total_photos: number;
+  bursts_count: number;
+  selected_count: number;
+  highlighted_count: number;
+  discarded_count: number;
+  duplicates_count: number;
+  blurry_count: number;
+  closed_eyes_count: number;
+  last_synced_at?: string | null;
+  synced_count?: number;
+  sample_photo?: string;
+  status: 'completed' | 'in_progress' | 'cached';
+  progress?: number;
+}
+
 export interface StorylinePhoto {
   path: string;
   thumb_url: string;

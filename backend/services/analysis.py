@@ -149,15 +149,18 @@ def analyze_photo(
         analysis.any_closed_eyes = analysis.closed_eyes_count > 0
 
     # Identidad de las personas (ArcFace). Guardado: si el modelo no está, no
-    # hace nada. Alinea por los 5 landmarks de YuNet cuando existen.
+    # hace nada. Alinea por los 5 landmarks de YuNet cuando existen con inferencia en batch.
     from services import face_identity
     if analysis.face_bboxes and face_identity.is_available():
-        analysis.face_identities = [
-            face_identity.embed_face(
-                arr, bbox,
-                landmarks=analysis.eye_landmarks[i] if i < len(analysis.eye_landmarks) else None)
+        faces_data = [
+            (
+                arr,
+                bbox,
+                analysis.eye_landmarks[i] if i < len(analysis.eye_landmarks) else None,
+            )
             for i, bbox in enumerate(analysis.face_bboxes)
         ]
+        analysis.face_identities = face_identity.embed_faces_batch(faces_data)
 
     # Saliencia para detalles
     if analysis.scene_type == "detail":

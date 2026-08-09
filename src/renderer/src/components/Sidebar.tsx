@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconGrid, IconDuel, IconBrain } from './icons';
+import { IconGrid, IconDuel, IconBrain, IconLibrary } from './icons';
 import { Tooltip } from './ui/Tooltip';
 
 interface SidebarProps {
@@ -7,8 +7,8 @@ interface SidebarProps {
   hardwareInfo: any;
   jobState: any;
   onStartIngest: (directory: string, mode?: string) => void;
-  currentView: 'grid' | 'duel' | 'calib';
-  onViewChange: (view: 'grid' | 'duel' | 'calib') => void;
+  currentView: 'library' | 'grid' | 'duel' | 'calib';
+  onViewChange: (view: 'library' | 'grid' | 'duel' | 'calib') => void;
   hasResults: boolean;
   lastDirectory?: string;
   onDirectoryChange?: (dir: string) => void;
@@ -55,6 +55,15 @@ export default function Sidebar({
       {/* Navigation Groups */}
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: 'var(--space-2)' }}>
         <div className="sidebar-section-title">Workspace</div>
+
+        <button
+          className={`sidebar-nav-item ${currentView === 'library' ? 'active' : ''}`}
+          onClick={() => onViewChange('library')}
+          aria-label="Biblioteca de Sesiones"
+        >
+          <IconLibrary size={17} />
+          <span>Biblioteca</span>
+        </button>
         
         <button
           className={`sidebar-nav-item ${currentView === 'grid' ? 'active' : ''}`}

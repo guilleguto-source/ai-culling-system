@@ -82,7 +82,7 @@ function MainApp() {
   const [jobResults, setJobResults] = useState<any>(null);
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'grid' | 'duel' | 'calib'>('grid');
+  const [currentView, setCurrentView] = useState<'library' | 'grid' | 'duel' | 'calib'>('grid');
   const [lastDirectory, setLastDirectory] = useState<string>(() => localStorage.getItem('lastDirectory') || '');
   const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
   const [staleBackend, setStaleBackend] = useState(false);
@@ -307,6 +307,12 @@ function MainApp() {
             undoAvailable={undoAvailable}
             onUndoExport={handleUndoExport}
             onStartIngest={handleIngest}
+            onSelectProject={(dir) => {
+              setLastDirectory(dir);
+              localStorage.setItem('lastDirectory', dir);
+              setCurrentView('grid');
+              handleIngest(dir);
+            }}
           />
         </div>
       </main>

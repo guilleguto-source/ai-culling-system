@@ -42,6 +42,17 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   const renderViewContext = () => {
     switch (currentView) {
+      case 'library':
+        return (
+          <div className="flex items-center gap-2">
+            <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+              Biblioteca de Sesiones
+            </span>
+            <span className="text-secondary" style={{ fontSize: 'var(--text-sm)' }}>
+              · Historial y Sincronización
+            </span>
+          </div>
+        );
       case 'duel':
         return (
           <div className="flex items-center gap-2">

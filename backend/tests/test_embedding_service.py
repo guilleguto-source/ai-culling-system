@@ -99,6 +99,38 @@ def test_cache_hit_sin_pixeles(tmp_path, monkeypatch):
     assert v is not None and v.shape == (es.EMBEDDING_DIM,)
 
 
+# --- Batching ---
+
+def test_embed_batch_sin_modelo(monkeypatch):
+    monkeypatch.setattr(es, "_get_session", lambda: None)
+    res = es.embed_batch([_img(), _img()])
+    assert res == [None, None]
+
+
+def test_embed_paths_batch_con_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(es, "CACHE_DIR", tmp_path / "cache")
+    f1 = tmp_path / "f1.jpg"
+    f2 = tmp_path / "f2.jpg"
+    f1.write_bytes(b"1")
+    f2.write_bytes(b"2")
+
+    def fake_embed_batch(imgs, batch_size=16):
+        return [_fake_vec() for _ in imgs]
+
+    monkeypatch.setattr(es, "embed_batch", fake_embed_batch)
+
+    items = [(str(f1), _img()), (str(f2), _img())]
+    res1 = es.embed_paths_batch(items)
+    assert len(res1) == 2
+    assert res1[0] is not None and res1[1] is not None
+
+    # Segunda llamada: carga desde caché sin re-computar
+    monkeypatch.setattr(es, "embed_batch", lambda imgs, batch_size=16: pytest.fail("No debería re-calcular"))
+    res2 = es.embed_paths_batch(items)
+    assert len(res2) == 2
+    np.testing.assert_array_almost_equal(res1[0], res2[0])
+
+
 # --- Modelo real (solo si el ONNX está descargado) ---
 
 @pytest.mark.skipif(not es.CLIP_MODEL_PATH.exists(), reason="clip_vit_b32_visual.onnx no descargado")
@@ -109,3 +141,4 @@ def test_embedding_real_shape_norma_determinismo():
     assert v1.shape == (es.EMBEDDING_DIM,)
     assert abs(float(np.linalg.norm(v1)) - 1.0) < 1e-3
     np.testing.assert_array_almost_equal(v1, v2)
+

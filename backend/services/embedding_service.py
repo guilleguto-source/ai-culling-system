@@ -34,6 +34,18 @@ _session = None
 _session_failed = False
 
 
+def _get_onnx_providers() -> list[str]:
+    """Retorna los mejores proveedores ONNX disponibles en orden de preferencia."""
+    try:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+        preferred = ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]
+        selected = [p for p in preferred if p in available]
+        return selected if selected else ["CPUExecutionProvider"]
+    except Exception:
+        return ["CPUExecutionProvider"]
+
+
 def is_available() -> bool:
     """True si el modelo ONNX existe y puede cargarse."""
     return _get_session() is not None
@@ -53,8 +65,9 @@ def _get_session():
         return None
     try:
         import onnxruntime as ort
-        _session = ort.InferenceSession(str(CLIP_MODEL_PATH), providers=["CPUExecutionProvider"])
-        logger.info("Modelo de embeddings CLIP ViT-B/32 cargado.")
+        providers = _get_onnx_providers()
+        _session = ort.InferenceSession(str(CLIP_MODEL_PATH), providers=providers)
+        logger.info(f"Modelo de embeddings CLIP ViT-B/32 cargado con proveedores: {providers}")
         return _session
     except Exception as e:
         logger.error(f"No se pudo cargar el modelo CLIP: {e}")
@@ -98,6 +111,48 @@ def embed(img_rgb: np.ndarray) -> np.ndarray | None:
         return None
 
 
+def embed_batch(images_rgb: list[np.ndarray | None], batch_size: int = 16) -> list[np.ndarray | None]:
+    """
+    Calcula embeddings L2-normalizados para un lote de imágenes RGB en inferencia vectorizada.
+    """
+    session = _get_session()
+    if session is None or not images_rgb:
+        return [None] * len(images_rgb)
+
+    results: list[np.ndarray | None] = [None] * len(images_rgb)
+    valid_items = [(idx, img) for idx, img in enumerate(images_rgb) if img is not None and img.size > 0]
+    if not valid_items:
+        return results
+
+    in_name = session.get_inputs()[0].name
+    for i in range(0, len(valid_items), batch_size):
+        chunk = valid_items[i:i + batch_size]
+        indices = [item[0] for item in chunk]
+        tensors = []
+        for _, img in chunk:
+            try:
+                tensors.append(_preprocess(img))
+            except Exception as e:
+                logger.error(f"Error preprocesando imagen para batch: {e}")
+                tensors.append(None)
+
+        batch_valid = [(idx, t) for idx, t in zip(indices, tensors) if t is not None]
+        if not batch_valid:
+            continue
+
+        stacked = np.concatenate([t for _, t in batch_valid], axis=0)  # Shape (B, 3, 224, 224)
+        try:
+            outs = session.run(None, {in_name: stacked})[0]  # Shape (B, 512)
+            for (out_idx, _), out_vec in zip(batch_valid, outs):
+                vec = np.ravel(out_vec).astype(np.float32)
+                norm = np.linalg.norm(vec)
+                results[out_idx] = vec / norm if norm > 0 else vec
+        except Exception as e:
+            logger.error(f"Error en inferencia batch CLIP: {e}")
+
+    return results
+
+
 # --- Caché en disco keyed por (path, mtime) ---
 
 def _cache_file(path: str, mtime: float) -> Path:
@@ -108,9 +163,7 @@ def _cache_file(path: str, mtime: float) -> Path:
 def load_cached_embedding(path: str, mtime: float) -> np.ndarray | None:
     """
     Devuelve el embedding YA cacheado en disco (o None si no está / está
-    corrupto). No decodifica la imagen ni toca el archivo original — pensado
-    para consumidores que ya tienen el mtime en memoria (búsqueda semántica,
-    storyline) y no deben golpear el disco por foto, importante con el NAS.
+    corrupto). No decodifica la imagen ni toca el archivo original.
     """
     cf = _cache_file(path, mtime)
     if not cf.exists():
@@ -126,18 +179,11 @@ def load_cached_embedding(path: str, mtime: float) -> np.ndarray | None:
 
 def embed_path(path: str, img_rgb: np.ndarray | None = None) -> np.ndarray | None:
     """
-    Embedding de una foto con caché en disco. Re-correr un evento no re-embebe
-    fotos sin cambios (la clave incluye mtime: si el archivo cambió, se recalcula).
-
-    Args:
-        path: Ruta al archivo original (clave del caché).
-        img_rgb: Píxeles ya cargados (p.ej. thumb_ai). Si es None y no hay caché,
-                 retorna None (este módulo no decodifica archivos).
+    Embedding de una foto con caché en disco.
     """
     try:
         mtime = Path(path).stat().st_mtime
     except OSError:
-        # Archivo inaccesible: sin caché, embeber directo si hay píxeles
         return embed(img_rgb) if img_rgb is not None else None
 
     cached = load_cached_embedding(path, mtime)
@@ -154,3 +200,47 @@ def embed_path(path: str, img_rgb: np.ndarray | None = None) -> np.ndarray | Non
         except Exception as e:
             logger.warning(f"No se pudo guardar caché de embedding: {e}")
     return vec
+
+
+def embed_paths_batch(items: list[tuple[str, np.ndarray | None]], batch_size: int = 16) -> list[np.ndarray | None]:
+    """
+    Embedding por lotes con caché en disco.
+    items: lista de tuplas (path, img_rgb)
+    """
+    if not items:
+        return []
+
+    results: list[np.ndarray | None] = [None] * len(items)
+    to_compute_indices = []
+    to_compute_images = []
+    mtimes = []
+
+    for idx, (path, img_rgb) in enumerate(items):
+        try:
+            mtime = Path(path).stat().st_mtime
+        except OSError:
+            mtime = None
+
+        if mtime is not None:
+            cached = load_cached_embedding(path, mtime)
+            if cached is not None:
+                results[idx] = cached
+                continue
+
+        if img_rgb is not None:
+            to_compute_indices.append(idx)
+            to_compute_images.append(img_rgb)
+            mtimes.append(mtime)
+
+    if to_compute_images:
+        computed = embed_batch(to_compute_images, batch_size=batch_size)
+        for res_idx, vec, mtime in zip(to_compute_indices, computed, mtimes):
+            results[res_idx] = vec
+            if vec is not None and mtime is not None:
+                try:
+                    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                    np.save(_cache_file(items[res_idx][0], mtime), vec)
+                except Exception as e:
+                    logger.warning(f"No se pudo guardar caché de embedding: {e}")
+
+    return results

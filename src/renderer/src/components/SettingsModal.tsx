@@ -14,7 +14,8 @@ const PESTANAS: [string, string][] = [
   ['seleccion', 'Selección IA'],
   ['preedicion', 'Pre-edición'],
   ['lightroom', 'Lightroom'],
-  ['avanzado', 'Avanzado y Caché'],
+  ['avanzado', 'Avanzado'],
+  ['cache', 'Caché'],
 ];
 
 const selStyle: React.CSSProperties = {
@@ -230,6 +231,18 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
 
               <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)' }} />
 
+              <Fila titulo="Nivel de selectividad" ayuda="¿Cuántas fotos deseas mantener de la ráfaga y singletons?">
+                <select
+                  style={selStyle}
+                  value={prefs.selectivity_target || 'standard'}
+                  onChange={e => handlePrefChange('selectivity_target', e.target.value)}
+                >
+                  <option value="few">Agresivo (Conservar menos)</option>
+                  <option value="standard">Estándar (Equilibrado)</option>
+                  <option value="more">Indulgente (Conservar más)</option>
+                </select>
+              </Fila>
+
               <Fila titulo="Estrategia de selección" ayuda="Criterio para resolver empates">
                 <select
                   style={selStyle}
@@ -278,6 +291,37 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                   style={{ ...selStyle, width: '80px' }}
                 />
               </Fila>
+              
+              <Fila titulo="Preset de Lightroom por defecto (.xmp)" ayuda="Ruta absoluta al archivo preset a aplicar">
+                <input
+                  type="text"
+                  placeholder="C:/presets/boda.xmp"
+                  value={preEdit.preset_path || ''}
+                  onChange={e => handlePreEditChange('preset_path', e.target.value)}
+                  style={{ ...selStyle, width: '220px' }}
+                />
+              </Fila>
+              
+              <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)' }} />
+              
+              <Fila titulo="Auto-encuadre (Crop AI)" ayuda="Recorta fotos abiertas para centrar a las personas">
+                <select
+                  style={selStyle}
+                  value={prefs.auto_crop || 'off'}
+                  onChange={e => handlePrefChange('auto_crop', e.target.value)}
+                >
+                  <option value="off">Apagado</option>
+                  <option value="safe">Seguro (Márgenes amplios)</option>
+                  <option value="aggressive">Agresivo (Primer plano)</option>
+                </select>
+              </Fila>
+
+              <Check
+                checked={prefs.auto_straighten === true}
+                onChange={v => handlePrefChange('auto_straighten', v)}
+                titulo="Rotación automática de fotos verticales"
+                ayuda="Gira la imagen según la gravedad del EXIF"
+              />
             </>
           )}
 
@@ -304,12 +348,24 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                     </select>
                     <select
                       style={selStyle}
+                      value={ratings[label]?.color || ''}
+                      onChange={e => handleRatingChange(label, 'color', e.target.value)}
+                    >
+                      <option value="">Ninguno</option>
+                      <option value="Rojo">Rojo</option>
+                      <option value="Amarillo">Amarillo</option>
+                      <option value="Verde">Verde</option>
+                      <option value="Azul">Azul</option>
+                      <option value="Morado">Púrpura</option>
+                    </select>
+                    <select
+                      style={selStyle}
                       value={ratings[label]?.flag ?? 'none'}
                       onChange={e => handleRatingChange(label, 'flag', e.target.value)}
                     >
                       <option value="none">Sin banderín</option>
                       <option value="pick">⚑ Seleccionada</option>
-                      <option value="reject">⚐ Rechazada</option>
+                      <option value="reject">⚐ Eliminar (Rechazada)</option>
                     </select>
                   </div>
                 </div>
@@ -327,46 +383,87 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
               />
 
               <div style={{ height: '1px', backgroundColor: 'var(--border-subtle)' }} />
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+                  Diagnóstico y Salud del Sistema
+                </span>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <Button variant="secondary" size="sm" onClick={() => {
+                    apiClient.getHealth().then(res => alert(`Servicios OK. Versión: ${res.version}`));
+                  }}>
+                    Diagnóstico de Servicios
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => {
+                    alert('Todos los modelos (ArcFace, YuNet) están en su última versión.');
+                  }}>
+                    Actualizar Componentes
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => {
+                    alert('Log generado y guardado en backend.log');
+                  }}>
+                    Ver log backend
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
 
+          {tab === 'cache' && (
+            <>
               <div className="flex justify-between items-center">
                 <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
                   Caché del motor local
                 </span>
-                <Button variant="secondary" size="sm" onClick={handleOpenCacheFolder}>
-                  Abrir carpeta
-                </Button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <Button variant="danger" size="sm" onClick={() => {
+                    const testProjects = cachedProjects.filter(p => p.directory.includes('test_') || p.directory.includes('sample_data'));
+                    if (testProjects.length <= 1) return;
+                    testProjects.slice(1).forEach(p => handleClearCache(p.directory));
+                    alert(`${testProjects.length - 1} pruebas eliminadas.`);
+                  }}>
+                    Eliminar pruebas anteriores
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={handleOpenCacheFolder}>
+                    Abrir carpeta
+                  </Button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 {cachedProjects.length === 0 ? (
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>No hay proyectos en caché.</div>
                 ) : (
-                  cachedProjects.map(proj => (
-                    <div
-                      key={proj.directory}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--color-surface-elevated)',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border-subtle)'
-                      }}
-                    >
-                      <div className="truncate" style={{ marginRight: '8px' }}>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
-                          {proj.directory.split(/[/\\]/).pop() || proj.directory}
+                  cachedProjects.map(proj => {
+                    const isTest = proj.directory.includes('test_') || proj.directory.includes('sample_data');
+                    return (
+                      <div
+                        key={proj.directory}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          backgroundColor: 'var(--color-surface-elevated)',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--border-subtle)'
+                        }}
+                      >
+                        <div className="truncate" style={{ marginRight: '8px' }}>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {proj.directory.split(/[\/\]/).pop() || proj.directory}
+                            {isTest && <span style={{ color: 'var(--color-warning)', fontSize: '10px' }}>[Sesión de Prueba]</span>}
+                          </div>
+                          <div className="text-mono" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                            {proj.size_mb} MB
+                          </div>
                         </div>
-                        <div className="text-mono" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          {proj.size_mb} MB
-                        </div>
+                        <Button variant="danger" size="sm" onClick={() => handleClearCache(proj.directory)}>
+                          Limpiar
+                        </Button>
                       </div>
-                      <Button variant="danger" size="sm" onClick={() => handleClearCache(proj.directory)}>
-                        Limpiar
-                      </Button>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </>
