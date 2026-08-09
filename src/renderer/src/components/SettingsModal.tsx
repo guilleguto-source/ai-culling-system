@@ -451,7 +451,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                       >
                         <div className="truncate" style={{ marginRight: '8px' }}>
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {proj.directory.split(/[\/\]/).pop() || proj.directory}
+                            {proj.directory.split(/[/\\]/).pop() || proj.directory}
                             {isTest && <span style={{ color: 'var(--color-warning)', fontSize: '10px' }}>[Sesión de Prueba]</span>}
                           </div>
                           <div className="text-mono" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
