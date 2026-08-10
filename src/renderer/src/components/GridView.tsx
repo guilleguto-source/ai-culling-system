@@ -8,6 +8,7 @@ import { useToast } from './Toast';
 const FILTROS: [string, string, (r: any) => boolean][] = [
   ['todas', 'Todas', () => true],
   ['elegidas', 'Elegidas', r => r.label === 'selected' || r.label === 'highlighted'],
+  ['recomendadas', 'Recomendadas', r => r.label === 'recommended'],
   ['repetidas', 'Repetidas', r => r.label === 'duplicates'],
   ['descartes', 'Descartes', r => r.label === 'blurry' || r.label === 'closed_eyes'],
   ['dudosas', 'Dudosas', r => (r.margin ?? 1) < 0.05],

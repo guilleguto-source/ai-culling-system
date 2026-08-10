@@ -618,20 +618,17 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 aplicadas = 0
                 
                 for idx in promovidas:
-                    if current_selected >= max_count:
-                        logger.info("Se alcanzó el límite global (max_count) en Cobertura por Persona. Deteniendo promociones.")
-                        break
-                        
                     if idx >= len(records):
                         continue
                     r = por_path.get(records[idx].path)
                     if r and r["label"] not in ("selected", "highlighted"):
-                        r["label"] = "selected"
-                        r["stars"] = ratings_map.get("selected", {}).get("stars", 4)
-                        r["color"] = ratings_map.get("selected", {}).get("color", "")
-                        r["reasons"] = ["✔ Única buena de esta persona o grupo en el evento"]
+                        r["label"] = "recommended"
+                        r["stars"] = ratings_map.get("recommended", {}).get("stars", 1)
+                        r["color"] = ratings_map.get("recommended", {}).get("color", "Amarillo")
+                        r["reasons"] = ["✔ Cobertura (aparece poco en la selección)"]
                         aplicadas += 1
-                        current_selected += 1
+                        # Al ser "recomendada" no cuenta contra el techo máximo de "Elegidas"
+                        # current_selected += 1
                         
                 job_manager.set_stat("person_coverage", {
                     "identidades": len({i for ids in identidades.values() for i in ids}),

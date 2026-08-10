@@ -236,7 +236,7 @@ def apply_decision_logic(
                 stars = ratings_map.get("closed_eyes", {}).get("stars", 1)
             elif is_representative and idx in demoted:
                 label = "duplicates"
-                stars = ratings_map.get("duplicates", {}).get("stars", 2)
+                stars = ratings_map.get("duplicates", {}).get("stars", 0)
             elif is_representative and idx in highlights:
                 label = "highlighted"
                 stars = ratings_map.get("highlighted", {}).get("stars", 5)
@@ -245,7 +245,7 @@ def apply_decision_logic(
                 stars = ratings_map.get("selected", {}).get("stars", 4)
             else:
                 label = "duplicates"
-                stars = ratings_map.get("duplicates", {}).get("stars", 2)
+                stars = ratings_map.get("duplicates", {}).get("stars", 0)
 
             crop_dict = None
             if (label in ("selected", "highlighted") and auto_crop_level in LEVEL_LIMITS

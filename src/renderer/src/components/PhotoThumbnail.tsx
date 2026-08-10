@@ -32,6 +32,7 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
   const [isLoaded, setIsLoaded] = useState(false);
 
   const isPick = photo.label === 'selected' || photo.label === 'highlighted';
+  const isRecommended = photo.label === 'recommended';
   const isReject = photo.label === 'blurry' || photo.label === 'closed_eyes';
   const isDuplicate = photo.label === 'duplicates';
 
@@ -45,6 +46,7 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
   const getBorderColor = () => {
     if (isActive) return 'var(--accent-primary)';
     if (isPick) return 'rgba(53, 201, 149, 0.45)';
+    if (isRecommended) return 'rgba(235, 187, 69, 0.6)';
     if (isReject) return 'rgba(226, 103, 115, 0.3)';
     return 'var(--border-subtle)';
   };
