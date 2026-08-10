@@ -42,6 +42,7 @@ export default function MainContent({
   const [undoing, setUndoing] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
 
   const handleUndo = async () => {
@@ -315,7 +316,13 @@ export default function MainContent({
 
         {/* Active Workspace View */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          {viewMode === 'grid' && <GridView results={displayResults} />}
+          {viewMode === 'grid' && (
+            <GridView 
+              results={displayResults} 
+              selectedPaths={selectedPaths}
+              onSelectPaths={setSelectedPaths}
+            />
+          )}
           {viewMode === 'duel' && <DuelView results={displayResults} />}
           {viewMode === 'calib' && <StyleProfileView directory={directory} />}
         </div>
@@ -325,6 +332,7 @@ export default function MainContent({
           isOpen={isAdvancedOpen}
           onClose={() => setIsAdvancedOpen(false)}
           onRefreshResults={onRefreshResults}
+          selectedPaths={Array.from(selectedPaths)}
         />
       </div>
     );

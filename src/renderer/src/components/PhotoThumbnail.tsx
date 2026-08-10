@@ -7,7 +7,7 @@ export interface PhotoThumbnailProps {
   photo: any;
   isActive?: boolean;
   size?: 'compact' | 'normal' | 'large';
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   onPick?: (e: React.MouseEvent) => void;
   onReject?: (e: React.MouseEvent) => void;
 }

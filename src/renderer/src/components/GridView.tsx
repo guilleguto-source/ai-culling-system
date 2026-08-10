@@ -14,12 +14,19 @@ const FILTROS: [string, string, (r: any) => boolean][] = [
   ['dudosas', 'Dudosas', r => (r.margin ?? 1) < 0.05],
 ];
 
-export default function GridView({ results }: { results: any[] }) {
+interface GridViewProps {
+  results: any[];
+  selectedPaths?: Set<string>;
+  onSelectPaths?: (paths: Set<string>) => void;
+}
+
+export default function GridView({ results, selectedPaths = new Set(), onSelectPaths }: GridViewProps) {
   const [filtro, setFiltro] = useState('todas');
   const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
   const [modalPhoto, setModalPhoto] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [semanticPaths, setSemanticPaths] = useState<Set<string> | null>(null);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [density, setDensity] = useState<'compact' | 'normal' | 'large'>(() => {
     return (localStorage.getItem('guto_grid_density') as any) || 'normal';
   });
@@ -53,12 +60,32 @@ export default function GridView({ results }: { results: any[] }) {
     }
   }, [results, showToast]);
 
+  const visibles = useMemo(() => {
+    const f = FILTROS.find(([k]) => k === filtro)?.[2] || (() => true);
+    let arr = results.filter(f);
+    if (semanticPaths) {
+      arr = arr.filter(r => semanticPaths.has(r.path));
+    }
+    return arr;
+  }, [results, filtro, semanticPaths]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
 
       const key = e.key.toLowerCase();
+      
+      // Ctrl+A / Cmd+A or Ctrl+E to select all visibles
+      if ((e.ctrlKey || e.metaKey) && (key === 'a' || key === 'e')) {
+        e.preventDefault();
+        if (onSelectPaths) {
+          const allVisiblePaths = new Set(visibles.map(img => img.path));
+          onSelectPaths(allVisiblePaths);
+        }
+        return;
+      }
+
       if (['p', 'a'].includes(key)) {
         e.preventDefault();
         if (selectedPhoto) handlePreferenceAction(selectedPhoto, true);
@@ -76,7 +103,7 @@ export default function GridView({ results }: { results: any[] }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPhoto, modalPhoto, handlePreferenceAction]);
+  }, [selectedPhoto, modalPhoto, handlePreferenceAction, onSelectPaths, visibles]);
 
   // Semantic search debounced
   useEffect(() => {
@@ -97,16 +124,44 @@ export default function GridView({ results }: { results: any[] }) {
     return () => clearTimeout(timer);
   }, [searchQuery, results]);
 
-  const visibles = useMemo(() => {
-    const f = FILTROS.find(([k]) => k === filtro)?.[2] || (() => true);
-    let arr = results.filter(f);
-    if (semanticPaths) {
-      arr = arr.filter(r => semanticPaths.has(r.path));
-    }
-    return arr;
-  }, [results, filtro, semanticPaths]);
-
   const countByFilter = (fn: (r: any) => boolean) => results.filter(fn).length;
+
+  const handlePhotoClick = (img: any, index: number, e: React.MouseEvent) => {
+    setSelectedPhoto(img);
+
+    if (!onSelectPaths) return;
+
+    let newSelected = new Set(selectedPaths);
+
+    if (e.shiftKey && lastSelectedIndex !== null) {
+      // Rango de selección
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      // Limpiamos o añadimos sobre lo actual? Generalmente añade.
+      for (let i = start; i <= end; i++) {
+        newSelected.add(visibles[i].path);
+      }
+    } else if (e.ctrlKey || e.metaKey) {
+      // Toggle individual
+      if (newSelected.has(img.path)) {
+        newSelected.delete(img.path);
+      } else {
+        newSelected.add(img.path);
+      }
+    } else {
+      // Selección única
+      newSelected = new Set([img.path]);
+    }
+
+    onSelectPaths(newSelected);
+    setLastSelectedIndex(index);
+  };
+
+  const selectAll = () => {
+    if (onSelectPaths) {
+      onSelectPaths(new Set(visibles.map(img => img.path)));
+    }
+  };
 
   if (!results || results.length === 0) return null;
 
@@ -162,6 +217,15 @@ export default function GridView({ results }: { results: any[] }) {
 
           {/* Right Controls: Density + Search */}
           <div className="flex items-center gap-3">
+            <button 
+              className="gf-btn gf-btn-sm gf-btn-ghost" 
+              onClick={selectAll}
+              style={{ fontSize: 'var(--text-xs)' }}
+              title="Seleccionar Todas (Ctrl+A)"
+            >
+              Seleccionar Todas
+            </button>
+
             {/* Density switch */}
             <div
               style={{
@@ -225,23 +289,27 @@ export default function GridView({ results }: { results: any[] }) {
             backgroundColor: 'var(--color-bg)'
           }}
         >
-          {visibles.map((img) => (
-            <PhotoThumbnail
-              key={img.path}
-              photo={img}
-              size={density}
-              isActive={selectedPhoto?.path === img.path}
-              onClick={() => setSelectedPhoto(img)}
-              onPick={(e) => {
-                e.stopPropagation();
-                handlePreferenceAction(img, true);
-              }}
-              onReject={(e) => {
-                e.stopPropagation();
-                handlePreferenceAction(img, false);
-              }}
-            />
-          ))}
+          {visibles.map((img, index) => {
+            const isSelected = selectedPaths.has(img.path) || selectedPhoto?.path === img.path;
+            
+            return (
+              <PhotoThumbnail
+                key={img.path}
+                photo={img}
+                size={density}
+                isActive={isSelected}
+                onClick={(e) => handlePhotoClick(img, index, e)}
+                onPick={(e) => {
+                  e.stopPropagation();
+                  handlePreferenceAction(img, true);
+                }}
+                onReject={(e) => {
+                  e.stopPropagation();
+                  handlePreferenceAction(img, false);
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
