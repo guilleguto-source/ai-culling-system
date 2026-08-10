@@ -190,10 +190,18 @@ export const apiClient = {
       `/search/semantic?q=${encodeURIComponent(q)}&directory=${encodeURIComponent(directory)}&limit=${limit}`
     ),
 
-  getStoryline: (directory: string, gap: number = 30) =>
+  getStoryline: (directory: string) =>
     request<{ storyline: StorylineChapter[] }>(
-      `/storyline?directory=${encodeURIComponent(directory)}&gap=${gap}`
+      `/storyline?directory=${encodeURIComponent(directory)}`
     ),
+
+  getStorylineVocabulary: () => request<{ vocabulary: string[] }>('/storyline/vocabulary'),
+
+  renameStorylineChapter: (directory: string, chapterId: string, newName: string) =>
+    request<{ status: string; term_learned: string }>('/storyline/rename', {
+      method: 'POST',
+      body: JSON.stringify({ directory, chapter_id: chapterId, new_name: newName })
+    }),
 
   getCachedProjects: () => request<CachedProject[]>('/cache/projects'),
 

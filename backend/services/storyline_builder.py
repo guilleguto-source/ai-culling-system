@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 # Storyline 2.0 - Foundation (Sprint 1 & 2)
 # Parámetros de segmentación configurables
-MIN_SEGMENT_PHOTOS = 30
+MIN_SEGMENT_PHOTOS = 15
 MIN_SEGMENT_DURATION_MINUTES = 2.0
 HARD_GAP_MINUTES = 15.0
-CONTEXT_CHANGE_THRESHOLD = 0.45  # Distancia coseno (0 a 2). Mayor significa más diferencia.
+CONTEXT_CHANGE_THRESHOLD = 0.35  # Distancia coseno (0 a 2). Mayor significa más diferencia.
 
 def build_storyline(directory: str) -> list[dict]:
     """

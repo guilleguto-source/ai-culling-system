@@ -96,15 +96,38 @@ def semantic_search(q: str, directory: str, limit: int = 50):
     return {"results": formatted}
 
 
+class RenameChapterRequest(BaseModel):
+    directory: str
+    chapter_id: str
+    new_name: str
+
 @router.get("/storyline")
-def get_storyline(directory: str, gap: int = 30):
+def get_storyline(directory: str):
     """
     Agrupa cronológicamente (gap en mins) y extrae el medoide visual de cada capítulo.
     """
     from services.storyline_builder import build_storyline
-
-    storyline = build_storyline(directory, gap_minutes=gap)
+    storyline = build_storyline(directory)
     return {"storyline": storyline}
+
+
+@router.get("/storyline/vocabulary")
+def get_storyline_vocabulary():
+    """Devuelve el vocabulario de nombres de eventos aprendidos."""
+    from services.event_library import get_vocabulary
+    return {"vocabulary": get_vocabulary()}
+
+
+@router.post("/storyline/rename")
+def rename_storyline_chapter(req: RenameChapterRequest):
+    """
+    Renombra un capítulo y aprende el término agregándolo al Event Library.
+    """
+    from services.event_library import add_vocabulary_term
+    # Por ahora solo lo agregamos a la biblioteca global
+    # En un futuro podríamos actualizar un archivo de storyline persistente por directorio.
+    add_vocabulary_term(req.new_name)
+    return {"status": "success", "term_learned": req.new_name}
 
 
 @router.get("/thumbnail")
