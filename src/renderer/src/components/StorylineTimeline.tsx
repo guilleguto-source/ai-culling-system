@@ -3,6 +3,7 @@ import { apiClient } from '../api/client';
 
 interface Chapter {
   id: string;
+  name?: string;
   start_time: string;
   end_time: string;
   photo_count: number;
@@ -88,7 +89,7 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
               />
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  Capítulo {idx + 1}
+                  {ch.name || `Capítulo ${idx + 1}`}
                 </span>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   {ch.start_time} - {ch.end_time} ({ch.photo_count} fotos)

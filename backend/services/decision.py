@@ -93,9 +93,10 @@ def photos_for_group_coverage(
     # Personas ya cubiertas por la selección base
     personas_cubiertas = {p for i in selected for p in identities_by_photo.get(i, [])}
     
-    # Para cada persona identificada en el evento
-    for p, _ in counts.items():
-        if p not in personas_cubiertas:
+    # Para cada persona identificada en el evento (solo si es un "invitado real" recurrente)
+    MIN_APPEARANCES = 3
+    for p, count in counts.items():
+        if count >= MIN_APPEARANCES and p not in personas_cubiertas:
             candidatos = [idx for idx, ids in identities_by_photo.items() if p in ids]
             if candidatos:
                 candidatos.sort(key=lambda i: score_by_photo.get(i, 0.0), reverse=True)
