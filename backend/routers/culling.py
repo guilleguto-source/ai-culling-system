@@ -610,8 +610,18 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                 promovidas = photos_for_group_coverage(
                     identidades, set(final_selected), all_scores)
                 por_path = {r["path"]: r for r in results}
+                target_frac = {"few": 0.30, "standard": 0.40, "more": 0.50}.get(prefs.get("selectivity_target", "standard"), 0.40)
+                max_count = int(round(len(records) * (target_frac + 0.05)))
+                
+                # Contamos cuántas hay elegidas actualmente (ignorando las vinculadas en crudo añadidas al final de decision)
+                current_selected = len(final_selected)
                 aplicadas = 0
+                
                 for idx in promovidas:
+                    if current_selected >= max_count:
+                        logger.info("Se alcanzó el límite global (max_count) en Cobertura por Persona. Deteniendo promociones.")
+                        break
+                        
                     if idx >= len(records):
                         continue
                     r = por_path.get(records[idx].path)
@@ -621,6 +631,8 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                         r["color"] = ratings_map.get("selected", {}).get("color", "")
                         r["reasons"] = ["✔ Única buena de esta persona o grupo en el evento"]
                         aplicadas += 1
+                        current_selected += 1
+                        
                 job_manager.set_stat("person_coverage", {
                     "identidades": len({i for ids in identidades.values() for i in ids}),
                     "promovidas": aplicadas,

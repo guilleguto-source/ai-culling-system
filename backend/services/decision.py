@@ -127,10 +127,8 @@ def apply_decision_logic(
     decided_by = decided_by or {}
     margins = margins or {}
     exact_duplicates = exact_duplicates or {}
-    KEEP_FRACTION = {"few": 0.35, "standard": 0.55, "more": 0.75}
+    KEEP_FRACTION = {"few": 0.30, "standard": 0.40, "more": 0.50}
     HIGHLIGHT_FRACTION = 0.10
-    
-    all_reps = [c.representative_index for c in clusters]
     
     def _selectable(idx: int) -> bool:
         if records[idx].error:
@@ -139,15 +137,53 @@ def apply_decision_logic(
             return False
         return True
 
-    pool = sorted((i for i in all_reps if _selectable(i)),
-                  key=lambda i: rep_scores[i], reverse=True)
-    keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.55)
-    keep_n = max(1, int(round(len(pool) * keep_frac))) if pool else 0
-    demoted = set(pool[keep_n:])
+    def _is_horizontal(idx: int) -> bool:
+        if idx >= len(records): return True
+        return records[idx].width >= records[idx].height
 
-    final_selected = sorted(
-        (i for i in rep_scores if _selectable(i) and i not in demoted),
-        key=lambda i: rep_scores[i], reverse=True)
+    primary_reps = []
+    secondary_reps = []
+    
+    for cluster in clusters:
+        valid_in_cluster = [i for i in cluster.image_indices if _selectable(i)]
+        if not valid_in_cluster:
+            continue
+            
+        rep = cluster.representative_index
+        if rep not in valid_in_cluster:
+            rep = max(valid_in_cluster, key=lambda i: scores.get(i, 0.0))
+        primary_reps.append(rep)
+        
+        rep_is_horiz = _is_horizontal(rep)
+        opp_orientation = [i for i in valid_in_cluster if i != rep and _is_horizontal(i) != rep_is_horiz]
+        if opp_orientation:
+            best_opp = max(opp_orientation, key=lambda i: scores.get(i, 0.0))
+            secondary_reps.append(best_opp)
+
+    primary_reps.sort(key=lambda i: scores.get(i, 0.0), reverse=True)
+    secondary_reps.sort(key=lambda i: scores.get(i, 0.0), reverse=True)
+
+    target_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.40)
+    target_count = max(1, int(round(len(records) * target_frac)))
+    max_count = int(round(len(records) * (target_frac + 0.05)))
+    
+    final_selected_set = set(primary_reps)
+    
+    # Si estamos por debajo del objetivo, agregamos secondary_reps (1 extra por ráfaga)
+    if len(final_selected_set) < target_count:
+        for sec in secondary_reps:
+            final_selected_set.add(sec)
+            if len(final_selected_set) >= target_count:
+                break
+                
+    # Si excedemos el máximo permitido (+5%), degradamos los peores representantes
+    if len(final_selected_set) > max_count:
+        sorted_selected = sorted(list(final_selected_set), key=lambda i: scores.get(i, 0.0), reverse=True)
+        final_selected_set = set(sorted_selected[:max_count])
+        
+    demoted = set(i for c in clusters for i in c.image_indices if _selectable(i) and i not in final_selected_set)
+    
+    final_selected = sorted(list(final_selected_set), key=lambda i: scores.get(i, 0.0), reverse=True)
     highlights: set[int] = set()
     if prefs.get("detect_highlights", True) and final_selected:
         top_n = max(1, int(round(len(final_selected) * HIGHLIGHT_FRACTION)))

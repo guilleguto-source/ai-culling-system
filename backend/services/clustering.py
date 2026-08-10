@@ -127,9 +127,15 @@ def cluster_images(
                 if dt > max_dt_allowed:
                     break
                 h_dist = int(np.sum(h_i != hash_bits[j]))
-                combined = h_dist + (dt / max_time_gap_seconds) * (epsilon_hash / 2)
-                if combined <= epsilon_hash:
+                
+                # Si las fotos fueron tomadas con <= 1.5s de diferencia, es la misma ráfaga
+                # incluso si el pHash cambia drásticamente por cambio de orientación (Horizontal vs Vertical).
+                if dt <= 1.5:
                     union(i, j)
+                else:
+                    combined = h_dist + (dt / max_time_gap_seconds) * (epsilon_hash / 2)
+                    if combined <= epsilon_hash:
+                        union(i, j)
 
         # 2. Comparar fotos sin timestamp (o 0) con el grupo
         for i in no_time:
