@@ -8,7 +8,7 @@ import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import system, culling, bursts, calibration, export, media, advanced, setup
+from routers import system, culling, bursts, export, media, advanced, setup
 
 # Re-exportaciones de funciones para compatibilidad con tests existentes
 from routers.culling import _run_culling_pipeline
@@ -16,7 +16,7 @@ from routers.culling import _run_culling_pipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Culling Backend", version="1.0.0")
+app = FastAPI(title="AI Culling Backend", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,6 @@ def startup_event():
 app.include_router(system.router)
 app.include_router(culling.router)
 app.include_router(bursts.router)
-app.include_router(calibration.router)
 app.include_router(export.router)
 app.include_router(media.router)
 app.include_router(advanced.router)

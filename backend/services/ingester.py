@@ -36,13 +36,13 @@ SUPPORTED_EXTENSIONS = RAW_EXTENSIONS | JPG_EXTENSIONS
 
 # Tamaños de thumbnail
 THUMB_UI_SIZE = (320, 240)    # Para la galería de la UI
-THUMB_DUEL_SIZE = (1600, 1600) # Para comparaciones A/B de alta resolución en la UI
+THUMB_DUEL_SIZE = (2048, 2048) # Para comparaciones A/B de alta resolución en la UI
 # Para análisis de IA: debe ser suficientemente grande para que YuNet detecte
 # rostros en fotos de grupo (a 224px las caras quedan diminutas y no se detectan).
-# Aspecto preservado; lado largo = 1600.
+# Aspecto preservado; lado largo = 2048.
 # NOTA (Fase 3): mantener todos los thumb_ai en memoria a la vez no escala a miles
 # de fotos; conviene procesar en streaming. Aceptable por ahora.
-THUMB_AI_SIZE = (1600, 1600)
+THUMB_AI_SIZE = (2048, 2048)
 
 
 @dataclass
@@ -127,7 +127,7 @@ def _load_jpg(path: Path) -> np.ndarray | None:
 def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, bytes, np.ndarray, str]:
     """
     Genera thumbnails en cascada desde mayor a menor resolución reutilizando operaciones:
-    - thumb_duel: bytes WebP en alta resolución (1600x1600) para el Duelo A/B.
+    - thumb_duel: bytes WebP en alta resolución (2048x2048) para el Duelo A/B.
     - thumb_ai: array numpy redimensionado para modelos de IA.
     - thumb_ui: bytes WebP para la galería (grid, 320x240).
     - phash_str: pHash calculado sobre la versión reducida (10x más rápido).

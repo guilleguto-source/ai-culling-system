@@ -10,8 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   getJobStatus: () => ipcRenderer.invoke('backend:job:status'),
   getJobResults: () => ipcRenderer.invoke('backend:job:results'),
   
-  checkUndoAvailable: (directory: string) => ipcRenderer.invoke('backend:undo:available', directory),
-  undoExport: (directory: string) => ipcRenderer.invoke('backend:undo:run', directory),
+
 
   selectFolder: (defaultPath?: string) => ipcRenderer.invoke('backend:select-folder', defaultPath),
 

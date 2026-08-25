@@ -13,7 +13,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from services import face_mesh
 from services.analysis_store import init_store, load_analysis
 from services.calibration_store import ATTRIBUTES, CalibrationStore
 
@@ -56,18 +55,18 @@ def candidates(directory: str, limit: int = 50) -> list[FaceCandidate]:
             continue
 
         for i, d in enumerate(a.face_attrs):
-            attrs = face_mesh.from_dict(d)
-            if not attrs.valid or (str(p), i) in ya:
+            attrs = d
+            if not attrs.get('valid', True) or (str(p), i) in ya:
                 continue
             if i >= len(a.face_bboxes):
                 continue
             bbox = a.face_bboxes[i]
             if max(bbox[2], bbox[3]) < MIN_FACE_PX:
                 continue
-            u = max(face_mesh.uncertainty(attrs, at) for at in ATTRIBUTES)
+            u = 0.5  # Fixed uncertainty en UniFace v10
             out.append(FaceCandidate(
                 photo_path=str(p), face_index=i, face_bbox=bbox, uncertainty=round(u, 4),
-                predictions={at: face_mesh.predict(attrs, at) for at in ATTRIBUTES},
+                predictions={at: attrs.get(at, 0) for at in ATTRIBUTES},
             ))
 
     out.sort(key=lambda c: -c.uncertainty)
@@ -187,45 +186,9 @@ def face_embedding(photo_path: str, bbox: list) -> np.ndarray | None:
     return v
 
 
-def face_geometry(photo_path: str, bbox: list) -> "face_mesh.FaceAttributes | None":
-    """
-    Geometría por-cara (EAR, blink, sonrisa, mirada, yaw) recomputada desde
-    disco. Para rellenar (backfill) las features de etiquetas guardadas antes
-    del clasificador híbrido, que solo tenían el embedding.
-    """
-    if not face_mesh.is_available():
-        return None
-    arr = _load_scaled(photo_path)
-    if arr is None:
-        return None
-    return face_mesh.analyze_face(arr, bbox)
+def face_geometry(photo_path: str, bbox: list) -> dict | None:
+    return None
 
 
 def backfill_features(store: CalibrationStore | None = None) -> int:
-    """
-    Rellena las features geométricas de las etiquetas viejas (guardadas cuando
-    solo se persistía el embedding). Recomputa la geometría una sola vez por
-    cara y la escribe en todas sus filas de atributo. Las caras que ya no estén
-    en disco, o sin MediaPipe, se dejan sin features: quedan fuera del
-    entrenamiento híbrido pero no rompen nada.
-
-    Idempotente y barato tras la primera pasada (la consulta ya no devuelve
-    nada), así que puede llamarse desde los endpoints sin coste.
-    """
-    store = store or CalibrationStore()
-    faltantes = store.faces_missing_features(face_mesh.FEATURE_DIM)
-    rellenadas = 0
-    for photo_path, face_index, bbox in faltantes:
-        if not bbox:
-            continue
-        try:
-            a = face_geometry(photo_path, bbox)
-        except Exception:
-            a = None
-        if a is None or not a.valid:
-            continue
-        store.set_features(photo_path, face_index, face_mesh.feature_vector(a))
-        rellenadas += 1
-    if rellenadas:
-        logger.info(f"Backfill de features geométricas: {rellenadas} caras.")
-    return rellenadas
+    return 0

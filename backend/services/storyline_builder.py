@@ -2,26 +2,49 @@ import logging
 from datetime import datetime
 from pathlib import Path
 import numpy as np
+import json
+import hashlib
 
 from services.analysis_store import get_all_analysis
+from services.app_paths import get_analysis_dir
 from services import embedding_service
 from services.thumbnail_store import thumb_url
 
 logger = logging.getLogger(__name__)
 
-# Storyline 2.0 - Foundation (Sprint 1 & 2)
-# Parámetros de segmentación configurables
+# Storyline 2.0 - Parámetros de segmentación ajustados
 MIN_SEGMENT_PHOTOS = 15
-MIN_SEGMENT_DURATION_MINUTES = 2.0
+MIN_SEGMENT_DURATION_MINUTES = 1.0  # Bajado de 2.0
 HARD_GAP_MINUTES = 15.0
-CONTEXT_CHANGE_THRESHOLD = 0.35  # Distancia coseno (0 a 2). Mayor significa más diferencia.
+SOFT_GAP_MINUTES = 5.0              # Nuevo: Corte si dejan de disparar por 5 min
+CONTEXT_CHANGE_THRESHOLD = 0.15     # Bajado de 0.35 para mayor sensibilidad
+
+def get_overrides_path(directory: str) -> Path:
+    dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
+    get_analysis_dir().mkdir(parents=True, exist_ok=True)
+    return get_analysis_dir() / f"{dir_hash}_storyline_overrides.json"
+
+def load_overrides(directory: str) -> dict:
+    p = get_overrides_path(directory)
+    if p.exists():
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error cargando overrides: {e}")
+    return {}
+
+def save_override(directory: str, photo_path: str, chapter_id: str):
+    overrides = load_overrides(directory)
+    overrides[photo_path] = chapter_id
+    p = get_overrides_path(directory)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(overrides, f, indent=2)
 
 def build_storyline(directory: str) -> list[dict]:
     """
-    Storyline Engine (V2 Foundation):
-    Divide el evento en 'Segmentos/Sucesos' usando:
-    1. Tiempo (gaps duros y duración mínima).
-    2. Semántica visual (cambios de contexto bruscos).
+    Storyline Engine (V2):
+    Divide el evento en 'Segmentos' y luego aplica overrides manuales.
     """
     photos = get_all_analysis(directory)
     if not photos:
@@ -49,17 +72,15 @@ def build_storyline(directory: str) -> list[dict]:
     if not valid_photos:
         return []
 
-    # 2. Cargar embeddings (con fallback silencioso)
+    # 2. Cargar embeddings
     for ph in valid_photos:
         vec = embedding_service.load_cached_embedding(ph["path"], ph["mtime"])
         if vec is not None:
             ph["embedding"] = vec
 
-    # 3. Motor Temporal y Semántico (Change Point Detection)
+    # 3. Motor Temporal y Semántico
     segments = []
     current_segment = [valid_photos[0]]
-    
-    # Mantenemos un "contexto reciente" (promedio de los últimos N embeddings) para suavizar
     recent_embeddings = [valid_photos[0]["embedding"]] if valid_photos[0]["embedding"] is not None else []
 
     for i in range(1, len(valid_photos)):
@@ -72,23 +93,23 @@ def build_storyline(directory: str) -> list[dict]:
         
         force_cut = False
         
-        # Señal A: Hard Gap (Corte por inactividad absoluta)
+        # Señal A: Hard Gap (Inactividad absoluta)
         if delta_sec > HARD_GAP_MINUTES * 60:
             force_cut = True
             
-        # Señal B: Cambio de Contexto Visual (Solo si ya cumplimos los mínimos)
+        # Señal B: Soft Gap (Pausa notable en la sesión)
+        elif delta_sec > SOFT_GAP_MINUTES * 60 and len(current_segment) >= MIN_SEGMENT_PHOTOS:
+            force_cut = True
+            
+        # Señal C: Cambio de Contexto Visual
         elif len(current_segment) >= MIN_SEGMENT_PHOTOS and duration_sec >= MIN_SEGMENT_DURATION_MINUTES * 60:
             if curr_emb is not None and recent_embeddings:
-                # Promedio del contexto reciente (últimas 5 fotos) para evitar cortes por 1 foto rara
                 avg_context = np.mean(recent_embeddings[-5:], axis=0)
-                # Normalize context to compute cosine distance
                 norm = np.linalg.norm(avg_context)
                 if norm > 0:
                     avg_context = avg_context / norm
-                    # Distancia coseno
                     context_change = 1.0 - float(np.dot(curr_emb, avg_context))
                     if context_change > CONTEXT_CHANGE_THRESHOLD:
-                        logger.debug(f"Storyline: Corte semántico detectado. Cambio: {context_change:.2f}")
                         force_cut = True
         
         if force_cut:
@@ -104,23 +125,48 @@ def build_storyline(directory: str) -> list[dict]:
     if current_segment:
         segments.append(current_segment)
 
-    # 4. Construir la UI Response (Scene Renderer)
-    storyline = []
-    
+    # 4. Asignar IDs y crear diccionarios de segmentos iniciales
+    # Para permitir reasignación, usamos un mapa.
+    chapter_map = {}
     for c_idx, segment in enumerate(segments):
-        # El medoide cronológico/visual:
-        # Por ahora (V1) seleccionamos la foto del medio del segmento como portada
-        medoid_idx = len(segment) // 2
-        medoid_path = segment[medoid_idx]["path"]
+        c_id = f"segment_{c_idx}"
+        paths = [p["path"] for p in segment]
         
-        storyline.append({
-            "id": f"segment_{c_idx}",
-            "name": f"Momento {c_idx + 1}",  # Preparado para que el usuario pueda editarlo en el futuro
+        # Ordenamos temporalmente solo para sacar el medoid cronológico y horas
+        segment.sort(key=lambda x: x["dt"])
+        medoid_path = segment[len(segment) // 2]["path"]
+        
+        chapter_map[c_id] = {
+            "id": c_id,
+            "name": f"Momento {c_idx + 1}",
             "start_time": segment[0]["dt"].strftime("%H:%M"),
             "end_time": segment[-1]["dt"].strftime("%H:%M"),
-            "photo_count": len(segment),
+            "photo_count": len(paths),
             "medoid_thumb": thumb_url(medoid_path),
-            "medoid_path": medoid_path
-        })
+            "medoid_path": medoid_path,
+            "paths": paths
+        }
 
-    return storyline
+    # 5. Aplicar Overrides Manuales (si los hay)
+    overrides = load_overrides(directory)
+    if overrides:
+        # Remover de su lugar original y poner en el nuevo
+        for p_path, new_cid in overrides.items():
+            if new_cid not in chapter_map:
+                continue # Capítulo destino no existe
+                
+            # Buscar dónde estaba
+            for cid, c_data in chapter_map.items():
+                if p_path in c_data["paths"] and cid != new_cid:
+                    c_data["paths"].remove(p_path)
+                    chapter_map[new_cid]["paths"].append(p_path)
+                    break
+
+        # Recalcular photo_count y eliminar capítulos vacíos si quedaron
+        for cid in list(chapter_map.keys()):
+            chapter_map[cid]["photo_count"] = len(chapter_map[cid]["paths"])
+            if chapter_map[cid]["photo_count"] == 0:
+                del chapter_map[cid]
+
+    # Convertir a lista y devolver
+    return list(chapter_map.values())

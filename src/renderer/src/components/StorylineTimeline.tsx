@@ -1,23 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '../api/client';
 
-interface Chapter {
-  id: string;
-  name?: string;
-  start_time: string;
-  end_time: string;
-  photo_count: number;
-  medoid_thumb: string;
-  medoid_path: string;
-}
+import { StorylineChapter } from '../types/api';
 
 interface StorylineTimelineProps {
   directory?: string;
-  onSelectChapter?: (chapter: Chapter) => void;
+  onSelectChapter?: (chapter: StorylineChapter | null) => void;
 }
 
 export default function StorylineTimeline({ directory, onSelectChapter }: StorylineTimelineProps) {
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [chapters, setChapters] = useState<StorylineChapter[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
@@ -113,8 +105,13 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
               key={ch.id}
               onClick={() => {
                 if (!isEditing) {
-                  setSelectedId(ch.id);
-                  if (onSelectChapter) onSelectChapter(ch);
+                  if (isSelected) {
+                    setSelectedId(null);
+                    if (onSelectChapter) onSelectChapter(null);
+                  } else {
+                    setSelectedId(ch.id);
+                    if (onSelectChapter) onSelectChapter(ch);
+                  }
                 }
               }}
               style={{

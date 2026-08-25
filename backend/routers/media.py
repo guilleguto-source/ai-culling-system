@@ -32,6 +32,7 @@ def _safe_getmtime(path) -> float:
 
 class ClearCacheRequest(BaseModel):
     directory: str
+    db_hash: str | None = None
 
 
 class PresetUseRequest(BaseModel):
@@ -101,6 +102,11 @@ class RenameChapterRequest(BaseModel):
     chapter_id: str
     new_name: str
 
+class OverrideChapterRequest(BaseModel):
+    directory: str
+    photo_path: str
+    chapter_id: str
+
 @router.get("/storyline")
 def get_storyline(directory: str):
     """
@@ -128,6 +134,14 @@ def rename_storyline_chapter(req: RenameChapterRequest):
     # En un futuro podríamos actualizar un archivo de storyline persistente por directorio.
     add_vocabulary_term(req.new_name)
     return {"status": "success", "term_learned": req.new_name}
+
+
+@router.post("/storyline/override")
+def override_storyline_chapter(req: OverrideChapterRequest):
+    """Fuerza una foto a pertenecer a un capítulo específico en el Storyline."""
+    from services.storyline_builder import save_override
+    save_override(req.directory, req.photo_path, req.chapter_id)
+    return {"status": "success"}
 
 
 @router.get("/thumbnail")
@@ -359,17 +373,44 @@ def open_cache_folder():
 @router.post("/cache/clear")
 def clear_cache(request: ClearCacheRequest):
     """Borra manualmente la caché de miniaturas y la base de datos de un proyecto."""
-    from services.thumbnail_store import clear_project_cache
+    import shutil
+    import sqlite3
+    from services.thumbnail_store import clear_project_cache, CACHE_ROOT
+    from services.app_paths import get_analysis_dir
     from services.analysis_store import _get_db_path
+
+    if request.db_hash:
+        db_path = get_analysis_dir() / f"{request.db_hash}.db"
+        proj_cache_dir = CACHE_ROOT / request.db_hash
+    else:
+        db_path = _get_db_path(request.directory)
+        dir_hash = db_path.stem
+        proj_cache_dir = CACHE_ROOT / dir_hash
     
     clear_project_cache(request.directory)
-    
-    db_path = _get_db_path(request.directory)
+    if proj_cache_dir.exists():
+        shutil.rmtree(proj_cache_dir, ignore_errors=True)
+
     if db_path.exists():
         try:
             os.remove(db_path)
         except Exception as e:
             logger.error(f"Error al borrar DB de análisis en limpieza manual: {e}")
+
+    # Si directory es "." o sin nombre, limpiar cualquier DB huérfana con rutas relativas
+    if request.directory in [".", "", "relative"]:
+        for db_file in get_analysis_dir().glob("*.db"):
+            if db_file.name == "taste_examples.db":
+                continue
+            try:
+                conn = sqlite3.connect(str(db_file))
+                cursor = conn.execute("SELECT path FROM photo_analysis LIMIT 1")
+                row = cursor.fetchone()
+                conn.close()
+                if row and str(Path(row[0]).parent) in [".", ""]:
+                    os.remove(db_file)
+            except Exception:
+                pass
             
     return {"success": True}
 

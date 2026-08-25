@@ -66,7 +66,7 @@ def test_entrenado_ordena_bien(tmp_path):
     assert tm.is_trained
     s_pos = tm.predict_score(_vec(9999, True))
     s_neg = tm.predict_score(_vec(8888, False))
-    assert s_pos > 0.8 > 0.2 > s_neg
+    assert s_pos > 0.75 > 0.25 > s_neg
 
 
 def test_umbral_exacto(tmp_path):

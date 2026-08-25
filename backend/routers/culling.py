@@ -18,8 +18,47 @@ from services.settings_manager import load_settings
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Culling"])
 
-# Alias para compatibilidad con código existente y tests
 _job_state = job_manager
+
+# Lazy singleton model instances
+_face_detector = None
+_gaze_estimator = None
+
+
+def _get_face_detector():
+    global _face_detector
+    if _face_detector is None:
+        try:
+            from uniface import FaceAnalyzer
+            _face_detector = FaceAnalyzer()
+            logger.info("UniFace FaceAnalyzer cargado exitosamente.")
+        except Exception as e:
+            logger.error(f"Error inicializando UniFace FaceAnalyzer: {e}")
+            _face_detector = None
+    return _face_detector
+
+
+def _get_gaze_estimator():
+    global _gaze_estimator
+    if _gaze_estimator is None:
+        try:
+            import urllib3
+            import requests
+            from uniface.gaze import MobileGaze
+            urllib3.disable_warnings()
+            _original_get = requests.get
+
+            def _bypass_get(*args, **kwargs):
+                kwargs['verify'] = False
+                return _original_get(*args, **kwargs)
+
+            requests.get = _bypass_get
+            _gaze_estimator = MobileGaze()
+            logger.info("MobileGaze cargado exitosamente.")
+        except Exception as e:
+            logger.error(f"Error inicializando MobileGaze: {e}")
+            _gaze_estimator = None
+    return _gaze_estimator
 
 
 def _safe_getmtime(path) -> float:
@@ -113,20 +152,12 @@ async def stream_events():
     )
 
 
+from utils.json_utils import safe_dumps
+
 def _sanitize_for_json(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
-    elif isinstance(obj, (np.integer, np.int64, np.int32)):
-        return int(obj)
-    elif isinstance(obj, (np.floating, np.float64, np.float32)):
-        return float(obj)
-    elif isinstance(obj, (np.bool_, bool)):
-        return bool(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
+    if obj is None:
+        return None
+    return json.loads(safe_dumps(obj))
 
 
 @router.get("/results")
@@ -169,58 +200,43 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
         blur_threshold = get_blur_threshold(settings)
         dbscan_epsilon = get_dbscan_epsilon(settings)
 
-        # Inicializar detector de rostros YuNet
-        from services.app_paths import get_models_dir
-        models_dir = get_models_dir()
-        yunet_path = models_dir / "yunet.onnx"
-        face_detector = None
-        if yunet_path.exists():
-            face_detector = cv2.FaceDetectorYN.create(
-                str(yunet_path), "", (320, 320),
-                score_threshold=0.6, nms_threshold=0.3, top_k=5000
-            )
-
-        eye_session = None
-        eye_path = models_dir / "eye_state.onnx"
-        if eye_path.exists():
-            import onnxruntime as ort
-            eye_session = ort.InferenceSession(str(eye_path), providers=["CPUExecutionProvider"])
-
-        # FASE 1 & 2: Ingesta y análisis
-        from services.ingester import get_ingest_tasks, process_single_image
+        # FASE 1: Ingesta y Miniaturas (NAS I/O)
+        from services.ingester import get_ingest_tasks, process_single_image, ImageRecord, RAW_EXTENSIONS
         from services.analysis import analyze_photo, PhotoAnalysis
         from services.analysis_store import init_store, load_analysis, save_analysis
+        from services.thumbnail_store import get_thumbnail_cache_paths, read_thumbnail_from_disk
         from concurrent.futures import ThreadPoolExecutor, as_completed
+        import concurrent.futures
+        import io
+        from PIL import Image
 
         t0_ingest = time.time()
         tasks = get_ingest_tasks(directory)
         total = len(tasks)
         
-        job_manager.set_phase("Seleccionando fotos y analizando gestos...")
+        job_manager.set_phase("Descargando y generando miniaturas...")
 
         pre_edit_prefs = prefs.get("pre_edit", {})
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
 
         records = []
-        analyses: list[PhotoAnalysis] = []
         conn = init_store(directory)
 
         BATCH_SIZE = 200
         errors = 0
 
+        # === FASE 1: INGESTA (Leer NAS -> Guardar Local) ===
         for batch_start in range(0, total, BATCH_SIZE):
             batch_tasks = tasks[batch_start:batch_start + BATCH_SIZE]
-            batch_records = []
-
-            from services.thumbnail_store import get_thumbnail_cache_paths
             to_process = []
             
             for path, linked_raw in batch_tasks:
                 current_mtime = _safe_getmtime(path)
                 ans = load_analysis(conn, str(path), current_mtime)
                 ui_path, duel_path = get_thumbnail_cache_paths(str(path))
+                
+                # Check cache for both DB and thumbnails
                 if ans and ui_path.exists() and duel_path.exists():
-                    from services.ingester import ImageRecord, RAW_EXTENSIONS
                     rec = ImageRecord(
                         path=str(path),
                         filename=path.name,
@@ -229,76 +245,120 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                         phash=ans.phash,
                         exif_datetime=ans.exif_datetime
                     )
-                    batch_records.append(rec)
+                    records.append(rec)
                 else:
                     to_process.append((path, linked_raw))
 
             if to_process:
-                with ThreadPoolExecutor(max_workers=None) as executor:
+                # max_workers=4 limits concurrent NAS reads
+                with ThreadPoolExecutor(max_workers=4) as executor:
                     futures = {executor.submit(process_single_image, p, lr): p for p, lr in to_process}
                     for future in as_completed(futures):
-                        rec = future.result()
-                        batch_records.append(rec)
+                        try:
+                            rec = future.result(timeout=60)
+                        except Exception as e:
+                            logger.error(f"Error ingesting file: {e}")
+                            continue
+                        records.append(rec)
                         if rec.error:
                             errors += 1
 
-            batch_records.sort(key=lambda r: r.path)
+            job_manager.update_phase_progress("thumbnails", len(records), total)
+            job_manager.update_progress(
+                processed=len(records),
+                total=total,
+                progress=(len(records) / max(1, total)) * 30.0,
+            )
 
-            for record in batch_records:
-                global_idx = len(records)
-                
-                current_mtime = _safe_getmtime(record.path) if not record.error else 0.0
-                ans = load_analysis(conn, record.path, current_mtime)
-                
-                if record.error:
-                    ans = analyze_photo(global_idx, record, face_detector, eye_session, blur_threshold, prefs.get("detect_closed_eyes", True), pre_edit_enabled)
-                    analyses.append(ans)
-                    records.append(record)
-                    continue
+        job_manager.complete_phase("thumbnails")
 
-                if not ans:
-                    ans = analyze_photo(
-                        index=global_idx,
-                        record=record,
-                        face_detector=face_detector,
-                        eye_session=eye_session,
-                        blur_threshold=blur_threshold,
-                        detect_closed_eyes=prefs.get("detect_closed_eyes", True),
-                        pre_edit_enabled=pre_edit_enabled,
-                    )
-                    save_analysis(conn, ans, current_mtime)
-                else:
-                    ans.index = global_idx
-
-                record.thumb_ai = None
-
-                analyses.append(ans)
-                records.append(record)
-
-                job_manager.update_progress(
-                    processed=len(records),
-                    total=total,
-                    progress=(len(records) / max(1, total)) * 70.0,
-                )
-
-        elapsed = time.time() - t0_ingest
+        # Sort records by path to ensure consistent order
+        records.sort(key=lambda r: r.path)
+        
+        elapsed_ingest = time.time() - t0_ingest
         job_manager.set_stat("ingest", {
             "total": total,
             "success": total - errors,
             "errors": errors,
-            "elapsed_seconds": round(elapsed, 1),
-            "images_per_second": round(total / max(elapsed, 0.001), 1),
+            "elapsed_seconds": round(elapsed_ingest, 1),
+            "images_per_second": round(total / max(elapsed_ingest, 0.001), 1),
         })
 
+        # === FASE 2: ANÁLISIS IA (Leer SSD Local) ===
+        job_manager.set_phase("Analizando gestos, enfoque y composición...")
+        t0_analysis = time.time()
+        analyses: list[PhotoAnalysis] = []
+        face_detector = _get_face_detector()
+        gaze_estimator = _get_gaze_estimator()
+        eye_session = None
+        
+        for global_idx, record in enumerate(records):
+            current_mtime = _safe_getmtime(record.path) if not record.error else 0.0
+            ans = load_analysis(conn, record.path, current_mtime)
+            
+            if record.error:
+                ans = PhotoAnalysis(path=record.path, index=global_idx, is_raw=record.is_raw, error=record.error)
+            elif not ans:
+                # Cargar imagen desde caché local en SSD
+                try:
+                    duel_bytes = read_thumbnail_from_disk(record.path, "duel")
+                    if duel_bytes:
+                        img = Image.open(io.BytesIO(duel_bytes)).convert("RGB")
+                        arr = np.array(img)
+                        record.thumb_ai = arr
+                    else:
+                        logger.warning(f"No duel thumbnail found for {record.path}, analysis may fail.")
+                except Exception as e:
+                    logger.error(f"Error loading local thumbnail for {record.path}: {e}")
+
+                exe = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                f = exe.submit(
+                    analyze_photo,
+                    index=global_idx,
+                    record=record,
+                    face_detector=face_detector,
+                    gaze_estimator=gaze_estimator,
+                    eye_session=eye_session,
+                    blur_threshold=blur_threshold,
+                    detect_closed_eyes=prefs.get("detect_closed_eyes", True),
+                    pre_edit_enabled=pre_edit_enabled,
+                )
+                try:
+                    ans = f.result(timeout=45)
+                except concurrent.futures.TimeoutError:
+                    logger.error(f"Timeout analyzing {record.path}")
+                    ans = PhotoAnalysis(path=record.path, index=global_idx, is_raw=record.is_raw, error=True, sharpness=0.0)
+                finally:
+                    exe.shutdown(wait=False, cancel_futures=True)
+                    
+                if not ans.error:
+                    save_analysis(conn, ans, current_mtime)
+            else:
+                ans.index = global_idx
+
+            record.thumb_ai = None  # Free memory
+            analyses.append(ans)
+
+            job_manager.update_phase_progress("analysis", global_idx + 1, total)
+            job_manager.update_progress(
+                processed=global_idx + 1,
+                total=total,
+                progress=30.0 + ((global_idx + 1) / max(1, total)) * 40.0,
+            )
+
+        job_manager.complete_phase("analysis")
+
         # G3: Clasificador aprendido
-        from services.face_classifier import refine_face_counts
-        refinadas = refine_face_counts(analyses)
-        if refinadas:
-            job_manager.set_stat("face_learned", {"fotos_ajustadas": refinadas})
-            logger.info(f"G3 (calibración) ajustó los conteos de cara en {refinadas} fotos.")
+        # UniFace v10: los conteos de faces ya vienen refinados desde analyze_photo
+        portrait_count = sum(1 for a in analyses if a.scene_type in ('portrait', 'multi_portrait'))
+        if portrait_count:
+            # IMPORTANTE: NO guardar objetos PhotoAnalysis en set_stat - causaría error 500 en /status
+            job_manager.set_stat("face_learned", {"fotos_con_rostros": portrait_count})
+            logger.info(f"G3: {portrait_count} fotos con rostros detectados.")
 
         # FASE 3: Clustering y Detección de Duplicados Exactos
         job_manager.set_phase("Agrupando fotos por ráfaga y similitud...")
+        job_manager.update_phase_progress("clustering", 0, 100)
         exact_duplicates_map = {}
         if prefs.get("detect_duplicates", True):
             from services.clustering import find_exact_duplicates
@@ -486,8 +546,11 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
                                 develop_by_idx[idx]["IncrementalTemperature"] = round(med_temp, 1)
                                 develop_by_idx[idx]["IncrementalTint"] = round(med_tint, 1)
 
+        job_manager.complete_phase("clustering")
+
         # FASE 4a: Representative por cluster y score
         job_manager.set_phase("Seleccionando las mejores fotos y aplicando reglas...")
+        job_manager.update_phase_progress("selection", 0, 100)
         ratings_map = settings["ratings_mapping"]
         results = []
 
@@ -641,16 +704,31 @@ def _run_culling_pipeline(directory: str, job_id: str, mode: str = "cull_edit"):
             directory, [r["path"] for r in results if not r.get("error")])
         job_manager.set_stat("backup", backup_stats)
 
-        from services.xmp_exporter import export_results_to_xmp
+        job_manager.complete_phase("selection")
+        
+        from services.xmp_exporter import export_results_to_xmp, export_results_to_xmp_generator
         job_manager.set_phase("Dando los toques finales...")
         overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
-        if mode == "cull":
-            to_export = [{**r, "crop": None, "develop": None} for r in results]
-            xmp_stats = export_results_to_xmp(to_export, ratings_map,
-                                              overwrite=overwrite_xmp)
-        else:
-            xmp_stats = export_results_to_xmp(results, ratings_map,
-                                              overwrite=overwrite_xmp, preset=preset_data)
+        
+        # Uso del generador para poder actualizar el progreso de la fase de export
+        xmp_gen = export_results_to_xmp_generator(
+            [{**r, "crop": None, "develop": None} for r in results] if mode == "cull" else results,
+            ratings_map,
+            overwrite=overwrite_xmp,
+            preset=None if mode == "cull" else preset_data
+        )
+        
+        xmp_stats = {"written": 0, "skipped": 0, "errors": 0, "total": len(results)}
+        for i, stat_update in enumerate(xmp_gen):
+            if stat_update == "written":
+                xmp_stats["written"] += 1
+            elif stat_update == "skipped":
+                xmp_stats["skipped"] += 1
+            elif stat_update == "error":
+                xmp_stats["errors"] += 1
+            job_manager.update_phase_progress("export", i + 1, len(results))
+        
+        job_manager.complete_phase("export")
         job_manager.set_stat("xmp", xmp_stats)
         job_manager.set_stat("edits_applied", (mode != "cull"))
 

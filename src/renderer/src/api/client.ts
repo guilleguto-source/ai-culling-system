@@ -79,13 +79,7 @@ export const apiClient = {
       body: JSON.stringify({ nombre })
     }),
 
-  getWorkflowProfiles: () => request<Record<string, any>>('/workflow_profiles'),
 
-  applyWorkflowProfile: (profileId: string) =>
-    request<{ success: boolean; applied: string }>('/workflow_profiles/apply', {
-      method: 'POST',
-      body: JSON.stringify({ profile_id: profileId })
-    }),
 
   // --- Culling & Pipeline ---
   startIngest: (directory: string, mode: 'cull' | 'cull_edit' = 'cull_edit') =>
@@ -203,14 +197,20 @@ export const apiClient = {
       body: JSON.stringify({ directory, chapter_id: chapterId, new_name: newName })
     }),
 
+  overrideStorylineChapter: (directory: string, photoPath: string, chapterId: string) =>
+    request<{ status: string }>('/storyline/override', {
+      method: 'POST',
+      body: JSON.stringify({ directory, photo_path: photoPath, chapter_id: chapterId })
+    }),
+
   getCachedProjects: () => request<CachedProject[]>('/cache/projects'),
 
   getLibraryProjects: () => request<{ projects: LibraryProject[] }>('/library/projects'),
 
-  clearCache: (directory: string) =>
+  clearCache: (directory: string, db_hash?: string) =>
     request<{ success: boolean }>('/cache/clear', {
       method: 'POST',
-      body: JSON.stringify({ directory })
+      body: JSON.stringify({ directory, db_hash })
     }),
 
   openCacheFolder: () =>
@@ -250,6 +250,9 @@ export const apiClient = {
     return `${BACKEND_URL}/bursts/face_crop_img?path=${encodeURIComponent(path)}&x=${x}&y=${y}&w=${w}&h=${h}&size=${size}`;
   },
 
+  getCalibrationFaceUrl: (path: string, x: number, y: number, w: number, h: number) =>
+    `${BACKEND_URL}/calibration/face?path=${encodeURIComponent(path)}&x=${x}&y=${y}&w=${w}&h=${h}`,
+
   getDebugOverlayUrl: (path: string) =>
     `${BACKEND_URL}/debug/overlay?path=${encodeURIComponent(path)}`,
 
@@ -274,5 +277,21 @@ export const apiClient = {
     request<{ status: string; applied_count: number }>('/advanced/skin_retouch', {
       method: 'POST',
       body: JSON.stringify(params)
-    })
+    }),
+
+  // --- Configuración Inicial & Descarga de Modelos ---
+  checkSetupReady: () =>
+    request<{ ready: boolean; missing: string[] }>('/setup/required_ready'),
+
+  getSetupModels: () =>
+    request<{ models: any[] }>('/setup/models'),
+
+  startModelDownload: (modelIds: string[]) =>
+    request<{ started: boolean; message: string }>('/setup/download', {
+      method: 'POST',
+      body: JSON.stringify({ model_ids: modelIds })
+    }),
+
+  getModelDownloadStreamUrl: () => `${BACKEND_URL}/setup/download/stream`
 };
+

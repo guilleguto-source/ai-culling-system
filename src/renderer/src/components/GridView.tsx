@@ -18,9 +18,10 @@ interface GridViewProps {
   results: any[];
   selectedPaths?: Set<string>;
   onSelectPaths?: (paths: Set<string>) => void;
+  storylinePaths?: Set<string> | null;
 }
 
-export default function GridView({ results, selectedPaths = new Set(), onSelectPaths }: GridViewProps) {
+export default function GridView({ results, selectedPaths = new Set(), onSelectPaths, storylinePaths = null }: GridViewProps) {
   const [filtro, setFiltro] = useState('todas');
   const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
   const [modalPhoto, setModalPhoto] = useState<any>(null);
@@ -66,8 +67,11 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
     if (semanticPaths) {
       arr = arr.filter(r => semanticPaths.has(r.path));
     }
+    if (storylinePaths) {
+      arr = arr.filter(r => storylinePaths.has(r.path));
+    }
     return arr;
-  }, [results, filtro, semanticPaths]);
+  }, [results, filtro, semanticPaths, storylinePaths]);
 
   // Keyboard navigation
   useEffect(() => {

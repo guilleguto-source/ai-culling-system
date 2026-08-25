@@ -447,3 +447,41 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
         f"Exportación XMP: {written} escritos, {skipped} omitidos, {errors} errores "
         f"de {len(results)} total")
     return {"written": written, "skipped": skipped, "errors": errors, "total": len(results)}
+
+def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
+                          overwrite: bool = False, preset=None,
+                          lut_adjustments: dict | None = None):
+    """Versión generadora para actualizar el progreso foto a foto."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _export_single(result: dict) -> str:
+        if result.get("error"):
+            return "error"
+        label = result.get("label")
+        if not label:
+            return "skipped"
+        mapping = ratings_mapping.get(label, {})
+        develop = result.get("develop")
+        item_lut = result.get("lut_adjustments") or (lut_adjustments if develop else None)
+        item_rescue = result.get("tonal_rescue")
+        item_paint = result.get("paint_corrections")
+        ok = write_xmp(
+            image_path=result["path"],
+            label=label,
+            stars=mapping.get("stars", 0),
+            color=mapping.get("color", ""),
+            overwrite=overwrite,
+            crop=result.get("crop"),
+            develop=develop,
+            preset=preset if develop else None,
+            flag=mapping.get("flag"),
+            lut_adjustments=item_lut,
+            tonal_rescue=item_rescue,
+            paint_corrections=item_paint,
+        )
+        return "written" if ok else "skipped"
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_export_single, r) for r in results]
+        for future in as_completed(futures):
+            yield future.result()

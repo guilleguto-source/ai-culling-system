@@ -231,10 +231,7 @@ export function setupBackendIpc() {
   ipcMain.handle('backend:job:status', () => makeGetRequest('/status'));
   ipcMain.handle('backend:job:results', () => makeGetRequest('/results'));
   
-  ipcMain.handle('backend:undo:available', (_, directory: string) =>
-    makeGetRequest(`/undo_export/available?directory=${encodeURIComponent(directory)}`));
-  ipcMain.handle('backend:undo:run', (_, directory: string) =>
-    makePostRequest('/undo_export', { directory }));
+
 
   ipcMain.handle('backend:select-folder', async (_, defaultPath?: string) => {
     const result = await dialog.showOpenDialog({

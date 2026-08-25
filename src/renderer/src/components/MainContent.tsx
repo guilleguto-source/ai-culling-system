@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import GridView from './GridView';
 import DuelView from './DuelView';
-import CalibrationView from './CalibrationView';
 import SemanticSearchBar from './SemanticSearchBar';
 import StorylineTimeline from './StorylineTimeline';
 import { AdvancedPanel } from './AdvancedPanel';
@@ -34,7 +33,8 @@ export default function MainContent({
   undoAvailable = false,
   onUndoExport,
   onRefreshResults,
-  onStartIngest
+  onStartIngest,
+  onSelectProject,
 }: MainContentProps) {
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -42,6 +42,7 @@ export default function MainContent({
   const [undoing, setUndoing] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
+  const [activeStorylinePaths, setActiveStorylinePaths] = useState<Set<string> | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
 
@@ -159,11 +160,7 @@ export default function MainContent({
 
   // 2. Processing State
   if (jobState && (jobState.status === 'running' || jobState.status === 'processing')) {
-    const progressVal = Math.round(
-      typeof jobState.progress === 'object'
-        ? (jobState.progress.percent ?? 0)
-        : Number(jobState.progress) || 0
-    );
+    const phases = jobState.phases || [];
 
     return (
       <div
@@ -179,57 +176,103 @@ export default function MainContent({
         <div
           style={{
             width: '100%',
-            maxWidth: '480px',
+            maxWidth: '520px',
             backgroundColor: 'var(--color-surface)',
             border: '1px solid var(--border-default)',
             borderRadius: 'var(--radius-lg)',
             padding: 'var(--space-8) var(--space-6)',
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
             gap: 'var(--space-5)',
             boxShadow: 'var(--shadow-md)'
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" style={{ alignSelf: 'center', marginBottom: 'var(--space-2)' }}>
             <span className="gf-dot gf-dot-active" />
             <span style={{ fontSize: 'var(--text-lg)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
-              Analizando fotografías
+              Procesando fotografías
             </span>
           </div>
 
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            <div className="flex justify-between items-center text-mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              <span>
-                {jobState.processed || 0} / {jobState.total || 0} fotos
-              </span>
-              <span style={{ fontWeight: 'var(--fw-bold)', color: 'var(--accent-primary)' }}>
-                {progressVal}%
-              </span>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {phases.length > 0 ? (
+              phases.map((phase: any, idx: number) => {
+                const isCompleted = phase.status === 'completed';
+                const isRunning = phase.status === 'running';
+                const isPending = phase.status === 'pending';
+                const progress = phase.progress || 0;
 
-            <div
-              style={{
-                width: '100%',
-                height: '6px',
-                backgroundColor: 'var(--color-surface-elevated)',
-                borderRadius: 'var(--radius-pill)',
-                overflow: 'hidden'
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.max(3, Math.min(100, progressVal))}%`,
-                  height: '100%',
-                  backgroundColor: 'var(--accent-primary)',
-                  transition: 'width var(--transition-normal)'
-                }}
-              />
-            </div>
-          </div>
-
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textAlign: 'center' }}>
-            {jobState.phase_text || 'Procesando nitidez, composición y expresiones faciales...'}
+                return (
+                  <div key={phase.id || idx} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    opacity: isPending ? 0.5 : 1
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isCompleted && <span style={{ color: 'var(--color-success)' }}>✅</span>}
+                        {isRunning && <span style={{ color: 'var(--accent-primary)', animation: 'pulse 1.5s infinite' }}>⏳</span>}
+                        {isPending && <span style={{ color: 'var(--text-tertiary)' }}>○</span>}
+                        <span style={{ 
+                          fontSize: 'var(--text-sm)', 
+                          fontWeight: isRunning ? 'var(--fw-semibold)' : 'var(--fw-medium)',
+                          color: isRunning ? 'var(--text-primary)' : 'var(--text-secondary)'
+                        }}>
+                          {phase.name}
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: 'var(--text-xs)' }}>
+                        {isRunning && jobState.processed !== undefined && jobState.total !== undefined && (
+                          <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                            {jobState.processed} / {jobState.total} fotos
+                          </span>
+                        )}
+                        {!isPending && (
+                          <span style={{ 
+                            color: isCompleted ? 'var(--color-success)' : 'var(--accent-primary)', 
+                            fontWeight: 'var(--fw-bold)',
+                            fontFamily: 'var(--font-mono)',
+                            minWidth: '40px',
+                            textAlign: 'right'
+                          }}>
+                            {isCompleted ? '100%' : `${progress}%`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {isRunning && (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '4px',
+                          backgroundColor: 'var(--color-surface-elevated)',
+                          borderRadius: 'var(--radius-pill)',
+                          overflow: 'hidden',
+                          marginTop: '2px'
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.max(2, Math.min(100, progress))}%`,
+                            height: '100%',
+                            backgroundColor: 'var(--accent-primary)',
+                            transition: 'width var(--transition-normal)'
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              // Fallback for old jobs
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+                Inicializando fases...
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -312,7 +355,16 @@ export default function MainContent({
         </div>
 
         {/* Storyline Event Timeline */}
-        <StorylineTimeline directory={directory} />
+        <StorylineTimeline 
+          directory={directory} 
+          onSelectChapter={(chapter) => {
+            if (chapter && chapter.paths) {
+              setActiveStorylinePaths(new Set(chapter.paths));
+            } else {
+              setActiveStorylinePaths(null);
+            }
+          }}
+        />
 
         {/* Active Workspace View */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -321,6 +373,7 @@ export default function MainContent({
               results={displayResults} 
               selectedPaths={selectedPaths}
               onSelectPaths={setSelectedPaths}
+              storylinePaths={activeStorylinePaths}
             />
           )}
           {viewMode === 'duel' && <DuelView results={displayResults} />}

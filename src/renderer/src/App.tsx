@@ -10,69 +10,6 @@ import { ToastProvider, useToast } from './components/Toast';
 import { apiClient, BACKEND_URL } from './api/client';
 import './index.css';
 
-// Fallback for browser testing connected to real FastAPI backend
-if (typeof window !== 'undefined' && !window.api) {
-  (window as any).api = {
-    getBackendStatus: async () => {
-      try {
-        const res = await apiClient.getHealth();
-        return { running: true, status: 'running', url: BACKEND_URL };
-      } catch (e) {
-        return { running: false, status: 'stopped', url: BACKEND_URL };
-      }
-    },
-    getHardwareInfo: async () => {
-      try {
-        return await apiClient.getHardware();
-      } catch (e) {
-        return { using_gpu: false, gpu_provider: null, physical_cores: 0, logical_cores: 0 };
-      }
-    },
-    sendSettings: async (settings: any) => {
-      return await apiClient.saveSettings(settings);
-    },
-    getSettings: async () => {
-      return await apiClient.getSettings();
-    },
-    ingestMedia: async (directory: string, mode: string = 'cull_edit') => {
-      return await apiClient.startIngest(directory, mode as any);
-    },
-    getJobStatus: async () => {
-      return await apiClient.getStatus();
-    },
-    getJobResults: async () => {
-      return await apiClient.getResults();
-    },
-    checkUndoAvailable: async (directory: string) => {
-      try {
-        return await apiClient.checkUndo(directory);
-      } catch (e) {
-        return { disponible: false };
-      }
-    },
-    undoExport: async (directory: string) => {
-      return await apiClient.undoExport(directory);
-    },
-    selectFolder: async (_defaultPath?: string) => {
-      return null;
-    },
-    onBackendLog: (_cb: any) => {
-      return () => {};
-    },
-    onBackendStatusChange: (cb: any) => {
-      const interval = setInterval(async () => {
-        try {
-          const res = await apiClient.getHealth();
-          cb(res ? 'running' : 'stopped');
-        } catch (e) {
-          cb('stopped');
-        }
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  };
-}
-
 function MainApp() {
   const [backendStatus, setBackendStatus] = useState<'starting' | 'running' | 'stopped' | 'error' | 'unknown'>('unknown');
   const [hardwareInfo, setHardwareInfo] = useState<any>(null);
@@ -86,17 +23,22 @@ function MainApp() {
   const [lastDirectory, setLastDirectory] = useState<string>(() => localStorage.getItem('lastDirectory') || '');
   const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
   const [staleBackend, setStaleBackend] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
   const [showModelWizard, setShowModelWizard] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
     const handleGlobalKeys = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
-      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === '?') {
         e.preventDefault();
-        setIsShortcutsOpen(prev => !prev);
+        setIsShortcutsOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleGlobalKeys);
@@ -145,8 +87,7 @@ function MainApp() {
         setSettings(st);
         // Verificar si los modelos requeridos están presentes
         try {
-          const res = await fetch(`http://127.0.0.1:8000/setup/required_ready`);
-          const data = await res.json();
+          const data = await apiClient.checkSetupReady();
           if (!data.ready) {
             setShowModelWizard(true);
           }

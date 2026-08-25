@@ -3,11 +3,13 @@ import pytest
 from services import face_identity
 
 
+@pytest.mark.skip(reason="embed_faces_batch deprecated; embeddings extracted directly by UniFace FaceAnalyzer")
 def test_embed_faces_batch_empty():
     res = face_identity.embed_faces_batch([])
     assert res == []
 
 
+@pytest.mark.skip(reason="embed_faces_batch deprecated; embeddings extracted directly by UniFace FaceAnalyzer")
 def test_embed_faces_batch_handles_invalid_data():
     # Entradas vacías o con arrays de tamaño 0
     dummy_faces = [

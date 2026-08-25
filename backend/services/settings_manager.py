@@ -30,7 +30,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
-        "selectivity_target": "standard",   # "few" | "standard" | "more"
+        "selectivity_target": "few",      # "few" | "standard" | "more"
         "detect_duplicates": True,
         "detect_highlights": True,
         "detect_blurry": True,

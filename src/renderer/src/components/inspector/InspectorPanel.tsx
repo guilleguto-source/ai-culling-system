@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getDynamicStyles } from '../../utils/dynamicStyles';
 import { apiClient } from '../../api/client';
+import { useToast } from '../Toast';
 
 const ETIQUETAS: [string, string][] = [
   ['camara', 'Cámara'], ['lente', 'Lente'], ['apertura', 'Apertura'],
@@ -9,6 +10,11 @@ const ETIQUETAS: [string, string][] = [
 
 export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: () => void }) {
   const [exif, setExif] = useState<any>(null);
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [moving, setMoving] = useState(false);
+  const { showToast } = useToast();
+
+  const directory = foto ? foto.path.substring(0, Math.max(foto.path.lastIndexOf('\\'), foto.path.lastIndexOf('/'))) : '';
 
   useEffect(() => {
     if (!foto) return;
@@ -20,6 +26,29 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
       } catch { }
     })();
   }, [foto]);
+
+  useEffect(() => {
+    if (!directory) return;
+    (async () => {
+      try {
+        const data = await apiClient.getStoryline(directory);
+        if (data && data.storyline) setChapters(data.storyline);
+      } catch { }
+    })();
+  }, [directory]);
+
+  const handleOverrideChapter = async (chapterId: string) => {
+    if (!directory || !foto) return;
+    setMoving(true);
+    try {
+      await apiClient.overrideStorylineChapter(directory, foto.path, chapterId);
+      showToast('Movida al nuevo momento. Recarga para ver los cambios.', 'success');
+    } catch (e: any) {
+      showToast('Error moviendo foto: ' + e.message, 'error');
+    } finally {
+      setMoving(false);
+    }
+  };
 
   if (!foto) return (
     <div style={{
@@ -158,6 +187,36 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Storyline Reassignment */}
+        {chapters.length > 0 && (
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', fontWeight: 600 }}>
+              Momento (Storyline)
+            </div>
+            <select
+              disabled={moving}
+              onChange={(e) => {
+                if (e.target.value) handleOverrideChapter(e.target.value);
+              }}
+              value={chapters.find(c => c.paths?.includes(foto.path))?.id || ''}
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.8rem'
+              }}
+            >
+              <option value="" disabled>Selecciona a dónde mover...</option>
+              {chapters.map(ch => (
+                <option key={ch.id} value={ch.id}>{ch.name || ch.id}</option>
+              ))}
+            </select>
           </div>
         )}
 

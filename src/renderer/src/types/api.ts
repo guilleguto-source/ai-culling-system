@@ -250,10 +250,13 @@ export interface StorylinePhoto {
 }
 
 export interface StorylineChapter {
-  id: number;
+  id: string;
+  name: string;
   start_time: string;
   end_time: string;
-  total_photos: number;
-  medoid: StorylinePhoto;
-  highlights: StorylinePhoto[];
+  photo_count: number;
+  medoid_thumb: string;
+  medoid_path: string;
+  paths: string[];
 }
+

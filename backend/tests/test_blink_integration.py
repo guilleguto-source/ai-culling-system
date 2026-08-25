@@ -15,8 +15,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services import analysis as analysis_mod
-from services import face_mesh
-from services.face_mesh import FaceAttributes
+from services.legacy import face_mesh
+from services.legacy.face_mesh import FaceAttributes
 
 
 def _record(tmp_path):
@@ -52,6 +52,7 @@ def _analyze(tmp_path):
         detect_closed_eyes=True, pre_edit_enabled=False)
 
 
+@pytest.mark.skip(reason="Legacy MediaPipe/blink_classifier pipeline replaced by UniFace")
 def test_con_modelo_blink_no_revienta_y_manda_su_probabilidad(
         tmp_path, caras_fake, monkeypatch):
     from services import blink_classifier
@@ -70,6 +71,7 @@ def test_con_modelo_blink_no_revienta_y_manda_su_probabilidad(
     assert [d["closed_hybrid"] for d in a.face_attrs] == [True, False]
 
 
+@pytest.mark.skip(reason="Legacy MediaPipe/blink_classifier pipeline replaced by UniFace")
 def test_sin_modelo_blink_fallback_mediapipe_intacto(tmp_path, caras_fake, monkeypatch):
     from services import blink_classifier
     monkeypatch.setattr(blink_classifier, "is_available", lambda: False)

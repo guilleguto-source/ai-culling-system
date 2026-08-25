@@ -34,7 +34,7 @@ export default function FaceGridAlignment({ clusterId, selectedPhotoPath, onSele
     const fetchCrops = async () => {
       setLoading(true);
       try {
-        const data = await apiClient.getFaceCrops(clusterId);
+        const data = await apiClient.getBurstFaceCrops(clusterId);
         if (active) setPeople(data.people || []);
       } catch (err) {
         console.error('Error fetching face crops:', err);
@@ -102,7 +102,7 @@ export default function FaceGridAlignment({ clusterId, selectedPhotoPath, onSele
               {person.crops.map((crop, cIdx) => {
                 const isCurrent = crop.photo_path === selectedPhotoPath;
                 const [x, y, w, h] = crop.face_bbox;
-                const imgUrl = apiClient.getFaceCropImgUrl(crop.photo_path, x, y, w, h, 260);
+                const imgUrl = apiClient.getFaceCropUrl(crop.photo_path, [x, y, w, h], 260);
 
                 return (
                   <div

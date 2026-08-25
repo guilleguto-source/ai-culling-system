@@ -70,10 +70,10 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
       .catch(err => console.error('Error fetching cache projects:', err));
   }, []);
 
-  const handleClearCache = async (directory: string) => {
+  const handleClearCache = async (directory: string, db_hash?: string) => {
     try {
-      await apiClient.clearCache(directory);
-      setCachedProjects(prev => prev.filter(p => p.directory !== directory));
+      await apiClient.clearCache(directory, db_hash);
+      setCachedProjects(prev => prev.filter(p => (db_hash ? p.db_hash !== db_hash : p.directory !== directory)));
     } catch (e) {
       console.error('Error clearing cache:', e);
     }
@@ -458,7 +458,7 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
                             {proj.size_mb} MB
                           </div>
                         </div>
-                        <Button variant="danger" size="sm" onClick={() => handleClearCache(proj.directory)}>
+                        <Button variant="danger" size="sm" onClick={() => handleClearCache(proj.directory, proj.db_hash)}>
                           Limpiar
                         </Button>
                       </div>

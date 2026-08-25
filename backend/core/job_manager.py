@@ -30,6 +30,13 @@ class JobManager:
             "stats": {},
             "error": None,
             "mode": "cull_edit",
+            "phases": [
+                {"id": "thumbnails", "name": "Miniaturas", "status": "pending", "progress": 0},
+                {"id": "analysis",   "name": "Análisis IA", "status": "pending", "progress": 0},
+                {"id": "clustering", "name": "Clustering", "status": "pending", "progress": 0},
+                {"id": "selection",  "name": "Selección",  "status": "pending", "progress": 0},
+                {"id": "export",     "name": "Export XMP", "status": "pending", "progress": 0},
+            ],
         }
         self._thumbnail_cache: dict[str, bytes] = {}
         self._thumbnail_duel_cache: dict[str, bytes] = {}
@@ -85,6 +92,7 @@ class JobManager:
                 "stats": {},
                 "error": None,
                 "mode": "cull_edit",
+                "phases": [],
             }
             self._thumbnail_cache.clear()
             self._thumbnail_duel_cache.clear()
@@ -109,6 +117,13 @@ class JobManager:
                 "stats": {},
                 "error": None,
                 "mode": mode,
+                "phases": [
+                    {"id": "thumbnails", "name": "Miniaturas", "status": "pending", "progress": 0},
+                    {"id": "analysis",   "name": "Análisis IA","status": "pending", "progress": 0},
+                    {"id": "clustering", "name": "Clustering", "status": "pending", "progress": 0},
+                    {"id": "selection",  "name": "Selección",  "status": "pending", "progress": 0},
+                    {"id": "export",     "name": "Export XMP", "status": "pending", "progress": 0}
+                ],
             }
             self._thumbnail_cache.clear()
             self._thumbnail_duel_cache.clear()
@@ -135,10 +150,32 @@ class JobManager:
         self.emit_event("progress", self.get_status())
 
     def set_phase(self, phase_text: str):
-        """Actualiza el texto descriptivo de la fase actual."""
+        """Actualiza el texto descriptivo de la fase actual (deprecated en favor de update_phase_progress)."""
         with self._lock:
             self._state["phase_text"] = phase_text
         self.emit_event("phase", {"phase_text": phase_text, "progress": self._state["progress"]})
+
+    def update_phase_progress(self, phase_id: str, current: int, total: int):
+        """Actualiza el progreso de una fase específica."""
+        with self._lock:
+            for p in self._state.get("phases", []):
+                if p["id"] == phase_id:
+                    p["status"] = "running"
+                    p["progress"] = int(round((current / max(1, total)) * 100))
+                    self._state["processed"] = current
+                    self._state["total"] = total
+                    break
+        self.emit_event("progress", self.get_status())
+
+    def complete_phase(self, phase_id: str):
+        """Marca una fase como completada."""
+        with self._lock:
+            for p in self._state.get("phases", []):
+                if p["id"] == phase_id:
+                    p["status"] = "completed"
+                    p["progress"] = 100
+                    break
+        self.emit_event("progress", self.get_status())
 
     def set_stat(self, key: str, value: Any):
         """Registra una métrica en el diccionario de stats."""
@@ -178,6 +215,7 @@ class JobManager:
                 "stats": dict(self._state["stats"]),
                 "error": self._state["error"],
                 "mode": self._state.get("mode", "cull_edit"),
+                "phases": [dict(p) for p in self._state.get("phases", [])],
             }
 
     def get_results(self) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:

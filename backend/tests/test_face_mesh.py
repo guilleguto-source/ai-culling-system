@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services import face_mesh
-from services.face_mesh import FaceAttributes
+from services.legacy import face_mesh
+from services.legacy.face_mesh import FaceAttributes
 
 
 # --- Umbrales sobre el dataclass (sin depender de mediapipe) ---

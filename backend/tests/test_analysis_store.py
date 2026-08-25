@@ -140,13 +140,10 @@ def test_refresh_mtimes_ignora_faltantes(tmp_path):
     assert refresh_mtimes(conn, [str(tmp_path / "no-existe.jpg")]) == 0
 
 
-def test_fila_con_caras_sin_atributos_se_invalida(tmp_path, monkeypatch):
+def test_fila_con_caras_sin_atributos_se_invalida(tmp_path):
     """Guardia de CONTENIDO: una fila con caras pero face_attrs vacío es
     inservible (la escribió un backend viejo en memoria con lógica anterior).
     El número de versión no protege contra procesos desactualizados."""
-    from services import face_mesh
-    monkeypatch.setattr(face_mesh, "is_available", lambda: True)
-
     conn = init_store(str(tmp_path))
     incompleta = PhotoAnalysis(index=0, path="g.jpg", face_count=4, face_attrs=[])
     save_analysis(conn, incompleta, 7.0)
@@ -162,15 +159,6 @@ def test_fila_con_caras_sin_atributos_se_invalida(tmp_path, monkeypatch):
     sin_caras = PhotoAnalysis(index=0, path="i.jpg", face_count=0, face_attrs=[])
     save_analysis(conn, sin_caras, 7.0)
     assert load_analysis(conn, "i.jpg", 7.0) is not None
-
-
-def test_guardia_de_contenido_sin_mediapipe_no_invalida(tmp_path, monkeypatch):
-    """Sin MediaPipe instalado no se puede medir: re-analizar no serviría."""
-    from services import face_mesh
-    monkeypatch.setattr(face_mesh, "is_available", lambda: False)
-    conn = init_store(str(tmp_path))
-    save_analysis(conn, PhotoAnalysis(index=0, path="j.jpg", face_count=3), 8.0)
-    assert load_analysis(conn, "j.jpg", 8.0) is not None
 
 
 def test_version_vieja_invalida_el_cache(tmp_path):
