@@ -1,6 +1,6 @@
-# Guto Flow — AI Photo Culling & Auto-Editing System (v1.5)
+# Guto Flow — AI Photo Culling & Auto-Editing System (v2.1)
 
-[![Build & Tests](https://img.shields.io/badge/Tests-327%20passed%20%E2%9C%85-brightgreen)](#)
+[![Build & Tests](https://img.shields.io/badge/Tests-335%20passed%20%E2%9C%85-brightgreen)](#)
 [![License](https://img.shields.io/badge/License-Proprietary-blue)](#)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Electron%20%7C%20Python-orange)](#)
 
@@ -10,15 +10,15 @@ Funciona de forma **100% offline y local**, combinando un frontend moderno en El
 
 ---
 
-## 🌟 Características Principales (v1.5)
+## 🌟 Características Principales (v2.1)
 
 ### 🤖 1. Motor de Análisis e Inteligencia Artificial
 * **Calidad Técnica & Nitidez**: Evaluación por filtro Laplaciano de varianza, análisis de saliencia y nitidez facial focalizada.
 * **Motor Estético 7-Ejes**: Ponderación inteligente de composición, rango dinámico, exposición, colorimetría, expresión y prioridad de personas VIP.
-* **Landmarks & Micro-expresiones**: Integración de **YuNet** (detección facial rápida) y **MediaPipe Face Mesh** (parpadeo, sonrisa, dirección de mirada y micro-expresiones).
-* **Reconocimiento de Personas**: **ArcFace (ResNet-50)** para clustering persona-a-persona, garantizando que cada sujeto tenga fotos de calidad seleccionadas.
+* **Detección & Landmarks Faciales**: Integración de **UniFace (SCRFD)** de alto rendimiento y análisis fino de micro-expresiones (parpadeo, sonrisa y dirección de mirada).
+* **Reconocimiento de Personas**: **UniFace (ArcFace)** para clustering persona-a-persona, garantizando cobertura equitativa de todos los protagonistas.
 * **Auto-Encuadre (YOLOv8)**: Detección de personas de espaldas y encuadre basado en la regla de tercios y espacio de mirada.
-* **Búsqueda Semántica Offline (CLIP)**: Consulta en lenguaje natural (ej: *"niños riendo"*, *"primer plano novia"*) sin conexión a internet.
+* **Búsqueda Semántica Offline (SigLIP)**: Consulta en lenguaje natural (ej: *"niños riendo"*, *"primer plano novia"*) sin conexión a internet ni llamadas a APIs externas.
 
 ### 🧠 2. Aprendizaje Adaptativo de Estilo
 * **Gusto Visual (Duelo & Lightroom Sync)**: Aprende continuamente de los duelos 1v1 y de las correcciones del fotógrafo en Lightroom.
@@ -37,9 +37,99 @@ Funciona de forma **100% offline y local**, combinando un frontend moderno en El
 
 ---
 
+## 📜 Historial de Versiones, Mejoras y Correcciones
+
+Para consultar la bitácora histórica completa y granular, revisa [CHANGELOG.md](CHANGELOG.md).
+
+### 🚀 [v2.1.0] - 2026-09-11
+* **✨ Nuevas Características & Mejoras**:
+  * **Motor de Selección V2**: Algoritmo con supervivencia obligatoria para momentos clave, control de cadencia temporal (*pacing*), poda estricta a cuota objetivo (*trim to target*) y bonificación VIP (+20% de score para sujetos prioritarios).
+  * **Unificación Nativa RAW + JPEG**: Tratamiento integral del par dual como 1 solo disparo fotográfico en estimación inicial, visualización en cuadrícula, contadores de biblioteca y exportación.
+  * **Herramientas de Cliente & UI Renovada**:
+    * `ClientToolsModal.tsx`: Herramientas auxiliares de filtrado y control de catálogo.
+    * `PreCullingModal.tsx`: Configuración de parámetros y criterios antes de iniciar el procesamiento.
+    * `VIPBar.tsx`: Barra interactiva en la interfaz para seleccionar y priorizar identidades clave del evento.
+    * `SleepCountdownModal.tsx`: Temporizador interactivo para apagar o suspender el equipo tras finalizar lotes pesados.
+  * **Adapters y Resiliencia**:
+    * `FaceEngineAdapter`: Desacoplamiento modular del motor facial para intercambio transparente de modelos.
+    * `DiscrepancyFilter`: Detección y auditoría de discrepancias en calificaciones de ráfaga.
+    * `session_history_store.py`: Persistencia estructurada de sesiones y estadísticas en SQLite.
+  * **Documentación & Benchmarks de Culling Agent**: Integración de planes de migración, auditorías faciales y 21 scripts de prueba/benchmark en `docs/culling_agent/` y `scripts/scratch/`.
+* **🐛 Correcciones & Bugs Resueltos**:
+  * *Bug de Duplicidad RAW/JPG*: Resuelto el problema donde carpetas con parejas RAW+JPG duplicaban el conteo (ej. 1.821 archivos reportados frente a 1.225 tomas reales).
+  * *Exportación XMP Asimétrica*: Corregido el fallo donde solo se generaba sidecar para el archivo JPEG; ahora se escriben metadatos sincronizados tanto para el RAW como para el JPG de forma atómica.
+  * *Rutas Inválidas en Limpieza de Biblioteca*: Corregida excepción en `media.py` (`cleanup_library`) ante rutas relativas, directorios nulos o carpetas de pruebas huérfanas.
+  * *Sincronización Incompleta de Snapshot*: Añadido el campo `linked_raw_path` en las sesiones persistidas para garantizar la sincronización bidireccional desde Lightroom Classic.
+
+---
+
+### 🚀 [v2.0.0] - 2026-08-25
+* **✨ Nuevas Características & Mejoras**:
+  * **Migración Integral a UniFace**: Sustitución de MediaPipe e InsightFace por un pipeline unificado de detección facial y embeddings (SCRFD + ArcFace) sobre ONNX Runtime, compatible con DirectML, CUDA y CPU.
+  * **Búsqueda Semántica con SigLIP**: Migración de CLIP clásico hacia Google SigLIP (ViT-B/16), logrando una precisión semántica significativamente mayor en lenguaje natural sin requerir conexión externa.
+  * **Lazy Loading de Modelos IA**: Carga bajo demanda y patrón Singleton para redes neuronales pesadas (`FaceAnalyzer`, `MobileGaze`), reduciendo el cold start del backend de ~4.5s a ~0.8s.
+  * **Arquitectura Limpia & Reducción de Huella**:
+    * Eliminación total de dependencias obsoletas (`mediapipe` en `requirements.txt`), reduciendo ~200MB de tamaño del instalador.
+    * Centralización del 100% de peticiones de red del frontend a través de `apiClient`.
+    * Purgado de código muerto: canales IPC en desuso (`backend:undo:*`), vistas huérfanas y reestructuración en `backend/services/legacy/`.
+* **🐛 Correcciones & Bugs Resueltos**:
+  * *Fugas de Memoria en GPU/CPU*: Liberación explícita de tensores de imagen y contextos de sesión en ONNX Runtime tras procesar cada ráfaga.
+  * *Deadlock en JobManager*: Corrección de condiciones de carrera en el pool de hilos al cancelar trabajos batch masivos.
+  * *URLs Hardcodeadas*: Erradicación de cadenas fijas `127.0.0.1:8000` en componentes React que causaban fallos cuando el puerto dinámico cambiaba.
+
+---
+
+### ✨ [v1.3.0] - 2026-08-08
+* **✨ Nuevas Características & Mejoras**:
+  * **Storyline 2.0 Foundation**: Segmentación automática temporal y semántica que organiza el evento fotográfico en capítulos lógicos (preparativos, ceremonia, sesión nupcial, fiesta).
+  * **Event Library & Autocompletado**: Biblioteca de eventos para categorizar y recuperar rápidamente sesiones previas.
+  * **Selección Múltiple en Cuadrícula**: Soporte completo de operaciones por lote con `Shift + Click`, `Ctrl + Click` y `Ctrl + A`.
+  * **Streaming de Progreso en Tiempo Real (SSE)**: Implementación de Server-Sent Events en FastAPI para reportar métricas granulares y avances sin sobrecarga de polling continuo.
+  * **Reglas de Ráfagas Mejoradas**: Balanceo de orientación horizontal/vertical (H/V) y selección óptima de hasta 2 fotos representativas por ráfaga.
+* **🐛 Correcciones & Bugs Resueltos**:
+  * *Desalineación Temporal por Zonas Horarias*: Corregido el parseo de metadatos EXIF cuando las cámaras tenían desfases entre hora local y UTC.
+  * *Penalización Indebida de Fotos Verticales*: Solucionado un sesgo en el algoritmo de composición que degradaba injustamente planos verticales en ráfagas mixtas.
+
+---
+
+### ✨ [v1.2.0] - 2026-07-27
+* **✨ Nuevas Características & Mejoras**:
+  * **Búsqueda Semántica Offline**: Consulta en lenguaje natural (ej. *"beso novios"*, *"pastel de bodas"*) ejecutada íntegramente de manera local.
+  * **Refinamiento Visual VLM**: Desempate de sonrisas forzadas y micro-gestos mediante modelos de lenguaje visual.
+  * **Wizard de Descarga de Modelos**: Asistente interactivo en frontend con reporte de avance y verificación de integridad criptográfica (SHA-256).
+  * **Inspector de Fotos y Lupa**: Panel con histograma en tiempo real, metadatos EXIF profundos y herramienta de zoom de alta fidelidad.
+  * **Empaquetado de Producción**: Pipeline automatizado con PyInstaller y Electron Builder para generar instaladores NSIS ligeros y reproducibles.
+* **🐛 Correcciones & Bugs Resueltos**:
+  * *Corrupción en Descargas de Modelos*: Implementada escritura en archivos temporales `.tmp` antes de confirmar la sustitución definitiva de los pesos.
+  * *Lentitud en Carga de RAWs*: Integración de `rawpy` con fallback ultra-rápido a vistas previas JPEG embebidas.
+
+---
+
+### ✨ [v1.1.0] - 2026-07-20
+* **✨ Nuevas Características & Mejoras**:
+  * **Aprendizaje Continuo desde Lightroom**: Sincronización bidireccional mediante reimportación de XMP para aprender las preferencias de calificación y recorte del fotógrafo.
+  * **Garantía de Cobertura de Personas**: Reglas de balance para asegurar que cada persona detectada tenga al menos un número proporcional de fotografías de calidad seleccionadas.
+  * **Modo Duelo (Duel View)**: Comparador lado a lado optimizado para atajos de teclado rápidos (`1` vs `2`).
+  * **Deshacer Atómico (Undo Export)**: Respaldo previo de archivos de metadatos permitiendo revertir la sesión de culling al estado original con 1 solo clic.
+* **🐛 Correcciones & Bugs Resueltos**:
+  * *Sobrescritura Destructiva de Metadatos*: Corrección para preservar etiquetas preexistentes en archivos XMP durante la exportación.
+  * *Falsos Positivos de Ojos Cerrados*: Ajuste de umbrales en el clasificador facial ante sombras intensas o uso de gafas de sol.
+
+---
+
+### 📦 [v1.0.0] - 2026-07-01
+* **✨ Nuevas Características**:
+  * Primera versión funcional de **Guto Flow**: plataforma de escritorio híbrida Electron + FastAPI.
+  * Motor de nitidez por varianza Laplaciana y saliencia visual.
+  * Motor estético multi-criterio de 7 ejes (composición, exposición, contraste, color, personas VIP, nitidez y expresión).
+  * Agrupación automática por ráfagas temporales y visuales.
+  * Exportación estándar de etiquetas de estrellas y colores en sidecars XMP compatibles con Lightroom y Camera Raw.
+
+---
+
 ## 📊 Estado de Pruebas & Calidad de Código
 
-* **Pruebas de Backend (`pytest`)**: **327 / 327 pruebas aprobadas (100% en verde)** cubriendo modelos, routers, cálculo estético y servicios de exportación.
+* **Pruebas de Backend (`pytest`)**: **335 / 335 pruebas aprobadas (100% en verde)** cubriendo modelos, routers, cálculo estético y servicios de exportación.
 * **Validación TypeScript**: `npx tsc --noEmit` superado sin errores de sintaxis o tipos.
 
 ---
