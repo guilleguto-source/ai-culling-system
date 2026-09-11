@@ -13,11 +13,14 @@ from services.thumbnail_store import thumb_url
 logger = logging.getLogger(__name__)
 
 # Storyline 2.0 - Parámetros de segmentación ajustados
-MIN_SEGMENT_PHOTOS = 15
-MIN_SEGMENT_DURATION_MINUTES = 1.0  # Bajado de 2.0
-HARD_GAP_MINUTES = 15.0
-SOFT_GAP_MINUTES = 5.0              # Nuevo: Corte si dejan de disparar por 5 min
-CONTEXT_CHANGE_THRESHOLD = 0.15     # Bajado de 0.35 para mayor sensibilidad
+MIN_SEGMENT_PHOTOS = 6                  # Min fotos para considerar un segmento consolidado
+MIN_SEGMENT_DURATION_MINUTES = 1.0      # Min duración de un segmento antes de permitir un soft cut por escena
+MIN_SEMANTIC_PHOTOS = 3                 # Min fotos antes de empezar a chequear cambios semánticos
+
+HARD_GAP_MINUTES = 3.0                  # Inactividad absoluta (corte seguro)
+SOFT_GAP_MINUTES = 1.0                  # Pausa notable en sesión activa
+CONTEXT_CHANGE_THRESHOLD = 0.12         # Sensibilidad semántica estándar
+STRONG_SCENE_CHANGE = 0.18              # Cambio drástico de ambiente/escena corta
 
 def get_overrides_path(directory: str) -> Path:
     dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
@@ -40,6 +43,44 @@ def save_override(directory: str, photo_path: str, chapter_id: str):
     p = get_overrides_path(directory)
     with open(p, "w", encoding="utf-8") as f:
         json.dump(overrides, f, indent=2)
+
+
+def build_photo_chapter_map_from_records(records: list, analyses: list | None = None) -> dict[int, str]:
+    """
+    Construye un mapa rápido {idx_foto: chapter_id} para segmentar el evento
+    en capítulos cronológicos (pacing) usando los EXIF datetime de los records.
+    """
+    if not records:
+        return {}
+
+    parsed = []
+    for idx, r in enumerate(records):
+        dt = None
+        dt_str = getattr(r, "exif_datetime", None)
+        if dt_str:
+            for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    dt = datetime.strptime(str(dt_str).strip()[:19], fmt)
+                    break
+                except Exception:
+                    pass
+        parsed.append((idx, dt))
+
+    chapter_map: dict[int, str] = {}
+    current_chapter_idx = 0
+    last_dt = None
+
+    for idx, dt in parsed:
+        if dt is not None and last_dt is not None:
+            delta_sec = (dt - last_dt).total_seconds()
+            if delta_sec > HARD_GAP_MINUTES * 60:
+                current_chapter_idx += 1
+        chapter_map[idx] = f"capitulo_{current_chapter_idx}"
+        if dt is not None:
+            last_dt = dt
+
+    return chapter_map
+
 
 def build_storyline(directory: str) -> list[dict]:
     """
@@ -93,23 +134,27 @@ def build_storyline(directory: str) -> list[dict]:
         
         force_cut = False
         
-        # Señal A: Hard Gap (Inactividad absoluta)
+        # Señal A: Hard Gap (Inactividad absoluta >= 5 min)
         if delta_sec > HARD_GAP_MINUTES * 60:
             force_cut = True
             
-        # Señal B: Soft Gap (Pausa notable en la sesión)
-        elif delta_sec > SOFT_GAP_MINUTES * 60 and len(current_segment) >= MIN_SEGMENT_PHOTOS:
+        # Señal B: Soft Gap (Pausa notable >= 2 min con suficientes fotos en el segmento)
+        elif delta_sec > SOFT_GAP_MINUTES * 60 and len(current_segment) >= MIN_SEMANTIC_PHOTOS:
             force_cut = True
             
-        # Señal C: Cambio de Contexto Visual
-        elif len(current_segment) >= MIN_SEGMENT_PHOTOS and duration_sec >= MIN_SEGMENT_DURATION_MINUTES * 60:
+        # Señal C: Cambio Semántico de Escena
+        elif len(current_segment) >= MIN_SEMANTIC_PHOTOS:
             if curr_emb is not None and recent_embeddings:
-                avg_context = np.mean(recent_embeddings[-5:], axis=0)
+                avg_context = np.mean(recent_embeddings[-3:], axis=0)
                 norm = np.linalg.norm(avg_context)
                 if norm > 0:
                     avg_context = avg_context / norm
                     context_change = 1.0 - float(np.dot(curr_emb, avg_context))
-                    if context_change > CONTEXT_CHANGE_THRESHOLD:
+                    # C1. Cambio drástico de escena (ej. cambio de habitación / mesa de dulces / exterior)
+                    if context_change > STRONG_SCENE_CHANGE:
+                        force_cut = True
+                    # C2. Cambio acumulado moderado con duración mínima de segmento
+                    elif len(current_segment) >= MIN_SEGMENT_PHOTOS and duration_sec >= MIN_SEGMENT_DURATION_MINUTES * 60 and context_change > CONTEXT_CHANGE_THRESHOLD:
                         force_cut = True
         
         if force_cut:

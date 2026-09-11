@@ -10,6 +10,41 @@ export interface HardwareInfo {
   logical_cores: number;
 }
 
+export interface HardwareProfile {
+  tier: 'ultra' | 'balanced' | 'cpu_light' | 'low_spec';
+  tier_label: string;
+  description: string;
+  specs: {
+    has_gpu: boolean;
+    gpu_name: string;
+    vram_gb: number;
+    cpu_physical_cores: number;
+    cpu_logical_threads: number;
+    ram_gb: number;
+  };
+  recommended_config: {
+    use_cascade: boolean;
+    heavy_detector: string;
+    safety_cap: number;
+    max_workers: number;
+  };
+  last_scan: string;
+}
+
+export interface CullingEstimate {
+  total_photos: number;
+  min_photos: number;
+  max_photos: number;
+  estimated_percentage: number;
+  is_calibrated: boolean;
+  samples_count: number;
+}
+
+export interface PresetItem {
+  name: string;
+  path: string;
+}
+
 export interface BackendStatus {
   running: boolean;
   status: 'starting' | 'running' | 'stopped' | 'error' | 'unknown';
@@ -259,4 +294,13 @@ export interface StorylineChapter {
   medoid_path: string;
   paths: string[];
 }
+
+export interface VIPSubject {
+  id: number;
+  count: number;
+  name: string;
+  representative_thumb: string;
+  representative_path?: string;
+}
+
 

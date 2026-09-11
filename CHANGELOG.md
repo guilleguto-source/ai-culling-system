@@ -3,6 +3,15 @@
 Todos los cambios notables en **Guto Flow** están documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-11
+
+### 🚀 Novedades y Mejoras
+- **Motor de Selección V2:** Supervivencia obligatoria, control de pacing, recorte a objetivo (`trim to target`) y bonificación de puntuación VIP (+20%).
+- **Tratamiento Unificado RAW + JPEG:** Agrupación transparente por stem en estimación, selección y exportación dual de sidecars XMP.
+- **Herramientas de Cliente y UI:** Modales interactivos (`ClientToolsModal`, `PreCullingModal`, `SleepCountdownModal`), barra VIP (`VIPBar`) y mejoras visuales en biblioteca.
+- **Detección y Filtros Robustos:** Adapters para motor facial, perfiles de hardware, filtros de discrepancias y persistencia histórica de sesión.
+- **Historial y Benchmarks de Culling Agent:** Integración de reportes de auditoría, planes de migración y suite de scripts de validación en `docs/culling_agent/` y `scripts/scratch/`.
+
 ---
 
 ## [2.0.0] - 2026-08-25

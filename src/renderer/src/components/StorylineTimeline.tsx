@@ -176,13 +176,49 @@ export default function StorylineTimeline({ directory, onSelectChapter }: Storyl
                     {ch.name || `Momento ${idx + 1}`}
                   </span>
                 )}
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.7rem', color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
                   {ch.start_time} - {ch.end_time} ({ch.photo_count} fotos)
                 </span>
               </div>
             </div>
           );
         })}
+
+        {selectedId && (
+          <button
+            onClick={() => {
+              setSelectedId(null);
+              if (onSelectChapter) onSelectChapter(null);
+            }}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--text-tertiary)',
+              backgroundColor: 'var(--color-surface-elevated)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'all var(--transition-fast)'
+            }}
+            onMouseEnter={(e) => {
+              (e.target as HTMLElement).style.color = 'var(--text-primary)';
+              (e.target as HTMLElement).style.borderColor = 'var(--accent-primary)';
+            }}
+            onMouseLeave={(e) => {
+              (e.target as HTMLElement).style.color = 'var(--text-tertiary)';
+              (e.target as HTMLElement).style.borderColor = 'var(--border-default)';
+            }}
+            title="Ver todas las fotos del evento"
+          >
+            ✕ Ver todo ({chapters.reduce((acc, c) => acc + c.photo_count, 0)})
+          </button>
+        )}
       </div>
     </div>
   );

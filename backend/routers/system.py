@@ -57,7 +57,7 @@ def health_check():
         stale = _code_stamp() > _LOADED_CODE_STAMP
     except OSError:
         stale = False
-    return {"status": "ok", "version": "1.0.0", "stale_code": stale}
+    return {"status": "ok", "version": "2.1.0", "stale_code": stale}
 
 
 @router.get("/hardware")

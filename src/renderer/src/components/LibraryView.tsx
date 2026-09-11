@@ -13,7 +13,9 @@ import {
   IconSync,
   IconFolder,
   IconEdit,
-  IconSparkles
+  IconSparkles,
+  IconLibrary,
+  IconTrash
 } from './icons';
 
 interface LibraryViewProps {
@@ -22,6 +24,7 @@ interface LibraryViewProps {
   jobResults?: any;
   onSelectProject?: (dir: string) => void;
   onOpenFolderPicker?: () => void;
+  onOpenClientTools?: (dir: string) => void;
 }
 
 export default function LibraryView({
@@ -29,13 +32,45 @@ export default function LibraryView({
   jobState,
   jobResults,
   onSelectProject,
-  onOpenFolderPicker
+  onOpenFolderPicker,
+  onOpenClientTools
 }: LibraryViewProps) {
   const [projects, setProjects] = useState<LibraryProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingDir, setSyncingDir] = useState<string | null>(null);
   const [syncDetails, setSyncDetails] = useState<{ [dir: string]: any }>({});
+  const [isCleaning, setIsCleaning] = useState(false);
   const { showToast } = useToast();
+
+  const handleCleanupTests = async () => {
+    if (!window.confirm('¿Deseas eliminar todas las sesiones de prueba (test, pruebas, evento) y carpetas que ya no existen?')) return;
+    try {
+      setIsCleaning(true);
+      const res = await apiClient.cleanupLibrary();
+      if (res.success) {
+        showToast(`Limpieza completada: ${res.deleted_count} sesiones eliminadas`, 'success');
+        loadProjects();
+      } else {
+        showToast('No se pudo completar la limpieza', 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error al limpiar: ${err.message || err}`, 'error');
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const handleDeleteProject = async (dir: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('¿Deseas quitar este evento del listado de la biblioteca?')) return;
+    try {
+      await apiClient.clearCache(dir);
+      showToast('Proyecto eliminado de la biblioteca', 'info');
+      loadProjects();
+    } catch (err: any) {
+      showToast(`Error al eliminar: ${err.message || err}`, 'error');
+    }
+  };
 
   const loadProjects = async () => {
     try {
@@ -153,6 +188,16 @@ export default function LibraryView({
               >
                 {syncingDir === directory ? 'Sincronizando…' : 'Sincronizar Lightroom'}
               </Button>
+              {onOpenClientTools && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<IconLibrary size={15} />}
+                  onClick={() => onOpenClientTools(directory)}
+                >
+                  Cliente
+                </Button>
+              )}
             </>
           )}
           {onOpenFolderPicker && (
@@ -392,17 +437,37 @@ export default function LibraryView({
       {/* 4. Sección de Sesiones Recientes */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <div className="flex-between items-center">
-          <h2 style={{
-            fontSize: 'var(--text-md)',
-            fontWeight: 'var(--fw-semibold)',
-            color: 'var(--text-primary)',
-            margin: 0
-          }}>
-            Sesiones recientes
-          </h2>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-            {projects.length} proyecto{projects.length !== 1 ? 's' : ''} en biblioteca
-          </span>
+          <div className="flex items-center gap-3">
+            <h2 style={{
+              fontSize: 'var(--text-md)',
+              fontWeight: 'var(--fw-semibold)',
+              color: 'var(--text-primary)',
+              margin: 0
+            }}>
+              Sesiones recientes
+            </h2>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+              {projects.length} proyecto{projects.length !== 1 ? 's' : ''} en biblioteca
+            </span>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanupTests}
+            disabled={isCleaning}
+            style={{
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--text-xs)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            icon={<IconTrash size={13} style={{ color: 'var(--danger)' }} />}
+            title="Eliminar proyectos de prueba (test, evento) y carpetas huérfanas"
+          >
+            {isCleaning ? 'Limpiando...' : 'Limpiar pruebas y temporales'}
+          </Button>
         </div>
 
         {loading ? (
@@ -540,6 +605,21 @@ export default function LibraryView({
                       {syncingDir === proj.directory ? 'Sync…' : 'Sync Lightroom'}
                     </Button>
 
+                    {onOpenClientTools && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={<IconLibrary size={13} />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenClientTools(proj.directory);
+                        }}
+                        title="Exportar previews o importar selección de cliente"
+                      >
+                        Cliente
+                      </Button>
+                    )}
+
                     {onSelectProject && !isActive && (
                       <Button
                         variant="secondary"
@@ -549,6 +629,14 @@ export default function LibraryView({
                         Abrir
                       </Button>
                     )}
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<IconTrash size={13} style={{ color: 'var(--text-muted)' }} />}
+                      onClick={(e) => handleDeleteProject(proj.directory, e)}
+                      title="Quitar este evento de la biblioteca"
+                    />
                   </div>
                 </div>
               );

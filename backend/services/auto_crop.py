@@ -19,7 +19,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Límites por nivel: máximo % lineal removible por dimensión
-LEVEL_LIMITS = {"minimo": 0.10, "medio": 0.20, "agresivo": 0.35}
+LEVEL_LIMITS = {"minimo": 0.15, "medio": 0.30, "agresivo": 0.45}
 
 MAX_LEVEL_ANGLE = 7.0      # grados; más inclinación = holandés intencional o error
 ROTATION_CROP_PER_DEG = 0.015  # recorte lineal que consume nivelar 1 grado
@@ -330,12 +330,14 @@ def _cuts_skin(mask: np.ndarray, window: tuple[float, float, float, float]) -> b
 
 
 def _nearest_strong_point(fx: float, fy: float, level: str) -> tuple[float, float]:
-    """Punto fuerte (tercios; agresivo también áurea) más cercano al sujeto."""
-    lines = list(THIRDS)
+    """Punto fuerte (tercios; centro horizontal; agresivo también áurea) más cercano al sujeto."""
+    x_lines = list(THIRDS) + [0.5]
+    y_lines = list(THIRDS)
     if level == "agresivo":
-        lines += list(GOLDEN)
-    tx = min(lines, key=lambda v: abs(v - fx))
-    ty = min(lines, key=lambda v: abs(v - fy))
+        x_lines += list(GOLDEN)
+        y_lines += list(GOLDEN)
+    tx = min(x_lines, key=lambda v: abs(v - fx))
+    ty = min(y_lines, key=lambda v: abs(v - fy))
     return tx, ty
 
 

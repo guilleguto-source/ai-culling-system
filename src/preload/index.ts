@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('api', {
 
 
   selectFolder: (defaultPath?: string) => ipcRenderer.invoke('backend:select-folder', defaultPath),
+  preventSleep: () => ipcRenderer.invoke('system:prevent-sleep'),
+  allowSleep: () => ipcRenderer.invoke('system:allow-sleep'),
+  suspendPC: () => ipcRenderer.invoke('system:suspend'),
 
   onBackendLog: (callback: (log: string) => void) => {
     const subscription = (_: any, log: string) => callback(log);

@@ -35,6 +35,7 @@ class JobManager:
                 {"id": "analysis",   "name": "Análisis IA", "status": "pending", "progress": 0},
                 {"id": "clustering", "name": "Clustering", "status": "pending", "progress": 0},
                 {"id": "selection",  "name": "Selección",  "status": "pending", "progress": 0},
+                {"id": "pre_edit",   "name": "Pre-edición", "status": "pending", "progress": 0},
                 {"id": "export",     "name": "Export XMP", "status": "pending", "progress": 0},
             ],
         }
@@ -92,7 +93,14 @@ class JobManager:
                 "stats": {},
                 "error": None,
                 "mode": "cull_edit",
-                "phases": [],
+                "phases": [
+                    {"id": "thumbnails", "name": "Miniaturas", "status": "pending", "progress": 0},
+                    {"id": "analysis",   "name": "Análisis IA", "status": "pending", "progress": 0},
+                    {"id": "clustering", "name": "Clustering", "status": "pending", "progress": 0},
+                    {"id": "selection",  "name": "Selección",  "status": "pending", "progress": 0},
+                    {"id": "pre_edit",   "name": "Pre-edición", "status": "pending", "progress": 0},
+                    {"id": "export",     "name": "Export XMP", "status": "pending", "progress": 0},
+                ],
             }
             self._thumbnail_cache.clear()
             self._thumbnail_duel_cache.clear()
@@ -122,6 +130,7 @@ class JobManager:
                     {"id": "analysis",   "name": "Análisis IA","status": "pending", "progress": 0},
                     {"id": "clustering", "name": "Clustering", "status": "pending", "progress": 0},
                     {"id": "selection",  "name": "Selección",  "status": "pending", "progress": 0},
+                    {"id": "pre_edit",   "name": "Pre-edición", "status": "pending", "progress": 0},
                     {"id": "export",     "name": "Export XMP", "status": "pending", "progress": 0}
                 ],
             }

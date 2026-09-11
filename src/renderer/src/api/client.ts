@@ -14,7 +14,8 @@ import {
   LearningSummary,
   CachedProject,
   LibraryProject,
-  StorylineChapter
+  StorylineChapter,
+  VIPSubject
 } from '../types/api';
 
 export const BACKEND_URL = 'http://127.0.0.1:8000';
@@ -82,15 +83,50 @@ export const apiClient = {
 
 
   // --- Culling & Pipeline ---
-  startIngest: (directory: string, mode: 'cull' | 'cull_edit' = 'cull_edit') =>
+  getHardwareProfile: () => request<HardwareProfile>('/hardware-profile'),
+
+  getCullingEstimate: (directory: string, eventType: string = 'wedding', selectivity: string = 'standard') =>
+    request<CullingEstimate>(
+      `/estimate?directory=${encodeURIComponent(directory)}&event_type=${encodeURIComponent(eventType)}&selectivity=${encodeURIComponent(selectivity)}`
+    ),
+
+  getAvailablePresets: () => request<PresetItem[]>('/available-presets'),
+
+  startIngest: (
+    directory: string,
+    mode: 'cull' | 'cull_edit' = 'cull_edit',
+    eventType: string = 'wedding',
+    selectivity: string = 'standard',
+    preEditOverrides?: Record<string, any>,
+    extraDirectories?: string[]
+  ) =>
     request<{ job_id: string; status: string; mode: string }>('/ingest', {
       method: 'POST',
-      body: JSON.stringify({ directory, mode })
+      body: JSON.stringify({
+        directory,
+        mode,
+        event_type: eventType,
+        selectivity,
+        pre_edit_overrides: preEditOverrides,
+        ...(extraDirectories && extraDirectories.length > 0 ? { extra_directories: extraDirectories } : {})
+      })
     }),
 
   getStatus: () => request<JobStatus>('/status'),
-
   getResults: () => request<JobResults>('/results'),
+
+  // --- Herramientas de Cliente ---
+  exportPreviews: (inputDir: string, outputDir: string, filterMode: string) =>
+    request<{ status: string; exported: number; errors: number }>('/tools/export-previews', {
+      method: 'POST',
+      body: JSON.stringify({ input_dir: inputDir, output_dir: outputDir, filter_mode: filterMode })
+    }),
+    
+  importSelection: (baseDir: string, filenames: string[], clientFolder?: string) =>
+    request<{ status: string; updated: number }>('/tools/import-selection', {
+      method: 'POST',
+      body: JSON.stringify({ base_dir: baseDir, filenames, client_folder: clientFolder })
+    }),
 
   // --- Ráfagas, Duelos & Rostros ---
   learnPreference: (winnerPath: string, loserPath: string) =>
@@ -203,9 +239,25 @@ export const apiClient = {
       body: JSON.stringify({ directory, photo_path: photoPath, chapter_id: chapterId })
     }),
 
+  getVIPSubjects: (directory: string) =>
+    request<{ subjects: VIPSubject[] }>(
+      `/vip-subjects?directory=${encodeURIComponent(directory)}`
+    ),
+
+  renameVIPSubject: (directory: string, identityId: number, name: string) =>
+    request<{ status: string; identity_id: number; name: string }>('/vip-subjects/rename', {
+      method: 'POST',
+      body: JSON.stringify({ directory, identity_id: identityId, name })
+    }),
+
   getCachedProjects: () => request<CachedProject[]>('/cache/projects'),
 
   getLibraryProjects: () => request<{ projects: LibraryProject[] }>('/library/projects'),
+
+  cleanupLibrary: () =>
+    request<{ success: boolean; deleted_count: number }>('/library/cleanup', {
+      method: 'DELETE'
+    }),
 
   clearCache: (directory: string, db_hash?: string) =>
     request<{ success: boolean }>('/cache/clear', {

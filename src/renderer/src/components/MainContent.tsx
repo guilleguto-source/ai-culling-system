@@ -3,6 +3,7 @@ import GridView from './GridView';
 import DuelView from './DuelView';
 import SemanticSearchBar from './SemanticSearchBar';
 import StorylineTimeline from './StorylineTimeline';
+import VIPBar from './VIPBar';
 import { AdvancedPanel } from './AdvancedPanel';
 import HomeScreen from './HomeScreen';
 import StyleProfileView from './StyleProfileView';
@@ -22,6 +23,7 @@ interface MainContentProps {
   onRefreshResults?: () => void;
   onStartIngest?: (dir: string, mode?: string) => void;
   onSelectProject?: (dir: string) => void;
+  onOpenClientTools?: (dir: string) => void;
 }
 
 export default function MainContent({
@@ -35,6 +37,7 @@ export default function MainContent({
   onRefreshResults,
   onStartIngest,
   onSelectProject,
+  onOpenClientTools,
 }: MainContentProps) {
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -43,8 +46,25 @@ export default function MainContent({
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
   const [activeStorylinePaths, setActiveStorylinePaths] = useState<Set<string> | null>(null);
+  const [activeVIPIds, setActiveVIPIds] = useState<Set<number>>(new Set());
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
+
+  const handleToggleVIP = (id: number) => {
+    setActiveVIPIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleClearVIPs = () => {
+    setActiveVIPIds(new Set());
+  };
 
   const handleUndo = async () => {
     if (!directory || !onUndoExport) return;
@@ -123,6 +143,7 @@ export default function MainContent({
         jobState={jobState}
         jobResults={jobResults}
         onSelectProject={onSelectProject}
+        onOpenClientTools={onOpenClientTools}
         onOpenFolderPicker={() => {
           if (window.api?.selectFolder) {
             window.api.selectFolder(directory).then((res) => {
@@ -281,7 +302,18 @@ export default function MainContent({
 
   // 3. Completed State (Results available)
   if (jobResults && jobResults.results) {
-    const displayResults = filteredResults || jobResults.results;
+    let displayResults = filteredResults || jobResults.results;
+
+    if (activeStorylinePaths) {
+      displayResults = displayResults.filter((photo: any) => activeStorylinePaths.has(photo.path));
+    }
+
+    if (activeVIPIds.size > 0) {
+      displayResults = displayResults.filter((photo: any) =>
+        Array.isArray(photo.identity_ids) &&
+        photo.identity_ids.some((id: number) => activeVIPIds.has(id))
+      );
+    }
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -364,6 +396,14 @@ export default function MainContent({
               setActiveStorylinePaths(null);
             }
           }}
+        />
+
+        {/* VIP Subjects Filter Bar */}
+        <VIPBar
+          directory={directory}
+          activeVIPIds={activeVIPIds}
+          onToggleVIP={handleToggleVIP}
+          onClearVIPs={handleClearVIPs}
         />
 
         {/* Active Workspace View */}

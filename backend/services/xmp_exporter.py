@@ -429,6 +429,24 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             tonal_rescue=item_rescue,
             paint_corrections=item_paint,
         )
+        if result.get("linked_raw_path"):
+            try:
+                write_xmp(
+                    image_path=result["linked_raw_path"],
+                    label=label,
+                    stars=mapping.get("stars", 0),
+                    color=mapping.get("color", ""),
+                    overwrite=overwrite,
+                    crop=result.get("crop"),
+                    develop=develop,
+                    preset=preset if develop else None,
+                    flag=mapping.get("flag"),
+                    lut_adjustments=item_lut,
+                    tonal_rescue=item_rescue,
+                    paint_corrections=item_paint,
+                )
+            except Exception as e:
+                logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")
         return "written" if ok else "skipped"
 
     written = skipped = errors = 0
@@ -479,6 +497,24 @@ def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
             tonal_rescue=item_rescue,
             paint_corrections=item_paint,
         )
+        if result.get("linked_raw_path"):
+            try:
+                write_xmp(
+                    image_path=result["linked_raw_path"],
+                    label=label,
+                    stars=mapping.get("stars", 0),
+                    color=mapping.get("color", ""),
+                    overwrite=overwrite,
+                    crop=result.get("crop"),
+                    develop=develop,
+                    preset=preset if develop else None,
+                    flag=mapping.get("flag"),
+                    lut_adjustments=item_lut,
+                    tonal_rescue=item_rescue,
+                    paint_corrections=item_paint,
+                )
+            except Exception as e:
+                logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")
         return "written" if ok else "skipped"
 
     with ThreadPoolExecutor(max_workers=8) as executor:

@@ -24,3 +24,6 @@ httpx>=0.27.0
 transformers>=4.40.0 # Tokenizador para búsqueda semántica (sin torch)
 huggingface-hub>=0.23.0
 faiss-cpu>=1.8.0     # Búsqueda vectorial (escalabilidad de embeddings)
+
+uniface==2.0.0
+

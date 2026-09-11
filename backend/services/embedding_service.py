@@ -17,6 +17,11 @@ def is_available() -> bool:
     return siglip_service.is_available()
 
 
+def unload_model() -> None:
+    """Descarga el modelo de embeddings visuales para liberar RAM/VRAM."""
+    siglip_service.unload_model()
+
+
 def embed(img_rgb: np.ndarray | None) -> np.ndarray | None:
     return siglip_service.embed(img_rgb)
 

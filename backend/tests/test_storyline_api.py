@@ -61,8 +61,8 @@ def test_storyline_capitulos_por_hueco_temporal(client, tmp_path, monkeypatch):
     conn = analysis_store.init_store(carpeta)
     fotos = [
         ("a con espacio.jpg", "2026:07:20 10:00:00"),
-        ("b.jpg", "2026:07:20 10:05:00"),
-        ("c.jpg", "2026:07:20 11:30:00"),   # +85 min → capítulo nuevo
+        ("b.jpg", "2026:07:20 10:02:00"),
+        ("c.jpg", "2026:07:20 11:30:00"),   # +88 min -> capítulo nuevo
     ]
     for i, (nombre, fecha) in enumerate(fotos):
         p = f"{carpeta}/{nombre}"

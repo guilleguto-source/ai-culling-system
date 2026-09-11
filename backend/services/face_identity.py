@@ -58,3 +58,25 @@ def group_event_identities(embs_by_photo: dict,
         if ident >= 0:
             out.setdefault(owner, set()).add(ident)
     return {k: sorted(v) for k, v in out.items()}
+
+
+def rank_vip_identities(identidades: dict, top_n: int = 3) -> set[int]:
+    """
+    Identifica los protagonistas del evento por frecuencia de aparición.
+
+    Entrada: {idx_foto: [id_identidad, ...]}  (salida de group_event_identities)
+    Salida:  set con los top_n ids de identidad más frecuentes.
+
+    Los protagonistas (novios, quinceañera, homenajeado) aparecen en la
+    gran mayoría de las fotos del evento y serán bonificados durante el scoring.
+    """
+    from collections import Counter
+    counter: Counter = Counter()
+    for ids_en_foto in identidades.values():
+        for ident_id in ids_en_foto:
+            if ident_id >= 0:
+                counter[ident_id] += 1
+    if not counter:
+        return set()
+    top = counter.most_common(top_n)
+    return {ident_id for ident_id, _ in top}

@@ -144,6 +144,124 @@ def override_storyline_chapter(req: OverrideChapterRequest):
     return {"status": "success"}
 
 
+class RenameVIPRequest(BaseModel):
+    directory: str
+    identity_id: int
+    name: str
+
+
+def _get_vip_names_path(directory: str) -> Path:
+    import hashlib
+    from services.app_paths import get_analysis_dir
+    dir_hash = hashlib.md5(directory.encode("utf-8")).hexdigest()
+    get_analysis_dir().mkdir(parents=True, exist_ok=True)
+    return get_analysis_dir() / f"{dir_hash}_vip_names.json"
+
+
+def _load_vip_names(directory: str) -> dict[str, str]:
+    import json
+    p = _get_vip_names_path(directory)
+    if p.exists():
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_vip_names(directory: str, names: dict[str, str]):
+    import json
+    p = _get_vip_names_path(directory)
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(names, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error guardando nombres VIP: {e}")
+
+
+@router.get("/vip-subjects")
+def get_vip_subjects(directory: str):
+    """
+    Retorna los top-5 personajes/sujetos detectados con sus fotos representativas y nombres.
+    """
+    from collections import defaultdict
+    from services.thumbnail_store import thumb_url
+    from services.export_snapshot import load_snapshot
+
+    saved_names = _load_vip_names(directory)
+
+    # 1. Intentar desde job_manager (en memoria)
+    identities_by_photo: dict[str, list[int]] = {}
+    _, current_results, _ = job_manager.get_results()
+    if current_results:
+        for r in current_results:
+            if r.get("path") and r.get("identity_ids"):
+                identities_by_photo[r["path"]] = r["identity_ids"]
+
+    # 2. Si no hay en memoria, intentar desde snapshot
+    if not identities_by_photo:
+        snap = load_snapshot(directory)
+        if snap and snap.get("identities"):
+            identities_by_photo = snap["identities"]
+
+    # 3. Fallback: desde analysis_store
+    if not identities_by_photo:
+        try:
+            from services.analysis_store import get_all_analysis
+            from services.face_identity import group_event_identities
+            analyses = get_all_analysis(directory)
+            embs = {i: a.face_identities for i, a in enumerate(analyses) if getattr(a, "face_identities", None)}
+            if embs:
+                grouped = group_event_identities(embs)
+                for i, ids in grouped.items():
+                    if i < len(analyses):
+                        identities_by_photo[analyses[i].path] = ids
+        except Exception as e:
+            logger.error(f"Error cargando identidades desde análisis: {e}")
+
+    if not identities_by_photo:
+        return {"subjects": []}
+
+    # Contar fotos por identidad y guardar foto representativa
+    counts: dict[int, int] = defaultdict(int)
+    rep_photo: dict[int, str] = {}
+    for p, ids in identities_by_photo.items():
+        for i_id in ids:
+            counts[i_id] += 1
+            if i_id not in rep_photo:
+                rep_photo[i_id] = p
+
+    # Ordenar por frecuencia descendente y tomar top 5
+    sorted_ids = sorted(counts.keys(), key=lambda x: counts[x], reverse=True)[:5]
+
+    subjects = []
+    for rank, i_id in enumerate(sorted_ids):
+        str_id = str(i_id)
+        name = saved_names.get(str_id) or f"Personaje {rank + 1}"
+        subjects.append({
+            "id": i_id,
+            "count": counts[i_id],
+            "name": name,
+            "representative_thumb": thumb_url(rep_photo[i_id]),
+            "representative_path": rep_photo[i_id],
+        })
+
+    return {"subjects": subjects}
+
+
+@router.post("/vip-subjects/rename")
+def rename_vip_subject(req: RenameVIPRequest):
+    """
+    Renombra un personaje VIP identificado.
+    """
+    names = _load_vip_names(req.directory)
+    names[str(req.identity_id)] = req.name.strip()
+    _save_vip_names(req.directory, names)
+    return {"status": "success", "identity_id": req.identity_id, "name": req.name.strip()}
+
+
+
 @router.get("/thumbnail")
 def get_thumbnail(path: str, size: str = "ui"):
     """Retorna el thumbnail WebP de una imagen por su ruta de archivo y tamaño."""
@@ -287,7 +405,7 @@ def get_library_projects():
             except Exception:
                 pass
 
-            if not directory or directory.lower() in seen_dirs:
+            if not directory or directory == "." or not os.path.isabs(directory) or directory.lower() in seen_dirs:
                 continue
             seen_dirs.add(directory.lower())
 
@@ -303,12 +421,19 @@ def get_library_projects():
 
             if snapshot and snapshot.get("items"):
                 items = snapshot.get("items", {})
-                total_photos = len(items)
-                selected = sum(1 for l in items.values() if l in ("selected", "highlighted"))
-                highlighted = sum(1 for l in items.values() if l == "highlighted")
-                duplicates = sum(1 for l in items.values() if l == "duplicates")
-                blurry = sum(1 for l in items.values() if l == "blurry")
-                closed_eyes = sum(1 for l in items.values() if l == "closed_eyes")
+                
+                unique_items = {}
+                for p, label in items.items():
+                    base_p = os.path.splitext(p)[0].lower()
+                    if base_p not in unique_items or label in ("selected", "highlighted"):
+                        unique_items[base_p] = label
+                        
+                total_photos = len(unique_items)
+                selected = sum(1 for l in unique_items.values() if l in ("selected", "highlighted"))
+                highlighted = sum(1 for l in unique_items.values() if l == "highlighted")
+                duplicates = sum(1 for l in unique_items.values() if l == "duplicates")
+                blurry = sum(1 for l in unique_items.values() if l == "blurry")
+                closed_eyes = sum(1 for l in unique_items.values() if l == "closed_eyes")
                 discarded = total_photos - selected
                 bursts_approx = max(1, round(total_photos * 0.18))
                 sample_photo = sample_photo or next(iter(items.keys()), "")
@@ -443,3 +568,90 @@ def use_preset(data: PresetUseRequest):
     pre_updated = register_recent(data.path)
     return {"success": True, "active": pre_updated["preset_path"],
             "recent": pre_updated["recent_presets"]}
+
+def _normalize_local_path(p: str) -> str:
+    if not p:
+        return ""
+    replacements = [
+        (r"C:\Users\Guill\OneDrive\Documentos", r"C:\Users\Guill\Documents"),
+        (r"C:\Users\Guill\OneDrive\Documents", r"C:\Users\Guill\Documents"),
+        (r"C:\Users\Guill\OneDrive\Imágenes", r"C:\Users\Guill\Pictures"),
+        (r"C:\Users\Guill\OneDrive\Fotos", r"C:\Users\Guill\Pictures"),
+        (r"C:\Users\Guill\OneDrive\Escritorio", r"C:\Users\Guill\Desktop"),
+        (r"C:\Users\Guill\OneDrive\Desktop", r"C:\Users\Guill\Desktop"),
+    ]
+    norm = p
+    for src, dst in replacements:
+        if norm.lower().startswith(src.lower()):
+            norm = dst + norm[len(src):]
+            break
+    return norm
+
+
+@router.delete("/library/cleanup")
+def cleanup_library():
+    """Limpia los proyectos huérfanos o de prueba de la Biblioteca."""
+    import sqlite3
+    import shutil
+    from services.app_paths import get_analysis_dir
+    from services.thumbnail_store import CACHE_ROOT
+    from services.export_snapshot import _snapshot_path
+
+    db_dir = get_analysis_dir()
+    deleted_count = 0
+    test_keywords = ["test_", "prueba", "debug"]
+
+    if db_dir.exists():
+        for db_path in db_dir.glob("*.db"):
+            if db_path.name == "taste_examples.db":
+                continue
+            
+            directory = ""
+            try:
+                conn = sqlite3.connect(str(db_path))
+                cursor = conn.execute("SELECT path FROM photo_analysis LIMIT 1")
+                row = cursor.fetchone()
+                if row:
+                    directory = str(Path(row[0]).parent)
+                conn.close()
+            except Exception:
+                pass
+
+            norm_dir = _normalize_local_path(directory)
+            is_invalid_path = not directory or directory == "." or not os.path.isabs(directory)
+            is_orphan = norm_dir and not Path(norm_dir).exists()
+            is_empty = not directory
+            
+            folder_name = Path(directory).name.lower() if directory else ""
+            is_test = (
+                folder_name in ("evento", ".")
+                or any(kw in folder_name for kw in test_keywords)
+                or "pytest" in directory.lower()
+                or "temp" in directory.lower()
+            )
+
+            if is_invalid_path or is_orphan or is_test or is_empty:
+                try:
+                    db_path.unlink()
+                    deleted_count += 1
+                    dir_hash = db_path.stem
+                    
+                    proj_cache_dir = CACHE_ROOT / dir_hash
+                    if proj_cache_dir.exists():
+                        shutil.rmtree(proj_cache_dir, ignore_errors=True)
+                        
+                    vip_file = db_dir / f"{dir_hash}_vip_names.json"
+                    if vip_file.exists():
+                        vip_file.unlink()
+
+                    if directory:
+                        try:
+                            snap_file = _snapshot_path(directory)
+                            if snap_file.exists():
+                                snap_file.unlink()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                    
+    return {"success": True, "deleted_count": deleted_count}

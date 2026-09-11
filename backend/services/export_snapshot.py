@@ -27,11 +27,33 @@ def _snapshot_path(directory: str) -> Path:
 def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
                   edits_applied: bool = True) -> None:
     """Guarda {path: label} de lo exportado en el último culling del directorio."""
-    items = {
-        r["path"]: r["label"]
-        for r in results
-        if r.get("label") and not r.get("error")
-    }
+    items = {}
+    crops = {}
+    develops = {}
+    identities = {}
+
+    for r in results:
+        if r.get("label") and not r.get("error"):
+            p = r["path"]
+            lbl = r["label"]
+            items[p] = lbl
+            if r.get("crop"):
+                crops[p] = r["crop"]
+            if r.get("develop"):
+                develops[p] = r["develop"]
+            if r.get("identity_ids"):
+                identities[p] = r["identity_ids"]
+
+            lr = r.get("linked_raw_path")
+            if lr:
+                items[lr] = lbl
+                if r.get("crop"):
+                    crops[lr] = r["crop"]
+                if r.get("develop"):
+                    develops[lr] = r["develop"]
+                if r.get("identity_ids"):
+                    identities[lr] = r["identity_ids"]
+
     data = {
         "directory": str(Path(directory).resolve()),
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -39,16 +61,9 @@ def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
         "edits_applied": edits_applied,
         "items": items,
         # Crops/develop propuestos: el re-export tras un duelo los reutiliza
-        "crops": {
-            r["path"]: r["crop"]
-            for r in results
-            if r.get("crop") and not r.get("error")
-        },
-        "develops": {
-            r["path"]: r["develop"]
-            for r in results
-            if r.get("develop") and not r.get("error")
-        },
+        "crops": crops,
+        "develops": develops,
+        "identities": identities,
         "preset_path": preset_path,
     }
     try:

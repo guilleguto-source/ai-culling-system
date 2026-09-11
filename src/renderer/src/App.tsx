@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import MainContent from './components/MainContent';
@@ -6,6 +6,9 @@ import SettingsModal from './components/SettingsModal';
 import ShortcutsModal from './components/ShortcutsModal';
 import SyncReminder from './components/SyncReminder';
 import { ModelDownloadWizard } from './components/ModelDownloadWizard';
+import { PreCullingModal, PreCullingConfig } from './components/PreCullingModal';
+import { SleepCountdownModal } from './components/SleepCountdownModal';
+import { ClientToolsModal } from './components/ClientToolsModal';
 import { ToastProvider, useToast } from './components/Toast';
 import { apiClient, BACKEND_URL } from './api/client';
 import './index.css';
@@ -25,7 +28,33 @@ function MainApp() {
   const [staleBackend, setStaleBackend] = useState(false);
   const [showModelWizard, setShowModelWizard] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isClientToolsOpen, setIsClientToolsOpen] = useState(false);
+  const [clientToolsDir, setClientToolsDir] = useState<string>('');
+
+  // New batch & pre-culling state
+  const [preCullingFolder, setPreCullingFolder] = useState<string | null>(null);
+  const [batchQueue, setBatchQueue] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('culling_batch_queue');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeConfig, setActiveConfig] = useState<PreCullingConfig | null>(null);
+  const [autoSleepActive, setAutoSleepActive] = useState<boolean>(false);
+  const autoSleepRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    autoSleepRef.current = autoSleepActive;
+  }, [autoSleepActive]);
+
+  const [showSleepModal, setShowSleepModal] = useState<boolean>(false);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    localStorage.setItem('culling_batch_queue', JSON.stringify(batchQueue));
+  }, [batchQueue]);
 
   useEffect(() => {
     const handleGlobalKeys = (e: KeyboardEvent) => {
@@ -118,7 +147,63 @@ function MainApp() {
         if (state.status === 'completed' && !jobResults) {
           const res = await window.api.getJobResults();
           setJobResults(res);
+          
+          // Check if there are more event groups to process
+          if (activeConfig && activeConfig.eventGroups && activeConfig.eventGroups.length > 1) {
+            // Find which group just finished by checking lastDirectory
+            const currentGroupIndex = activeConfig.eventGroups.findIndex(g => g[0] === lastDirectory);
+            if (currentGroupIndex >= 0 && currentGroupIndex < activeConfig.eventGroups.length - 1) {
+              const nextIndex = currentGroupIndex + 1;
+              const nextGroup = activeConfig.eventGroups[nextIndex];
+              const [primary, ...extras] = nextGroup;
+              
+              // Calculate remaining folders in the queue for visual state
+              const remainingDirs = activeConfig.eventGroups.slice(nextIndex).flatMap(g => g);
+              setBatchQueue(remainingDirs);
+              
+              const groupLabel = nextGroup.length > 1
+                ? `${nextGroup.length} carpetas como 1 evento`
+                : primary.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? primary;
+
+              showToast(`Lote completado. Iniciando: ${groupLabel}`, 'info');
+              
+              const targetEventType = activeConfig.eventGroupTypes && activeConfig.eventGroupTypes.length > nextIndex
+                ? activeConfig.eventGroupTypes[nextIndex]
+                : activeConfig.eventType;
+
+              setTimeout(async () => {
+                try {
+                  await apiClient.startIngest(
+                    primary,
+                    activeConfig.mode,
+                    targetEventType,
+                    activeConfig.selectivity,
+                    {
+                      preset_path: activeConfig.presetPath,
+                      auto_crop: activeConfig.autoCrop
+                    },
+                    extras.length > 0 ? extras : undefined
+                  );
+                  setLastDirectory(primary);
+                  localStorage.setItem('lastDirectory', primary);
+                  setJobResults(null);
+                } catch (e: any) {
+                  showToast(`Error iniciando siguiente lote: ${e.message || e}`, 'error');
+                }
+              }, 1500);
+              return; // Stop here, don't execute "Cola completa" logic
+            }
+          }
+          
+          // Cola completa
+          setBatchQueue([]);
           showToast('¡Culling completado con éxito!', 'success');
+          if (window.api?.allowSleep) {
+            await window.api.allowSleep();
+          }
+          if (autoSleepRef.current) {
+            setShowSleepModal(true);
+          }
         } else if (state.status !== 'completed') {
           // Clear old results if running a new job
           setJobResults(null);
@@ -130,7 +215,7 @@ function MainApp() {
 
     const interval = setInterval(pollJob, 1000);
     return () => clearInterval(interval);
-  }, [backendStatus, jobResults, showToast]);
+  }, [backendStatus, jobResults, batchQueue, activeConfig, autoSleepActive, showToast, lastDirectory]);
 
   // 3. Centralized Undo Check
   const checkUndo = useCallback(async (dir?: string) => {
@@ -152,14 +237,54 @@ function MainApp() {
   }, [checkUndo, jobResults]);
 
   // Actions
-  const handleIngest = async (directory: string, mode: string = 'cull_edit') => {
+  const handleStartPreCulling = (directory: string) => {
+    setPreCullingFolder(directory);
+  };
+
+  const handleConfirmPreCulling = async (config: PreCullingConfig) => {
+    setPreCullingFolder(null);
+    setActiveConfig(config);
+    setAutoSleepActive(config.autoSleep);
+
+    // eventGroups: [[dir_A, dir_B], [dir_C], [dir_D]]
+    // Each group = one unified event job. Groups with >1 folder pass extra_directories.
+    const groups = config.eventGroups && config.eventGroups.length > 0
+      ? config.eventGroups
+      : config.queue.map(d => [d]);
+
+    if (groups.length === 0) return;
+
+    const firstDir = groups[0][0];
     try {
-      await window.api.ingestMedia(directory, mode);
-      setLastDirectory(directory);
-      localStorage.setItem('lastDirectory', directory);
-      setJobResults(null); // Reset results for new job
-      setCurrentView('grid'); // Reset view
-      showToast(`Iniciando procesamiento en: ${directory}`, 'info');
+      if (window.api?.preventSleep) {
+        await window.api.preventSleep();
+      }
+      // Launch first group immediately
+      const [primary, ...extras] = groups[0];
+      const targetEventType = config.eventGroupTypes && config.eventGroupTypes.length > 0 
+        ? config.eventGroupTypes[0] 
+        : config.eventType;
+      
+      await apiClient.startIngest(
+        primary,
+        config.mode,
+        targetEventType,
+        config.selectivity,
+        { preset_path: config.presetPath, auto_crop: config.autoCrop },
+        extras.length > 0 ? extras : undefined
+      );
+      setLastDirectory(firstDir);
+      localStorage.setItem('lastDirectory', firstDir);
+      setJobResults(null);
+      setCurrentView('grid');
+      const groupLabel = groups[0].length > 1
+        ? `${groups[0].length} carpetas como 1 evento`
+        : firstDir.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? firstDir;
+      showToast(`Iniciando culling (${config.eventType}): ${groupLabel}`, 'info');
+
+      // Remaining groups go to the batch queue (processed sequentially after current job)
+      const remainingDirs = groups.length > 1 ? groups.slice(1).flatMap(g => g) : [];
+      setBatchQueue(remainingDirs);
     } catch (err: any) {
       console.error('Ingest error:', err);
       showToast(`Error al iniciar culling: ${err?.message || err}`, 'error');
@@ -202,7 +327,7 @@ function MainApp() {
         backendStatus={backendStatus}
         hardwareInfo={hardwareInfo}
         jobState={jobState}
-        onStartIngest={handleIngest}
+        onStartIngest={handleStartPreCulling}
         currentView={currentView}
         onViewChange={setCurrentView}
         hasResults={!!jobResults}
@@ -235,6 +360,7 @@ function MainApp() {
           jobResults={jobResults}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onOpenClientTools={lastDirectory ? () => setIsClientToolsOpen(true) : undefined}
         />
 
         <div className="content-viewport">
@@ -247,16 +373,42 @@ function MainApp() {
             directory={lastDirectory}
             undoAvailable={undoAvailable}
             onUndoExport={handleUndoExport}
-            onStartIngest={handleIngest}
+            onStartIngest={handleStartPreCulling}
             onSelectProject={(dir) => {
               setLastDirectory(dir);
               localStorage.setItem('lastDirectory', dir);
               setCurrentView('grid');
-              handleIngest(dir);
+              handleStartPreCulling(dir);
+            }}
+            onOpenClientTools={(dir: string) => {
+              setClientToolsDir(dir);
+              setIsClientToolsOpen(true);
             }}
           />
         </div>
       </main>
+
+      <PreCullingModal
+        isOpen={!!preCullingFolder}
+        folderPath={preCullingFolder || ''}
+        hardwareInfo={hardwareInfo}
+        onClose={() => setPreCullingFolder(null)}
+        onStart={handleConfirmPreCulling}
+        autoSleep={autoSleepActive}
+        onAutoSleepChange={setAutoSleepActive}
+      />
+
+      {/* Auto-Sleep Countdown Modal */}
+      <SleepCountdownModal
+        isOpen={showSleepModal}
+        onCancel={() => setShowSleepModal(false)}
+      />
+
+      <ClientToolsModal
+        isOpen={isClientToolsOpen}
+        onClose={() => setIsClientToolsOpen(false)}
+        currentDirectory={clientToolsDir}
+      />
 
       {isSettingsOpen && (
         <SettingsModal 

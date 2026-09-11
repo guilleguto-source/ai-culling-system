@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconSettings, IconHelp } from './icons';
+import { IconSettings, IconHelp, IconLibrary } from './icons';
 import { Tooltip } from './ui/Tooltip';
 
 interface TopbarProps {
@@ -9,6 +9,7 @@ interface TopbarProps {
   jobResults?: any;
   onOpenSettings: () => void;
   onOpenShortcuts?: () => void;
+  onOpenClientTools?: () => void;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -17,7 +18,8 @@ export const Topbar: React.FC<TopbarProps> = ({
   jobState,
   jobResults,
   onOpenSettings,
-  onOpenShortcuts
+  onOpenShortcuts,
+  onOpenClientTools
 }) => {
   const isProcessing = jobState?.status === 'processing';
   const progressPercent = jobState?.progress
@@ -114,6 +116,20 @@ export const Topbar: React.FC<TopbarProps> = ({
               style={{ padding: '6px' }}
             >
               <IconHelp size={16} />
+            </button>
+          </Tooltip>
+        )}
+
+        {onOpenClientTools && (
+          <Tooltip content="Herramientas de Cliente" position="bottom">
+            <button
+              className="gf-btn gf-btn-ghost gf-btn-sm"
+              onClick={onOpenClientTools}
+              aria-label="Herramientas Cliente"
+              style={{ gap: '6px', color: 'var(--accent-primary)' }}
+            >
+              <IconLibrary size={16} />
+              <span style={{ fontSize: 'var(--text-sm)' }}>Cliente</span>
             </button>
           </Tooltip>
         )}

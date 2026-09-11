@@ -91,6 +91,23 @@ def is_available() -> bool:
     return mod is not None
 
 
+def unload_model() -> None:
+    """Descarga el modelo SigLIP y libera la memoria RAM/VRAM."""
+    global _processor, _model
+    if _model is not None or _processor is not None:
+        _model = None
+        _processor = None
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        logger.info("Modelo SigLIP descargado y memoria liberada.")
+
+
 def embed(img_rgb: np.ndarray | None) -> np.ndarray | None:
     """
     Calcula el embedding SigLIP L2-normalizado (768 dims) de una imagen RGB.

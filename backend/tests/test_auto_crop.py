@@ -58,15 +58,15 @@ def test_angulo_excesivo_no_se_nivela():
 # --- Retratos: recomposición ---
 
 def test_cara_descentrada_se_acerca_a_tercios():
-    face = _face(0.5, 0.5)   # centrada → el tercio más cercano es 1/3 o 2/3
+    face = _face(0.6, 0.5)   # descentrada -> el tercio más cercano es 2/3
     prop = propose_crop("portrait", [face], [_lms(face)], None, (H, W), "medio")
     assert prop is not None
     # El sujeto se ACERCA a un punto fuerte (con presupuesto medio el tercio
     # exacto puede no ser alcanzable; se exige mejora clara, no exactitud).
     s = prop.right - prop.left
-    achieved_x = (0.5 - prop.left) / s
-    dist_before = min(abs(0.5 - 1/3), abs(0.5 - 2/3))
-    dist_after = min(abs(achieved_x - 1/3), abs(achieved_x - 2/3))
+    achieved_x = (0.6 - prop.left) / s
+    dist_before = abs(0.6 - 2/3)
+    dist_after = abs(achieved_x - 2/3)
     assert dist_after < dist_before / 2
     assert prop.crop_amount <= LEVEL_LIMITS["medio"] + 1e-6
 

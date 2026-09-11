@@ -12,6 +12,9 @@ declare global {
       getJobResults: () => Promise<JobResults>;
 
       selectFolder: (defaultPath?: string) => Promise<string | null>;
+      preventSleep: () => Promise<number>;
+      allowSleep: () => Promise<boolean>;
+      suspendPC: () => Promise<boolean>;
       onBackendLog: (callback: (log: string) => void) => () => void;
       onBackendStatusChange: (callback: (status: string) => void) => () => void;
     };
