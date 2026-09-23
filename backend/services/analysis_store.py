@@ -33,8 +33,9 @@ from utils.json_utils import safe_dumps as _json_dumps
 def _get_db_path(directory: str) -> Path:
     # Hash the directory to create a unique db file
     dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
-    _get_analysis_dir().mkdir(parents=True, exist_ok=True)
-    return _get_analysis_dir() / f"{dir_hash}.db"
+    target_dir = ANALYSIS_DIR if ANALYSIS_DIR is not None else _get_analysis_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / f"{dir_hash}.db"
 
 def _schema_columns() -> list[str]:
     """Columnas que el código espera (se derivan del propio CREATE TABLE)."""

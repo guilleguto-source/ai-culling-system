@@ -58,6 +58,7 @@ def cluster_images(
     scene_types: list[str],
     epsilon_hash: int = 12,
     max_time_gap_seconds: float = 5.0,
+    burst_ids: list[int | None] | None = None,
 ) -> list[ImageCluster]:
     """
     Agrupa imágenes en ráfagas/grupos de similitud de forma optimizada O(n·k)
@@ -86,6 +87,21 @@ def cluster_images(
     # Convertir hashes y fechas
     hash_bits = [_hash_to_bits(h) for h in phashes]
     timestamps = [_parse_exif_datetime(dt) for dt in exif_datetimes]
+    if burst_ids is None:
+        burst_ids = [None] * n
+
+    # --- Adaptive Threshold ---
+    valid_ts = sorted([t for t in timestamps if t > 0])
+    if len(valid_ts) > 10:
+        dts = np.diff(valid_ts)
+        median_dt = float(np.median(dts[dts < 60.0])) # ignorar saltos > 1 min
+        if median_dt < 1.5:
+            max_time_gap_seconds = min(max_time_gap_seconds, 2.0)
+            epsilon_hash = min(epsilon_hash, 10)
+        elif median_dt > 4.0:
+            max_time_gap_seconds = max(max_time_gap_seconds, 6.0)
+            epsilon_hash = max(epsilon_hash, 14)
+    # --------------------------
 
     # Estructura Union-Find con compresión de caminos
     parent = list(range(n))
@@ -128,6 +144,13 @@ def cluster_images(
                     break
                 h_dist = int(np.sum(h_i != hash_bits[j]))
                 
+                # Si las fotos tienen el mismo Burst ID (y no es None), forzamos la unión
+                b_i = burst_ids[i]
+                b_j = burst_ids[j]
+                if b_i is not None and b_i == b_j:
+                    union(i, j)
+                    continue
+
                 # Si las fotos fueron tomadas con <= 1.5s de diferencia, es la misma ráfaga
                 # incluso si el pHash cambia drásticamente por cambio de orientación (Horizontal vs Vertical).
                 if dt <= 1.5:

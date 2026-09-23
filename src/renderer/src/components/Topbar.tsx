@@ -32,7 +32,7 @@ export const Topbar: React.FC<TopbarProps> = ({
 
   // Extract folder name from directory path
   const folderName = directory
-    ? directory.replace(/\\/g, '/').split('/').filter(Boolean).pop() || directory
+    ? (directory || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || directory
     : '';
 
   const totalPhotos = jobResults?.summary?.total ?? (jobResults?.results?.length ?? 0);

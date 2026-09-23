@@ -71,10 +71,16 @@ def build_photo_chapter_map_from_records(records: list, analyses: list | None = 
     last_dt = None
 
     for idx, dt in parsed:
+        is_detail = analyses and analyses[idx].scene_type == "detail"
+        if is_detail:
+            chapter_map[idx] = "capitulo_broll"
+            continue
+
         if dt is not None and last_dt is not None:
             delta_sec = (dt - last_dt).total_seconds()
             if delta_sec > HARD_GAP_MINUTES * 60:
                 current_chapter_idx += 1
+        
         chapter_map[idx] = f"capitulo_{current_chapter_idx}"
         if dt is not None:
             last_dt = dt
@@ -104,7 +110,8 @@ def build_storyline(directory: str) -> list[dict]:
                 "dt": dt,
                 "mtime": p.mtime, 
                 "filename": Path(p.path).name,
-                "embedding": None
+                "embedding": None,
+                "scene_type": p.scene_type,
             })
         except Exception:
             continue
@@ -169,6 +176,25 @@ def build_storyline(directory: str) -> list[dict]:
 
     if current_segment:
         segments.append(current_segment)
+
+    # 3.5 Extraer "B-Roll / Detalles" en un segmento especial
+    broll_segment = []
+    main_segments = []
+    for segment in segments:
+        main_seg = []
+        for p in segment:
+            if p.get("scene_type") == "detail":
+                broll_segment.append(p)
+            else:
+                main_seg.append(p)
+        if main_seg:
+            main_segments.append(main_seg)
+    
+    if broll_segment:
+        # B-Roll as a single separate segment at the end
+        main_segments.append(broll_segment)
+
+    segments = main_segments
 
     # 4. Asignar IDs y crear diccionarios de segmentos iniciales
     # Para permitir reasignación, usamos un mapa.

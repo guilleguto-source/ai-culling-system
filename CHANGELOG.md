@@ -3,6 +3,21 @@
 Todos los cambios notables en **Guto Flow** están documentados en este archivo.
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/) y este proyecto se adhiere a [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-23
+
+### 🚀 Novedades y Mejoras
+- **Núcleo Rust & MakerNotes Burst ID:** Extracción nativa directa de metadatos de ráfaga (Sony, Nikon, Canon) en `rust_core` y `rust_bridge.py`.
+- **Clustering Híbrido Adaptativo:** Agrupamiento inteligente basado en la mediana de $\Delta t$ de la sesión en `clustering.py`, con enlace estricto de ráfagas idénticas.
+- **Hero Shot & Gaze Continuity:** Bonificación a fotos con pose frontal y mirada directa (`yaw < 15°`) para ganar consistentemente duelos en ráfagas.
+- **Storyline 2.0 y B-Roll:** Segmentación semántica de capítulos y escisión automática de fotografías `detail` a un capítulo B-Roll dedicado.
+- **Rendimiento DOM con `react-virtuoso`:** Virtualización de alta velocidad en `GridView.tsx` y `DuelView.tsx` para catálogos masivos.
+- **Inicio de Rediseño Digital Darkroom:**
+  - Fondos `#08090C`, superficies `#0D0F14` y acento ámbar `#E9A04A`.
+  - Estilos tipográficos monospace para scores y métricas.
+  - Supresión de bordes pesados en thumbnails y toolbar minimalista basada en espacio negativo.
+
+---
+
 ## [2.1.0] - 2026-09-11
 
 ### 🚀 Novedades y Mejoras

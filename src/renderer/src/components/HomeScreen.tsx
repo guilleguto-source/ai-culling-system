@@ -42,7 +42,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const saveRecentSession = (dir: string) => {
     try {
-      const name = dir.replace(/\\/g, '/').split('/').filter(Boolean).pop() || dir;
+      const name = (dir || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || dir;
       const newSession: RecentSession = {
         path: dir,
         name,

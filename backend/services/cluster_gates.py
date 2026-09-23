@@ -26,6 +26,7 @@ VIP_AREA_THRESHOLD = 0.35
 GATE_OJOS = "ojos_cerrados"
 GATE_NITIDEZ = "rostro_blando"
 GATE_MIRADA = "mirada_desviada"
+GATE_FLASH_MISFIRE = "flash_misfire"
 
 # Umbrales continuos (MediaPipe FaceLandmarker)
 EAR_CLOSED = 0.18
@@ -99,9 +100,11 @@ def apply_technical_gates_explained(
     face_attrs_list: list[list[dict]],
     face_sharpness: list[list[float]],
     face_bboxes_list: list[list[list[int]]] | None = None,
+    pre_global_lum_list: list[float] | None = None,
 ) -> tuple[list[int], dict[int, str]]:
     """
     Filtra los índices aplicando gates técnicos con discriminación VIP:
+    0. Flash Misfire (si se provee luminancia).
     1. Ojos cerrados (prioriza protagonistas).
     2. Mirada desviada (prioriza protagonistas).
     3. Nitidez por rostro (relativa al cluster).
@@ -114,6 +117,24 @@ def apply_technical_gates_explained(
 
     survivors = list(indices)
     motivos: dict[int, str] = {}
+
+    # --- Gate 0: Flash Misfire ---
+    if pre_global_lum_list is not None and len(survivors) >= 2:
+        lums = [pre_global_lum_list[i] for i in survivors]
+        med_lum = statistics.median(lums)
+        if med_lum >= 0.09:
+            valid_flash = []
+            for i in survivors:
+                if pre_global_lum_list[i] < med_lum * 0.4:
+                    motivos[i] = GATE_FLASH_MISFIRE
+                else:
+                    valid_flash.append(i)
+            # Solo aplicamos el gate si sobrevive al menos 1
+            if valid_flash:
+                survivors = valid_flash
+
+    if len(survivors) <= 1:
+        return survivors, motivos
 
     # Calcular pesos VIP por rostro si se proporcionaron bboxes
     vip_weights_by_idx = {}

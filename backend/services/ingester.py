@@ -55,6 +55,7 @@ class ImageRecord:
     thumb_duel: bytes = field(repr=False, default=b"") # WebP bytes para UI Duel
     thumb_ai: np.ndarray = field(repr=False, default=None)  # Array para IA
     phash: str = ""
+    burst_id: int | None = None
     exif_datetime: str = ""
     iso: int = 100
     width: int = 0
@@ -81,15 +82,30 @@ def discover_images(directory: str) -> list[Path]:
 
 def _extract_raw_preview(path: Path) -> np.ndarray | None:
     """
-    Extrae el JPEG embebido de un archivo RAW usando rawpy.
-    Este preview de alta calidad está disponible sin decodificar los datos del sensor.
+    Extrae el JPEG embebido de un archivo RAW.
+    Orden de prioridad:
+      1. rust_core (Rust/Rayon, ~2-4 ms): extracción directa del IFD sin decodificar sensor.
+      2. rawpy (Python, ~40-60 ms): fallback si Rust no está compilado o falla.
+      3. rawpy.postprocess (media resolución): último recurso.
     """
+    from services.rust_bridge import get_embedded_jpeg  # import tardío para evitar ciclos
+
+    # 1. Rust: lectura directa de cabecera TIFF/IFD
+    jpeg_bytes = get_embedded_jpeg(str(path))
+    if jpeg_bytes:
+        try:
+            img = Image.open(io.BytesIO(jpeg_bytes))
+            img = ImageOps.exif_transpose(img)
+            return np.array(img.convert("RGB"))
+        except Exception as e:
+            logger.debug(f"rust_core preview decode falló para {path.name}: {e}")
+
+    # 2. Rawpy: extrae el thumbnail embebido
     try:
         with rawpy.imread(str(path)) as raw:
             thumb = raw.extract_thumb()
             if thumb.format == rawpy.ThumbFormat.JPEG:
                 img = Image.open(io.BytesIO(thumb.data))
-                # Respetar la orientación EXIF del preview embebido.
                 img = ImageOps.exif_transpose(img)
                 return np.array(img.convert("RGB"))
             elif thumb.format == rawpy.ThumbFormat.BITMAP:
@@ -97,18 +113,19 @@ def _extract_raw_preview(path: Path) -> np.ndarray | None:
     except Exception as e:
         logger.warning(f"rawpy no pudo extraer preview de {path.name}: {e}")
 
-    # Fallback: decodificación rápida de baja calidad
+    # 3. Decodificación rápida de baja calidad
     try:
         with rawpy.imread(str(path)) as raw:
             arr = raw.postprocess(
                 use_camera_wb=True,
-                half_size=True,         # Media resolución para velocidad
+                half_size=True,
                 no_auto_bright=True,
             )
             return arr
     except Exception as e:
         logger.error(f"Fallo total al procesar RAW {path.name}: {e}")
         return None
+
 
 
 def _load_jpg(path: Path) -> np.ndarray | None:
@@ -146,10 +163,7 @@ def _make_thumbnails(arr: np.ndarray) -> tuple[bytes, bytes, np.ndarray, str]:
     thumb_ai_arr = np.array(img)
 
     # pHash calculado sobre imagen ya reducida
-    try:
-        phash_str = str(imagehash.phash(img))
-    except Exception:
-        phash_str = ""
+    phash_str = _compute_phash(thumb_ai_arr)
 
     # 2. Reducir a UI Grid (320x240) en cascada
     img.thumbnail(THUMB_UI_SIZE, Image.BILINEAR)
@@ -182,7 +196,22 @@ def _get_exif_metadata(path: Path) -> tuple[str, int]:
 
 
 def _compute_phash(arr: np.ndarray) -> str:
-    """Calcula el Perceptual Hash (pHash) de la imagen."""
+    """Calcula el Perceptual Hash (pHash) de la imagen.
+    Usa rust_core si está disponible (más rápido, paralelo); imagehash como fallback.
+    """
+    try:
+        from services.rust_bridge import RUST_AVAILABLE
+        if RUST_AVAILABLE:
+            from services.rust_bridge import phash_from_bytes_py  # type: ignore[attr-defined]
+            import rust_core as _rc  # type: ignore[import]
+            buf = io.BytesIO()
+            img = Image.fromarray(arr)
+            img.thumbnail(THUMB_UI_SIZE, Image.BILINEAR)
+            img.save(buf, format="JPEG", quality=85)
+            h = _rc.phash_from_bytes_py(buf.getvalue())
+            return format(h, "016x")
+    except Exception:
+        pass
     try:
         img = Image.fromarray(arr)
         img.thumbnail(THUMB_UI_SIZE, Image.BILINEAR)
@@ -232,6 +261,15 @@ def process_single_image(path: Path, linked_raw_path: str | None = None) -> Imag
     dt_str, iso_val = _get_exif_metadata(path)
     record.exif_datetime = dt_str
     record.iso = iso_val
+
+    # 4. Extraer Burst ID de MakerNotes (si está disponible)
+    try:
+        from services.rust_bridge import get_burst_id
+        b_id = get_burst_id(str(path))
+        if b_id is not None:
+            record.burst_id = b_id
+    except Exception as e:
+        logger.error(f"Error extrayendo burst_id de {path.name}: {e}")
 
     return record
 

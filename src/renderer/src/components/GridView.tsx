@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, forwardRef } from 'react';
+import { VirtuosoGrid } from 'react-virtuoso';
 import InspectorPanel from './inspector/InspectorPanel';
 import PhotoThumbnail from './PhotoThumbnail';
 import PhotoDetail from './PhotoDetail';
@@ -70,7 +71,24 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
     if (storylinePaths) {
       arr = arr.filter(r => storylinePaths.has(r.path));
     }
-    return arr;
+
+    const finalArr: any[] = [];
+    let currentChapter = null;
+
+    for (const r of arr) {
+      const chap = r.chapter_id || 'capitulo_0';
+      if (chap !== currentChapter) {
+        const title = chap === 'capitulo_broll' ? 'Detalles & B-Roll' : `Capítulo ${chap.replace('capitulo_', '')}`;
+        finalArr.push({
+          is_header: true,
+          title,
+          path: `header_${chap}`, // Clave única
+        });
+        currentChapter = chap;
+      }
+      finalArr.push(r);
+    }
+    return finalArr;
   }, [results, filtro, semanticPaths, storylinePaths]);
 
   // Keyboard navigation
@@ -80,11 +98,10 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
 
       const key = e.key.toLowerCase();
       
-      // Ctrl+A / Cmd+A or Ctrl+E to select all visibles
       if ((e.ctrlKey || e.metaKey) && (key === 'a' || key === 'e')) {
         e.preventDefault();
         if (onSelectPaths) {
-          const allVisiblePaths = new Set(visibles.map(img => img.path));
+          const allVisiblePaths = new Set(visibles.filter(img => !img.is_header).map(img => img.path));
           onSelectPaths(allVisiblePaths);
         }
         return;
@@ -143,7 +160,9 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
       const end = Math.max(lastSelectedIndex, index);
       // Limpiamos o añadimos sobre lo actual? Generalmente añade.
       for (let i = start; i <= end; i++) {
-        newSelected.add(visibles[i].path);
+        if (!visibles[i].is_header) {
+          newSelected.add(visibles[i].path);
+        }
       }
     } else if (e.ctrlKey || e.metaKey) {
       // Toggle individual
@@ -163,7 +182,7 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
 
   const selectAll = () => {
     if (onSelectPaths) {
-      onSelectPaths(new Set(visibles.map(img => img.path)));
+      onSelectPaths(new Set(visibles.filter(img => !img.is_header).map(img => img.path)));
     }
   };
 
@@ -179,37 +198,44 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '10px 16px',
-            backgroundColor: 'var(--color-surface)',
-            borderBottom: '1px solid var(--border-subtle)',
+            padding: '16px 24px',
+            backgroundColor: 'var(--color-bg)',
+            borderBottom: '1px solid var(--border-default)',
             gap: 'var(--space-3)',
             flexWrap: 'wrap'
           }}
         >
-          {/* Filters */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-4" style={{ paddingLeft: '8px' }}>
             {FILTROS.map(([clave, texto, fn]) => {
               const count = countByFilter(fn);
               const isActive = filtro === clave;
               return (
                 <button
                   key={clave}
-                  className={`gf-btn gf-btn-sm ${isActive ? 'gf-btn-primary' : 'gf-btn-ghost'}`}
                   style={{
-                    borderRadius: 'var(--radius-pill)',
-                    padding: '4px 10px',
-                    fontSize: 'var(--text-xs)'
+                    background: 'transparent',
+                    border: 'none',
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    fontWeight: isActive ? 600 : 400,
+                    cursor: count > 0 || clave === 'todas' ? 'pointer' : 'default',
+                    opacity: (count === 0 && clave !== 'todas') ? 0.4 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 0',
+                    fontSize: 'var(--text-sm)',
+                    letterSpacing: '0.02em',
                   }}
                   onClick={() => setFiltro(clave)}
                   disabled={count === 0 && clave !== 'todas'}
                 >
-                  <span>{texto}</span>
+                  <span style={{ textTransform: 'uppercase' }}>{texto}</span>
                   <span
-                    className="text-mono"
+                    className="font-mono"
                     style={{
                       opacity: isActive ? 1 : 0.6,
-                      marginLeft: '2px',
-                      fontSize: '10px'
+                      fontSize: '11px',
+                      color: isActive ? 'var(--accent-primary)' : 'inherit',
                     }}
                   >
                     {count}
@@ -281,39 +307,83 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
         </div>
 
         {/* Thumbnails Flow Area */}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: density === 'compact' ? 'var(--space-2)' : 'var(--space-3)',
-            padding: 'var(--space-4)',
-            overflowY: 'auto',
-            alignContent: 'flex-start',
-            backgroundColor: 'var(--color-bg)'
-          }}
-        >
-          {visibles.map((img, index) => {
-            const isSelected = selectedPaths.has(img.path) || selectedPhoto?.path === img.path;
-            
-            return (
-              <PhotoThumbnail
-                key={img.path}
-                photo={img}
-                size={density}
-                isActive={isSelected}
-                onClick={(e) => handlePhotoClick(img, index, e)}
-                onPick={(e) => {
-                  e.stopPropagation();
-                  handlePreferenceAction(img, true);
-                }}
-                onReject={(e) => {
-                  e.stopPropagation();
-                  handlePreferenceAction(img, false);
-                }}
-              />
-            );
-          })}
+        <div style={{ flex: 1, backgroundColor: 'var(--color-bg)' }}>
+          <VirtuosoGrid
+            totalCount={visibles.length}
+            overscan={200}
+            components={{
+              List: forwardRef(({ style, children, ...props }, ref) => {
+                const minW = density === 'compact' ? '120px' : density === 'normal' ? '180px' : '280px';
+                const gap = density === 'compact' ? 'var(--space-2)' : 'var(--space-3)';
+                return (
+                  <div
+                    ref={ref}
+                    {...props}
+                    style={{
+                      ...style,
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(auto-fill, minmax(${minW}, 1fr))`,
+                      gap: gap,
+                      padding: 'var(--space-4)',
+                    }}
+                  >
+                    {children}
+                  </div>
+                );
+              }),
+              Item: ({ children, ...props }) => {
+                const index = props['data-index'];
+                const img = visibles[index];
+                const isHeader = img?.is_header;
+                return (
+                  <div {...props} style={{ ...(props.style || {}), gridColumn: isHeader ? '1 / -1' : undefined }}>
+                    {children}
+                  </div>
+                );
+              },
+            }}
+            itemContent={index => {
+              const img = visibles[index];
+
+              if (img.is_header) {
+                return (
+                  <div style={{
+                    gridColumn: '1 / -1',
+                    padding: '16px 0 8px 0',
+                    borderBottom: '1px solid var(--border-default)',
+                    marginBottom: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                      {img.title}
+                    </span>
+                  </div>
+                );
+              }
+
+              const isSelected = selectedPaths.has(img.path) || selectedPhoto?.path === img.path;
+              
+              return (
+                <PhotoThumbnail
+                  key={img.path}
+                  photo={img}
+                  size={density}
+                  isActive={isSelected}
+                  onClick={(e) => handlePhotoClick(img, index, e)}
+                  onPick={(e) => {
+                    e.stopPropagation();
+                    handlePreferenceAction(img, true);
+                  }}
+                  onReject={(e) => {
+                    e.stopPropagation();
+                    handlePreferenceAction(img, false);
+                  }}
+                />
+              );
+            }}
+          />
         </div>
       </div>
 

@@ -67,7 +67,7 @@ def test_storyline_capitulos_por_hueco_temporal(client, tmp_path, monkeypatch):
     for i, (nombre, fecha) in enumerate(fotos):
         p = f"{carpeta}/{nombre}"
         analysis_store.save_analysis(
-            conn, PhotoAnalysis(index=i, path=p, exif_datetime=fecha), 1.0)
+            conn, PhotoAnalysis(index=i, path=p, exif_datetime=fecha, scene_type="portrait"), 1.0)
 
     r = client.get("/storyline", params={"directory": carpeta})
     assert r.status_code == 200

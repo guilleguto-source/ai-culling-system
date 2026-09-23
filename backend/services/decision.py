@@ -66,6 +66,8 @@ def build_reasons(
         razones.append("✖ Ojos cerrados (hay alternativa con ojos abiertos)")
     elif motivo == "rostro_blando":
         razones.append("✖ Rostro menos nítido que el resto de la ráfaga")
+    elif motivo == "flash_misfire":
+        razones.append("✖ Disparo fallido de flash (ráfaga subexpuesta por falta de destello)")
 
     # Hechos comparativos contra la ganadora.
     if a and rep:
@@ -433,6 +435,7 @@ def apply_decision_logic(
                 "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,
                 "identity_ids": sorted(identities_map.get(idx, [])) if identities_map else [],
                 "error": record.error,
+                "chapter_id": chapter_map.get(idx, "capitulo_0") if chapter_map else "capitulo_0",
             })
 
     return results, demoted, final_selected, highlights

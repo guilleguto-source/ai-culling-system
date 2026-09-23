@@ -114,6 +114,11 @@ export const apiClient = {
 
   getStatus: () => request<JobStatus>('/status'),
   getResults: () => request<JobResults>('/results'),
+  loadSession: (directory: string) => 
+    request<{ status: string; results: any[]; stats: any }>('/session/load', {
+      method: 'POST',
+      body: JSON.stringify({ directory })
+    }),
 
   // --- Herramientas de Cliente ---
   exportPreviews: (inputDir: string, outputDir: string, filterMode: string) =>
@@ -126,6 +131,84 @@ export const apiClient = {
     request<{ status: string; updated: number }>('/tools/import-selection', {
       method: 'POST',
       body: JSON.stringify({ base_dir: baseDir, filenames, client_folder: clientFolder })
+    }),
+
+  // --- Metadatos, Copyright & GPS ---
+  getMetadataConfig: () =>
+    request<{
+      profiles: Array<{
+        id: string
+        name: string
+        creator: string
+        copyright_notice: string
+        credit?: string
+        usage_terms?: string
+        web_statement?: string
+        is_default?: boolean
+      }>
+      taxonomy: Record<string, { label: string; has_age: boolean; default_age?: string; base_tags: string[] }>
+      cities: string[]
+    }>('/tools/metadata/config'),
+
+  saveMetadataProfile: (profile: {
+    id?: string
+    name: string
+    creator: string
+    copyright_notice: string
+    credit?: string
+    usage_terms?: string
+    web_statement?: string
+    is_default?: boolean
+  }) =>
+    request<{ status: string; profile: any }>('/tools/metadata/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile)
+    }),
+
+  deleteMetadataProfile: (profileId: string) =>
+    request<{ status: string }>(`/tools/metadata/profiles/${profileId}`, {
+      method: 'DELETE'
+    }),
+
+  setDefaultMetadataProfile: (profileId: string) =>
+    request<{ status: string }>(`/tools/metadata/profiles/${profileId}/set-default`, {
+      method: 'POST'
+    }),
+
+  detectGPS: (directory: string) =>
+    request<{
+      has_gps: boolean
+      latitude: number | null
+      longitude: number | null
+      suggested_city: string | null
+      sample_file?: string
+      existing_creator?: string | null
+      existing_copyright?: string | null
+    }>('/tools/metadata/detect-gps', {
+      method: 'POST',
+      body: JSON.stringify({ directory })
+    }),
+
+  applyBatchMetadata: (data: {
+    directory: string
+    filter_mode: 'all' | 'selected'
+    profile_id?: string
+    profile_custom?: any
+    event_type: string
+    age?: string
+    protagonist?: string
+    city?: string
+    custom_tags?: string
+    keywords_mode: 'append' | 'replace'
+  }) =>
+    request<{
+      status: string
+      updated_shots: number
+      errors: number
+      applied_metadata: any
+    }>('/tools/metadata/apply-batch', {
+      method: 'POST',
+      body: JSON.stringify(data)
     }),
 
   // --- Ráfagas, Duelos & Rostros ---

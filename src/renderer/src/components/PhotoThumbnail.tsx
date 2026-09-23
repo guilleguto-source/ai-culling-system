@@ -60,15 +60,15 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
         width: widthByPreset,
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: 'var(--color-surface)',
+        backgroundColor: 'var(--color-bg)',
         borderRadius: 'var(--radius-sm)',
-        border: `1px solid ${getBorderColor()}`,
+        border: 'none',
         overflow: 'hidden',
         cursor: 'pointer',
         position: 'relative',
-        opacity: isReject ? 0.55 : 1,
-        transition: 'border-color var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast)',
-        boxShadow: isActive ? '0 0 0 1px var(--accent-primary), var(--shadow-md)' : 'var(--shadow-sm)',
+        opacity: isReject ? 0.4 : 1,
+        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+        boxShadow: isActive ? '0 0 0 2px var(--accent-primary), 0 0 15px var(--accent-glow)' : 'none',
         transform: isHovered && !isActive ? 'translateY(-2px)' : 'none'
       }}
     >
@@ -139,26 +139,25 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
           </div>
         )}
 
-        {/* AI Score Badge (Top Right) */}
-        {photo.score !== undefined && (
+        {/* AI Score Badge (Bottom Left) */}
+        {photo.score !== undefined && photo.score > 0.8 && (
           <div
-            className="text-mono"
+            className="font-mono"
             style={{
               position: 'absolute',
-              top: '6px',
-              right: '6px',
+              bottom: '8px',
+              left: '8px',
               padding: '2px 6px',
-              borderRadius: 'var(--radius-xs)',
+              borderRadius: 'var(--radius-sm)',
               fontSize: '10px',
               fontWeight: 'var(--fw-bold)',
-              backgroundColor: 'rgba(16, 19, 24, 0.85)',
+              backgroundColor: 'rgba(8, 9, 12, 0.7)',
               color: 'var(--accent-primary)',
-              border: '1px solid rgba(231, 161, 58, 0.3)',
-              backdropFilter: 'blur(4px)',
+              backdropFilter: 'blur(8px)',
               zIndex: 2
             }}
           >
-            {(photo.score * 10).toFixed(1)}
+            ◎ {Math.round(photo.score * 100)}
           </div>
         )}
 
@@ -235,11 +234,11 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
       {/* Footer Info */}
       <div
         style={{
-          padding: '6px 10px',
+          padding: '8px 4px 0 4px',
           display: 'flex',
           flexDirection: 'column',
           gap: '2px',
-          backgroundColor: 'var(--color-surface)'
+          backgroundColor: 'transparent'
         }}
       >
         <span

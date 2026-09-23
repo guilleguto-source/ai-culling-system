@@ -153,16 +153,17 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
 
       {/* 2. Main Arena + Analysis Sidebar */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-        {/* Duel Area (Two Cards) */}
-        <div
-          style={{
-            flex: 1,
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 'var(--space-4)',
-            padding: 'var(--space-4)',
-            overflowY: 'auto'
-          }}
+        {/* Duel Area Wrapper */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowY: 'auto' }}>
+          {/* Two Cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 'var(--space-4)',
+              padding: 'var(--space-4)',
+              flex: 1
+            }}
         >
           {/* Left Card: Candidato IA */}
           <div
@@ -324,6 +325,16 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
               </Button>
             </div>
           </div>
+          </div>
+
+          {/* Burst Face Strip (Narrative Select style) */}
+          <div style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
+            <FaceGridAlignment
+              clusterId={clusterId}
+              selectedPhotoPath={representative.path}
+              onSelectPhoto={(path) => handleChooseAlternative(path)}
+            />
+          </div>
         </div>
 
         {/* Right Analysis Sidebar */}
@@ -381,17 +392,7 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
             ))}
           </div>
 
-          {/* Rostros detectados */}
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 'var(--space-2)' }}>
-              Rostros detectados
-            </div>
-            <FaceGridAlignment
-              clusterId={clusterId}
-              selectedPhotoPath={representative.path}
-              onSelectPhoto={(path) => handleChooseAlternative(path)}
-            />
-          </div>
+
 
           <Button
             variant="secondary"

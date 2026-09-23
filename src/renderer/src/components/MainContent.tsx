@@ -47,6 +47,7 @@ export default function MainContent({
   const [filteredResults, setFilteredResults] = useState<any[] | null>(null);
   const [activeStorylinePaths, setActiveStorylinePaths] = useState<Set<string> | null>(null);
   const [activeVIPIds, setActiveVIPIds] = useState<Set<number>>(new Set());
+  const [vipFilterMode, setVipFilterMode] = useState<'selected' | 'all'>('selected');
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
 
@@ -313,6 +314,11 @@ export default function MainContent({
         Array.isArray(photo.identity_ids) &&
         photo.identity_ids.some((id: number) => activeVIPIds.has(id))
       );
+      if (vipFilterMode === 'selected') {
+        displayResults = displayResults.filter((photo: any) =>
+          photo.label === 'selected' || photo.label === 'highlighted' || photo.label === 'recommended'
+        );
+      }
     }
 
     return (
@@ -398,13 +404,17 @@ export default function MainContent({
           }}
         />
 
-        {/* VIP Subjects Filter Bar */}
-        <VIPBar
-          directory={directory}
-          activeVIPIds={activeVIPIds}
-          onToggleVIP={handleToggleVIP}
-          onClearVIPs={handleClearVIPs}
-        />
+          {/* Personajes VIP Filters */}
+          <div style={{ width: '100%', flexBasis: '100%' }}>
+            <VIPBar
+              directory={directory}
+              activeVIPIds={activeVIPIds}
+              onToggleVIP={handleToggleVIP}
+              onClearVIPs={handleClearVIPs}
+              vipFilterMode={vipFilterMode}
+              onChangeFilterMode={setVipFilterMode}
+            />
+          </div>
 
         {/* Active Workspace View */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>

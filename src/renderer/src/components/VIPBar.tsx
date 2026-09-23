@@ -7,13 +7,17 @@ interface VIPBarProps {
   activeVIPIds: Set<number>;
   onToggleVIP: (identityId: number) => void;
   onClearVIPs: () => void;
+  vipFilterMode?: 'selected' | 'all';
+  onChangeFilterMode?: (mode: 'selected' | 'all') => void;
 }
 
 export const VIPBar: React.FC<VIPBarProps> = ({
   directory,
   activeVIPIds,
   onToggleVIP,
-  onClearVIPs
+  onClearVIPs,
+  vipFilterMode = 'selected',
+  onChangeFilterMode
 }) => {
   const [subjects, setSubjects] = useState<VIPSubject[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -224,6 +228,51 @@ export const VIPBar: React.FC<VIPBarProps> = ({
           >
             ✕ Limpiar filtro
           </button>
+        )}
+
+        {hasFilterActive && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            backgroundColor: 'var(--color-surface-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-pill)',
+            padding: '2px',
+            marginLeft: 'auto'
+          }}>
+            <button
+              onClick={() => onChangeFilterMode?.('selected')}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: vipFilterMode === 'selected' ? 'var(--fw-bold)' : 'var(--fw-medium)',
+                color: vipFilterMode === 'selected' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                backgroundColor: vipFilterMode === 'selected' ? 'var(--color-surface)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-pill)',
+                cursor: 'pointer',
+                boxShadow: vipFilterMode === 'selected' ? 'var(--shadow-sm)' : 'none'
+              }}
+            >
+              ★ Solo Elegidas
+            </button>
+            <button
+              onClick={() => onChangeFilterMode?.('all')}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: vipFilterMode === 'all' ? 'var(--fw-bold)' : 'var(--fw-medium)',
+                color: vipFilterMode === 'all' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                backgroundColor: vipFilterMode === 'all' ? 'var(--color-surface)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-pill)',
+                cursor: 'pointer',
+                boxShadow: vipFilterMode === 'all' ? 'var(--shadow-sm)' : 'none'
+              }}
+            >
+              📷 Todas
+            </button>
+          </div>
         )}
       </div>
     </div>

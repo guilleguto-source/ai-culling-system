@@ -40,6 +40,7 @@ export default function LibraryView({
   const [syncingDir, setSyncingDir] = useState<string | null>(null);
   const [syncDetails, setSyncDetails] = useState<{ [dir: string]: any }>({});
   const [isCleaning, setIsCleaning] = useState(false);
+  const [selectedProj, setSelectedProj] = useState<any>(null);
   const { showToast } = useToast();
 
   const handleCleanupTests = async () => {
@@ -495,152 +496,209 @@ export default function LibraryView({
         ) : (
           <div style={{
             display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-3)'
+            gap: 'var(--space-6)',
+            alignItems: 'flex-start'
           }}>
-            {projects.map((proj) => {
-              const isActive = directory && (proj.directory.toLowerCase() === directory.toLowerCase());
-              const syncInfo = syncDetails[proj.directory];
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-3)',
+              minWidth: 0
+            }}>
+              {projects.map((proj) => {
+                const isActive = directory && (proj.directory.toLowerCase() === directory.toLowerCase());
+                const isSelected = selectedProj?.directory === proj.directory;
+                const syncInfo = syncDetails[proj.directory];
 
-              return (
-                <div
-                  key={proj.directory}
-                  style={{
-                    backgroundColor: isActive ? 'rgba(231, 161, 58, 0.04)' : 'var(--color-surface)',
-                    border: `1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: 'var(--space-3) var(--space-4)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 'var(--space-4)',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  {/* Thumbnail + Nombre + Stats */}
-                  <div className="flex items-center gap-4" style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{
-                      width: 56,
-                      height: 42,
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'var(--color-surface-elevated)',
-                      overflow: 'hidden',
-                      flexShrink: 0,
+                return (
+                  <div
+                    key={proj.directory}
+                    onClick={() => setSelectedProj(proj)}
+                    style={{
+                      backgroundColor: isActive ? 'rgba(231, 161, 58, 0.04)' : isSelected ? 'var(--color-surface-elevated)' : 'var(--color-surface)',
+                      border: `1px solid ${isActive ? 'var(--accent-primary)' : isSelected ? 'var(--border-default)' : 'var(--border-subtle)'}`,
+                      borderRadius: 'var(--radius-md)',
+                      padding: 'var(--space-3) var(--space-4)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '1px solid var(--border-subtle)'
-                    }}>
-                      {proj.sample_photo ? (
-                        <img
-                          src={apiClient.getThumbnailUrl(proj.sample_photo, 'ui')}
-                          alt={proj.folder_name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          onError={(e) => {
-                            (e.target as HTMLElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <IconCamera size={18} style={{ color: 'var(--text-muted)' }} />
-                      )}
-                    </div>
-
-                    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div className="flex items-center gap-2">
-                        <span style={{
-                          fontSize: 'var(--text-sm)',
-                          fontWeight: 'var(--fw-semibold)',
-                          color: 'var(--text-primary)'
-                        }} className="truncate">
-                          {proj.folder_name}
-                        </span>
-                        {isActive && (
-                          <Badge variant="warning">Activo</Badge>
+                      justifyContent: 'space-between',
+                      gap: 'var(--space-4)',
+                      transition: 'all 0.15s ease',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {/* Thumbnail + Nombre + Stats */}
+                    <div className="flex items-center gap-4" style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        width: 56,
+                        height: 42,
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--color-surface-elevated)',
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px solid var(--border-subtle)'
+                      }}>
+                        {proj.sample_photo ? (
+                          <img
+                            src={apiClient.getThumbnailUrl(proj.sample_photo, 'ui')}
+                            alt={proj.folder_name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <IconCamera size={18} style={{ color: 'var(--text-muted)' }} />
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                        <span>{proj.total_photos.toLocaleString()} fotos</span>
-                        <span>·</span>
-                        <span style={{ color: 'var(--success)' }}>{proj.selected_count} elegidas</span>
-                        <span>·</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>{proj.duplicates_count} duplicadas</span>
-                        <span>·</span>
-                        <span style={{ color: 'var(--danger)' }}>{proj.blurry_count} borrosas</span>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div className="flex items-center gap-2">
+                          <span style={{
+                            fontSize: 'var(--text-sm)',
+                            fontWeight: 'var(--fw-semibold)',
+                            color: 'var(--text-primary)'
+                          }} className="truncate">
+                            {proj.folder_name}
+                          </span>
+                          {isActive && (
+                            <Badge variant="warning">Activo</Badge>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                          <span>{proj.total_photos.toLocaleString()} fotos</span>
+                          <span>·</span>
+                          <span style={{ color: 'var(--success)' }}>{proj.selected_count} elegidas</span>
+                        </div>
                       </div>
                     </div>
+
+                    {/* Status & Actions */}
+                    <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+                      <div className="flex items-center gap-1" style={{ fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
+                        <IconCheck size={14} />
+                        <span>Completado</span>
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<IconTrash size={13} style={{ color: 'var(--text-muted)' }} />}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteProject(proj.directory, e); }}
+                        title="Quitar este evento de la biblioteca"
+                      />
+                    </div>
                   </div>
+                );
+              })}
+            </div>
 
-                  {/* Sync Details Feedback Pill if available */}
-                  {syncInfo && (
-                    <div style={{
-                      fontSize: '11px',
-                      backgroundColor: 'var(--color-surface-elevated)',
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-xs)',
-                      border: '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      gap: '8px'
-                    }}>
-                      <span style={{ color: 'var(--accent-primary)' }}>↑{syncInfo.upgraded || 0} promovidas</span>
-                      <span style={{ color: 'var(--danger)' }}>↓{syncInfo.downgraded || 0} descartadas</span>
-                    </div>
-                  )}
+            {/* Panel Lateral */}
+            {selectedProj && (
+              <div style={{
+                width: '340px',
+                flexShrink: 0,
+                backgroundColor: 'var(--color-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-4)',
+                position: 'sticky',
+                top: 'var(--space-4)'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <h3 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 'var(--fw-bold)', color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                    {selectedProj.folder_name}
+                  </h3>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                    {selectedProj.directory}
+                  </span>
+                </div>
 
-                  {/* Status & Actions */}
-                  <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-                    <div className="flex items-center gap-1" style={{ fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
-                      <IconCheck size={14} />
-                      <span>Completado</span>
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={<IconSync size={13} className={syncingDir === proj.directory ? 'animate-spin' : ''} />}
-                      onClick={(e) => handleSyncLightroom(proj.directory, e)}
-                      disabled={syncingDir === proj.directory}
-                      title="Sincronizar cambios y estrellas desde Lightroom"
-                    >
-                      {syncingDir === proj.directory ? 'Sync…' : 'Sync Lightroom'}
-                    </Button>
-
-                    {onOpenClientTools && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon={<IconLibrary size={13} />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenClientTools(proj.directory);
-                        }}
-                        title="Exportar previews o importar selección de cliente"
-                      >
-                        Cliente
-                      </Button>
-                    )}
-
-                    {onSelectProject && !isActive && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => onSelectProject(proj.directory)}
-                      >
-                        Abrir
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<IconTrash size={13} style={{ color: 'var(--text-muted)' }} />}
-                      onClick={(e) => handleDeleteProject(proj.directory, e)}
-                      title="Quitar este evento de la biblioteca"
-                    />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div className="flex-between" style={{ fontSize: 'var(--text-sm)' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Total fotos:</span>
+                    <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>{selectedProj.total_photos}</span>
+                  </div>
+                  <div className="flex-between" style={{ fontSize: 'var(--text-sm)' }}>
+                    <span style={{ color: 'var(--success)' }}>Seleccionadas:</span>
+                    <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>{selectedProj.selected_count}</span>
+                  </div>
+                  <div className="flex-between" style={{ fontSize: 'var(--text-sm)' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Duplicadas:</span>
+                    <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>{selectedProj.duplicates_count}</span>
+                  </div>
+                  <div className="flex-between" style={{ fontSize: 'var(--text-sm)' }}>
+                    <span style={{ color: 'var(--danger)' }}>Descartadas/Borrosas:</span>
+                    <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>{selectedProj.blurry_count}</span>
                   </div>
                 </div>
-              );
-            })}
+
+                {syncDetails[selectedProj.directory] && (
+                  <div style={{
+                    padding: 'var(--space-3)',
+                    backgroundColor: 'var(--color-surface-elevated)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-secondary)' }}>
+                      Comparativa IA vs Lightroom
+                    </span>
+                    <div style={{ fontSize: 'var(--text-sm)', display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--accent-primary)' }}>Promovidas por ti:</span>
+                      <span style={{ fontWeight: 'var(--fw-semibold)' }}>{syncDetails[selectedProj.directory].upgraded || 0}</span>
+                    </div>
+                    <div style={{ fontSize: 'var(--text-sm)', display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--danger)' }}>Descartadas por ti:</span>
+                      <span style={{ fontWeight: 'var(--fw-semibold)' }}>{syncDetails[selectedProj.directory].downgraded || 0}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto', paddingTop: 'var(--space-4)' }}>
+                  {onSelectProject && directory?.toLowerCase() !== selectedProj.directory.toLowerCase() && (
+                    <Button
+                      variant="primary"
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={() => onSelectProject(selectedProj.directory)}
+                    >
+                      Abrir Sesión en Culling
+                    </Button>
+                  )}
+                  
+                  <Button
+                    variant="outline"
+                    icon={<IconSync size={14} className={syncingDir === selectedProj.directory ? 'animate-spin' : ''} />}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={() => handleSyncLightroom(selectedProj.directory)}
+                    disabled={syncingDir === selectedProj.directory}
+                  >
+                    {syncingDir === selectedProj.directory ? 'Sincronizando...' : 'Sincronizar Lightroom'}
+                  </Button>
+
+                  {onOpenClientTools && (
+                    <Button
+                      variant="outline"
+                      icon={<IconLibrary size={14} />}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={() => onOpenClientTools(selectedProj.directory)}
+                    >
+                      Herramientas de Cliente
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

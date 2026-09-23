@@ -264,3 +264,36 @@ def test_perspectiva_convergente_keystone_se_descarta():
 def test_cambio_minimo_no_significativo():
     p = CropProposal(0.005, 0.005, 0.995, 0.995, 0.0)
     assert not p.is_meaningful()
+
+
+# --- Preservación de Relación de Aspecto ---
+
+def test_enforce_aspect_direct():
+    from services.auto_crop import _enforce_aspect
+    orig_w, orig_h = 6000, 4000  # 3:2
+    target_ratio = orig_w / orig_h
+
+    # Ventana asimétrica (distinto % cortado)
+    window = (0.05, 0.10, 0.95, 0.85)
+    adjusted = _enforce_aspect(window, orig_w, orig_h)
+    
+    crop_w_px = (adjusted[2] - adjusted[0]) * orig_w
+    crop_h_px = (adjusted[3] - adjusted[1]) * orig_h
+    actual_ratio = crop_w_px / crop_h_px
+    assert actual_ratio == pytest.approx(target_ratio, rel=1e-3)
+
+
+def test_propose_crop_preserves_aspect_ratio():
+    # Retrato con cara descentrada
+    orig_w, orig_h = 6000, 4000  # 3:2
+    target_ratio = orig_w / orig_h
+    face = [int(0.20 * orig_w), int(0.20 * orig_h), 500, 500]
+
+    prop = propose_crop("portrait", [face], [], None, (orig_h, orig_w), "agresivo", horizon_angle=0.0, preserve_aspect=True)
+    if prop is not None:
+        crop_w_px = (prop.right - prop.left) * orig_w
+        crop_h_px = (prop.bottom - prop.top) * orig_h
+        actual_ratio = crop_w_px / crop_h_px
+        assert actual_ratio == pytest.approx(target_ratio, rel=1e-3)
+        assert prop.to_dict().get("aspect_preserved") is True
+

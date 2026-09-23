@@ -163,7 +163,7 @@ function MainApp() {
               
               const groupLabel = nextGroup.length > 1
                 ? `${nextGroup.length} carpetas como 1 evento`
-                : primary.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? primary;
+                : (primary || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? primary;
 
               showToast(`Lote completado. Iniciando: ${groupLabel}`, 'info');
               
@@ -265,6 +265,30 @@ function MainApp() {
         ? config.eventGroupTypes[0] 
         : config.eventType;
       
+      // Inyectar metadatos configurados en el lote antes de iniciar culling
+      if (config.metadataPayload) {
+        showToast('Inyectando metadatos y copyright al lote...', 'info');
+        try {
+          const targetFolders = config.queue && config.queue.length > 0 ? config.queue : [primary];
+          for (const folder of targetFolders) {
+            await apiClient.applyBatchMetadata({
+              directory: folder,
+              filter_mode: 'all',
+              profile_id: config.metadataPayload.profile_id,
+              event_type: config.metadataPayload.event_type,
+              age: config.metadataPayload.age,
+              protagonist: config.metadataPayload.protagonist,
+              city: config.metadataPayload.city,
+              custom_tags: config.metadataPayload.custom_tags,
+              keywords_mode: config.metadataPayload.keywords_mode
+            });
+          }
+        } catch (metaErr: any) {
+          console.error('Error aplicando metadatos antes de culling:', metaErr);
+          showToast(`Aviso: Error aplicando metadatos: ${metaErr.message || metaErr}`, 'warning');
+        }
+      }
+
       await apiClient.startIngest(
         primary,
         config.mode,
@@ -279,7 +303,7 @@ function MainApp() {
       setCurrentView('grid');
       const groupLabel = groups[0].length > 1
         ? `${groups[0].length} carpetas como 1 evento`
-        : firstDir.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? firstDir;
+        : (firstDir || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? firstDir;
       showToast(`Iniciando culling (${config.eventType}): ${groupLabel}`, 'info');
 
       // Remaining groups go to the batch queue (processed sequentially after current job)
@@ -374,11 +398,19 @@ function MainApp() {
             undoAvailable={undoAvailable}
             onUndoExport={handleUndoExport}
             onStartIngest={handleStartPreCulling}
-            onSelectProject={(dir) => {
-              setLastDirectory(dir);
-              localStorage.setItem('lastDirectory', dir);
-              setCurrentView('grid');
-              handleStartPreCulling(dir);
+            onSelectProject={async (dir) => {
+              try {
+                const res = await apiClient.loadSession(dir);
+                if (res.status === 'completed') {
+                  setJobResults({ results: res.results, stats: res.stats });
+                  setLastDirectory(dir);
+                  localStorage.setItem('lastDirectory', dir);
+                  setCurrentView('grid');
+                  showToast('Sesión cargada exitosamente', 'success');
+                }
+              } catch (err: any) {
+                showToast(`Error al cargar la sesión: ${err.message}`, 'error');
+              }
             }}
             onOpenClientTools={(dir: string) => {
               setClientToolsDir(dir);
@@ -390,12 +422,10 @@ function MainApp() {
 
       <PreCullingModal
         isOpen={!!preCullingFolder}
-        folderPath={preCullingFolder || ''}
-        hardwareInfo={hardwareInfo}
+        initialDirectory={preCullingFolder || ''}
+        initialQueue={preCullingFolder ? [preCullingFolder] : []}
         onClose={() => setPreCullingFolder(null)}
-        onStart={handleConfirmPreCulling}
-        autoSleep={autoSleepActive}
-        onAutoSleepChange={setAutoSleepActive}
+        onConfirm={handleConfirmPreCulling}
       />
 
       {/* Auto-Sleep Countdown Modal */}

@@ -240,6 +240,68 @@ def get_results():
 
 
 
+class LoadSessionRequest(BaseModel):
+    directory: str
+
+@router.post("/session/load")
+def load_historical_session(req: LoadSessionRequest):
+    """Rehidrata una sesión previa para abrirla en el Culling View."""
+    directory = req.directory
+    from services.export_snapshot import load_snapshot
+    from services.analysis_store import get_all_analysis
+    from services.settings_manager import load_settings
+
+    snapshot = load_snapshot(directory)
+    if not snapshot or not snapshot.get("items"):
+        raise HTTPException(status_code=404, detail="Sesión no encontrada o vacía.")
+
+    conn, analyses = get_all_analysis(directory)
+    if conn:
+        conn.close()
+
+    settings = load_settings()
+    ratings_map = settings.get("ratings_mapping", {})
+    
+    items = snapshot.get("items", {})
+    crops = snapshot.get("crops", {})
+    develops = snapshot.get("develops", {})
+    identities = snapshot.get("identities", {})
+    
+    results = []
+    ana_map = {a.path: a for a in analyses}
+    
+    for p, label in items.items():
+        mapping = ratings_map.get(label, {})
+        stars = mapping.get("stars", 0)
+        
+        ana = ana_map.get(p)
+        cluster_id = hash(ana.phash) % 1000 if ana and ana.phash else 0
+        scene_type = ana.scene_type if ana else "unknown"
+        aesthetic_score = ana.aesthetic_score if ana else 0
+            
+        results.append({
+            "path": p,
+            "label": label,
+            "stars": stars,
+            "cluster_id": cluster_id,
+            "scene_type": scene_type,
+            "reasons": [],
+            "score": aesthetic_score,
+            "margin": 0,
+            "crop": crops.get(p),
+            "develop": develops.get(p),
+            "identity_ids": identities.get(p, []),
+            "decided_by": "history"
+        })
+        
+    stats = {
+        "loaded_from_history": True,
+        "total_photos": len(results)
+    }
+    
+    job_manager.set_results(results, stats)
+    return {"status": "completed", "results": _sanitize_for_json(results), "stats": stats}
+
 def _run_culling_pipeline(
     directory: str,
     job_id: str,
@@ -552,6 +614,7 @@ def _run_culling_pipeline(
                 [r.exif_datetime for r in records],
                 [a.scene_type for a in analyses],
                 epsilon_hash=dbscan_epsilon,
+                burst_ids=[r.burst_id for r in records],
             )
             clusters = assign_cluster_representatives(clusters, [a.blur_score for a in analyses], [a.aesthetic_score for a in analyses])
         else:
@@ -639,6 +702,7 @@ def _run_culling_pipeline(
                 [a.face_attrs for a in analyses],
                 [a.face_sharpness for a in analyses],
                 [a.face_bboxes for a in analyses],
+                [a.pre_global_lum for a in analyses],
             )
             gate_reasons.update(motivos_gate)
 
@@ -653,6 +717,16 @@ def _run_culling_pipeline(
                 # Bono VIP: +20% si la foto contiene a un protagonista del evento
                 if idx in vip_photo_indices:
                     score = min(1.0, score * 1.20)
+
+                # Bono Hero Shot (Gaze Continuity) para ráfagas con caras
+                if len(cluster.image_indices) >= 2 and a.valid_face_count > 0 and len(a.face_attrs) > 0:
+                    yaws = [abs(f.get("yaw", 0.0)) for f in a.face_attrs if f.get("valid", True)]
+                    max_yaw = max(yaws) if yaws else 0.0
+                    # Si todos miran muy frontal (yaw < 15 grados) y ojos abiertos (low blink/ear high), dar boost.
+                    # El fotograma ideal de contacto visual recibe bonificación sustancial para ganar el duelo.
+                    if max_yaw < 15.0 and a.closed_eyes_count == 0 and a.looking_away_count == 0:
+                        score = min(1.0, score + 0.35)
+
                 all_scores[idx] = score
 
             best_idx = max(candidates, key=lambda i: all_scores[i])
@@ -706,7 +780,8 @@ def _run_culling_pipeline(
              and a.blur_score < blur_threshold * SEVERE_BLUR_FACTOR
              and a.sharp_anywhere < blur_threshold)
             or pre_edit.is_trash_exposure(a.pre_global_lum, a.pre_clip_frac)
-            for a in analyses
+            or gate_reasons.get(i) == "flash_misfire"
+            for i, a in enumerate(analyses)
         ]
 
         # Segmentación en capítulos para normalización y pacing

@@ -4,11 +4,11 @@
    ========================================================================== */
 
 :root {
-  /* --- Fondos (5 niveles de profundidad) --- */
-  --color-bg: #0B0D10;
-  --color-surface: #101318;
-  --color-surface-elevated: #15191F;
-  --color-surface-hover: #1B2027;
+  /* --- Fondos (Profundidad Darkroom) --- */
+  --color-bg: #08090C;
+  --color-surface: #0D0F14;
+  --color-surface-elevated: #13161D;
+  --color-surface-hover: #1E232C;
   --color-surface-active: #20262E;
 
   /* Legacy & Alias Mappings */
@@ -22,17 +22,17 @@
   --bg-card-hover: var(--color-surface-hover);
   --bg-glass: rgba(16, 19, 24, 0.75);
 
-  /* --- Bordes (3 niveles de intensidad sutil) --- */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  /* --- Bordes (Casi invisibles) --- */
+  --border-subtle: rgba(255, 255, 255, 0.03);
+  --border-default: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.08);
   --border-focus: rgba(231, 161, 58, 0.4);
 
-  /* --- Color de Marca (Dorado Premium) --- */
-  --accent-primary: #E7A13A;
-  --accent-hover: #F0B04D;
-  --accent-active: #C98227;
-  --accent-glow: rgba(231, 161, 58, 0.16);
+  /* --- Color de Marca (Amber Guto) --- */
+  --accent-primary: #E9A04A;
+  --accent-hover: #F3B35C;
+  --accent-active: #D4893F;
+  --accent-glow: rgba(233, 160, 74, 0.15);
   --accent-amber: var(--accent-primary);
 
   /* --- Colores Semánticos Fotográficos --- */
@@ -84,10 +84,10 @@
   --fw-bold: 700;
 
   /* Texto - Jerarquía WCAG AA */
-  --text-primary: #FFFFFF;
-  --text-secondary: #C4CBD8;
-  --text-tertiary: #8491A5;
-  --text-muted: #566171;
+  --text-primary: #F4F5F7;
+  --text-secondary: #A7ADB8;
+  --text-tertiary: #68707C;
+  --text-muted: #4B5563;
 
   /* --- Espaciado (Escala Modular de 4px) --- */
   --space-1: 4px;

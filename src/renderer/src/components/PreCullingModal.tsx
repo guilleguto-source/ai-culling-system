@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { CullingEstimate, HardwareProfile, PresetItem } from '../types/api';
+import { MetadataPanel, MetadataPayload } from './MetadataPanel';
 
 export interface PreCullingConfig {
   directory: string;
@@ -13,6 +14,7 @@ export interface PreCullingConfig {
   queue: string[];
   eventGroups: string[][];        // [[dir_A, dir_B], [dir_C]]
   eventGroupTypes: string[];      // eventType per group: ['wedding', 'kids_party']
+  metadataPayload?: MetadataPayload;
 }
 
 interface PreCullingModalProps {
@@ -41,9 +43,11 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
   onClose,
   onConfirm
 }) => {
-  const [activeTab, setActiveTab] = useState<'culling' | 'edit' | 'automation'>('culling');
+  const [activeTab, setActiveTab] = useState<'culling' | 'edit' | 'automation' | 'metadata'>('culling');
   
   // State
+  const [enableMetadata, setEnableMetadata] = useState(false);
+  const [metadataConfig, setMetadataConfig] = useState<MetadataPayload | null>(null);
   const [eventType, setEventType] = useState('wedding');
   const [selectivity, setSelectivity] = useState<'few' | 'standard' | 'more'>('few');
   const [mode, setMode] = useState<'cull' | 'cull_edit'>('cull_edit');
@@ -173,10 +177,11 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
       queue,
       eventGroups,
       eventGroupTypes,
+      metadataPayload: enableMetadata && metadataConfig ? metadataConfig : undefined,
     });
   };
 
-  const folderName = initialDirectory.replace(/\\/g, '/').split('/').filter(Boolean).pop() || initialDirectory;
+  const folderName = (initialDirectory || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || initialDirectory;
   const safePresets = Array.isArray(presets) ? presets : [];
 
   const overlayStyle: React.CSSProperties = {
@@ -291,6 +296,9 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
           </button>
           <button style={getTabStyle(activeTab === 'automation')} onClick={() => setActiveTab('automation')}>
             <span>⚡</span> 3. Automatización {queue.length > 1 && `(${queue.length})`}
+          </button>
+          <button style={getTabStyle(activeTab === 'metadata')} onClick={() => setActiveTab('metadata')}>
+            <span>📝</span> 4. Metadatos & Copyright
           </button>
         </div>
 
@@ -549,7 +557,7 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
                              ))}
                            </select>
                            <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                             {p.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p}
+                             {(p || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p}
                            </span>
                            <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '10px' }}>
                              {p}
@@ -642,6 +650,52 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
                 />
               </div>
             </>
+          )}
+
+          {/* TAB 4: METADATOS & COPYRIGHT */}
+          {activeTab === 'metadata' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px 18px',
+                  backgroundColor: enableMetadata ? 'rgba(231, 161, 58, 0.12)' : 'var(--color-surface-elevated)',
+                  border: enableMetadata ? '1px solid var(--accent-primary)' : '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onClick={() => setEnableMetadata(!enableMetadata)}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--text-primary)' }}>
+                    Inyectar metadatos y copyright en este lote
+                  </span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    {enableMetadata
+                      ? 'Se aplicará el perfil de copyright, evento, ciudad y palabras clave a los archivos XMP.'
+                      : 'Deshabilitado por defecto. Las fotos mantendrán intactos sus metadatos originales sin demoras.'}
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={enableMetadata}
+                  onChange={(e) => setEnableMetadata(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ width: '22px', height: '22px', accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
+                />
+              </div>
+
+              <MetadataPanel
+                directory={queue[0] || initialDirectory}
+                showApplyButton={false}
+                showScopeSelector={false}
+                disabled={!enableMetadata}
+                onChange={(cfg) => setMetadataConfig(cfg)}
+              />
+            </div>
           )}
         </div>
 

@@ -41,6 +41,7 @@ class JobManager:
         }
         self._thumbnail_cache: dict[str, bytes] = {}
         self._thumbnail_duel_cache: dict[str, bytes] = {}
+        self._last_progress_time: float = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -73,7 +74,8 @@ class JobManager:
                 try:
                     q.put_nowait({"type": event_type, "data": data})
                 except queue.Full:
-                    dead_queues.append(q)
+                    if event_type != "progress":
+                        dead_queues.append(q)
                 except Exception:
                     dead_queues.append(q)
             for dq in dead_queues:
@@ -156,6 +158,14 @@ class JobManager:
                 self._state["progress"] = round(progress, 1)
             if phase_text is not None:
                 self._state["phase_text"] = phase_text
+            
+            # Throttling de SSE
+            import time
+            now = time.time()
+            if self._state["progress"] < 100.0 and (now - self._last_progress_time < 0.25):
+                return
+            self._last_progress_time = now
+
         self.emit_event("progress", self.get_status())
 
     def set_phase(self, phase_text: str):
@@ -174,6 +184,13 @@ class JobManager:
                     self._state["processed"] = current
                     self._state["total"] = total
                     break
+            
+            import time
+            now = time.time()
+            if current < total and (now - self._last_progress_time < 0.25):
+                return
+            self._last_progress_time = now
+
         self.emit_event("progress", self.get_status())
 
     def complete_phase(self, phase_id: str):
