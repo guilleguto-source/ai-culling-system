@@ -54,3 +54,21 @@ def test_shutdown_endpoint(monkeypatch):
     response = client.post("/shutdown")
     assert response.status_code == 200
     assert response.json() == {"success": True}
+
+
+def test_vip_subjects_endpoints(tmp_path):
+    d = str(tmp_path)
+    res = client.get(f"/vip-subjects?directory={d}")
+    assert res.status_code == 200
+    assert "subjects" in res.json()
+    assert isinstance(res.json()["subjects"], list)
+
+    rename_res = client.post("/vip-subjects/rename", json={
+        "directory": d,
+        "identity_id": 1,
+        "name": "Novia"
+    })
+    assert rename_res.status_code == 200
+    assert rename_res.json()["name"] == "Novia"
+    assert rename_res.json()["status"] == "success"
+

@@ -21,10 +21,13 @@ logger = logging.getLogger(__name__)
 
 # Namespaces XMP estándar de Adobe
 NS = {
-    "x":      "adobe:ns:meta/",
-    "rdf":    "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-    "xmp":    "http://ns.adobe.com/xap/1.0/",
-    "crs":    "http://ns.adobe.com/camera-raw-settings/1.0/",
+    "x":         "adobe:ns:meta/",
+    "rdf":       "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "xmp":       "http://ns.adobe.com/xap/1.0/",
+    "crs":       "http://ns.adobe.com/camera-raw-settings/1.0/",
+    "dc":        "http://purl.org/dc/elements/1.1/",
+    "xmpRights": "http://ns.adobe.com/xap/1.0/rights/",
+    "photoshop": "http://ns.adobe.com/photoshop/1.0/",
 }
 
 # Mapeo de label interno a pick status XMP (extensión Lightroom).
@@ -103,11 +106,14 @@ def _build_xmp_packet(stars: int, color: str, label: str,
     label_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Label")
     label_el.text = color if color else ""
 
-    pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}PickStatus")
-    if flag in FLAG_TO_PICK:
-        pick_el.text = FLAG_TO_PICK[flag]
-    else:
-        pick_el.text = PICK_STATUS_MAP.get(label, "0")
+    pick_val = FLAG_TO_PICK[flag] if flag in FLAG_TO_PICK else PICK_STATUS_MAP.get(label, "0")
+
+    # Adobe Lightroom 13.2+ lee xmp:Pick, pero versiones previas o Bridge pueden buscar crs:Pick
+    xmp_pick_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Pick")
+    xmp_pick_el.text = pick_val
+    
+    crs_pick_el = etree.SubElement(desc, f"{{{NS['crs']}}}Pick")
+    crs_pick_el.text = pick_val
 
     crs_fields: dict[str, str] = {}
 
@@ -429,6 +435,24 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             tonal_rescue=item_rescue,
             paint_corrections=item_paint,
         )
+        if result.get("linked_raw_path"):
+            try:
+                write_xmp(
+                    image_path=result["linked_raw_path"],
+                    label=label,
+                    stars=mapping.get("stars", 0),
+                    color=mapping.get("color", ""),
+                    overwrite=overwrite,
+                    crop=result.get("crop"),
+                    develop=develop,
+                    preset=preset if develop else None,
+                    flag=mapping.get("flag"),
+                    lut_adjustments=item_lut,
+                    tonal_rescue=item_rescue,
+                    paint_corrections=item_paint,
+                )
+            except Exception as e:
+                logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")
         return "written" if ok else "skipped"
 
     written = skipped = errors = 0
@@ -447,3 +471,263 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
         f"Exportación XMP: {written} escritos, {skipped} omitidos, {errors} errores "
         f"de {len(results)} total")
     return {"written": written, "skipped": skipped, "errors": errors, "total": len(results)}
+
+def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
+                          overwrite: bool = False, preset=None,
+                          lut_adjustments: dict | None = None):
+    """Versión generadora para actualizar el progreso foto a foto."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _export_single(result: dict) -> str:
+        if result.get("error"):
+            return "error"
+        label = result.get("label")
+        if not label:
+            return "skipped"
+        mapping = ratings_mapping.get(label, {})
+        develop = result.get("develop")
+        item_lut = result.get("lut_adjustments") or (lut_adjustments if develop else None)
+        item_rescue = result.get("tonal_rescue")
+        item_paint = result.get("paint_corrections")
+        ok = write_xmp(
+            image_path=result["path"],
+            label=label,
+            stars=mapping.get("stars", 0),
+            color=mapping.get("color", ""),
+            overwrite=overwrite,
+            crop=result.get("crop"),
+            develop=develop,
+            preset=preset if develop else None,
+            flag=mapping.get("flag"),
+            lut_adjustments=item_lut,
+            tonal_rescue=item_rescue,
+            paint_corrections=item_paint,
+        )
+        if result.get("linked_raw_path"):
+            try:
+                write_xmp(
+                    image_path=result["linked_raw_path"],
+                    label=label,
+                    stars=mapping.get("stars", 0),
+                    color=mapping.get("color", ""),
+                    overwrite=overwrite,
+                    crop=result.get("crop"),
+                    develop=develop,
+                    preset=preset if develop else None,
+                    flag=mapping.get("flag"),
+                    lut_adjustments=item_lut,
+                    tonal_rescue=item_rescue,
+                    paint_corrections=item_paint,
+                )
+            except Exception as e:
+                logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")
+        return "written" if ok else "skipped"
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(_export_single, r) for r in results]
+        for future in as_completed(futures):
+            yield future.result()
+
+
+def update_file_metadata(
+    image_path: str,
+    metadata: dict,
+    keywords_mode: str = "append",
+    update_dual_partner: bool = True,
+) -> bool:
+    """
+    Inyecta o actualiza metadatos (dc:creator, dc:rights, xmpRights, dc:subject, photoshop:City)
+    en el archivo (sidecar .xmp para RAW o segmento APP1 para JPEG).
+    Preserva intactas las estrellas (Rating), etiquetas de color (Label) y ajustes CRS preexistentes.
+    Si update_dual_partner es True, busca si existe su pareja RAW/JPG con el mismo stem y la actualiza también.
+    """
+    p = Path(image_path)
+    if not p.exists():
+        return False
+
+    is_raw = _is_raw(p)
+    sidecar_path = p.with_suffix(".xmp")
+
+    # 1. Obtener árbol XML existente o crear uno nuevo
+    root = None
+    if is_raw:
+        if sidecar_path.exists():
+            try:
+                root = etree.parse(str(sidecar_path)).getroot()
+            except Exception as e:
+                logger.warning(f"Error parseando sidecar existente {sidecar_path}: {e}")
+    else:
+        try:
+            raw_data = p.read_bytes()
+            extracted = _extract_jpeg_xmp(raw_data)
+            if extracted:
+                root = etree.fromstring(extracted)
+        except Exception as e:
+            logger.warning(f"Error leyendo XMP embebido en {p}: {e}")
+        if root is None and sidecar_path.exists():
+            try:
+                root = etree.parse(str(sidecar_path)).getroot()
+            except Exception:
+                pass
+
+    if root is None:
+        # Crear estructura XMP base
+        xmpmeta = etree.Element(f"{{{NS['x']}}}xmpmeta", nsmap={"x": NS["x"]})
+        xmpmeta.set(f"{{{NS['x']}}}xmptk", "AI Culling System 2.1")
+        rdf = etree.SubElement(xmpmeta, f"{{{NS['rdf']}}}RDF", nsmap={"rdf": NS["rdf"]})
+        desc = etree.SubElement(
+            rdf, f"{{{NS['rdf']}}}Description",
+            nsmap={
+                "rdf": NS["rdf"],
+                "xmp": NS["xmp"],
+                "crs": NS["crs"],
+                "dc": NS["dc"],
+                "xmpRights": NS["xmpRights"],
+                "photoshop": NS["photoshop"],
+            }
+        )
+        desc.set(f"{{{NS['rdf']}}}about", "")
+    else:
+        xmpmeta = root
+        desc = xmpmeta.find(f".//{{{NS['rdf']}}}Description")
+        if desc is None:
+            rdf = xmpmeta.find(f".//{{{NS['rdf']}}}RDF")
+            if rdf is None:
+                rdf = etree.SubElement(xmpmeta, f"{{{NS['rdf']}}}RDF", nsmap={"rdf": NS["rdf"]})
+            desc = etree.SubElement(rdf, f"{{{NS['rdf']}}}Description", nsmap={"rdf": NS["rdf"]})
+            desc.set(f"{{{NS['rdf']}}}about", "")
+
+    def remove_children(tag_name: str):
+        for child in list(desc.findall(tag_name)):
+            desc.remove(child)
+
+    # 2. Creador / Autor (dc:creator y photoshop:Credit)
+    creator = metadata.get("creator")
+    if creator:
+        remove_children(f"{{{NS['dc']}}}creator")
+        creator_el = etree.SubElement(desc, f"{{{NS['dc']}}}creator")
+        seq = etree.SubElement(creator_el, f"{{{NS['rdf']}}}Seq")
+        li = etree.SubElement(seq, f"{{{NS['rdf']}}}li")
+        li.text = creator
+
+    credit = metadata.get("credit") or creator
+    if credit:
+        remove_children(f"{{{NS['photoshop']}}}Credit")
+        credit_el = etree.SubElement(desc, f"{{{NS['photoshop']}}}Credit")
+        credit_el.text = credit
+
+    # 3. Copyright Notice (dc:rights, xmpRights:Marked, xmpRights:UsageTerms)
+    copyright_text = metadata.get("copyright")
+    if copyright_text:
+        remove_children(f"{{{NS['dc']}}}rights")
+        rights_el = etree.SubElement(desc, f"{{{NS['dc']}}}rights")
+        alt = etree.SubElement(rights_el, f"{{{NS['rdf']}}}Alt")
+        li = etree.SubElement(alt, f"{{{NS['rdf']}}}li")
+        li.set("{http://www.w3.org/XML/1998/namespace}lang", "x-default")
+        li.text = copyright_text
+
+        remove_children(f"{{{NS['xmpRights']}}}Marked")
+        marked_el = etree.SubElement(desc, f"{{{NS['xmpRights']}}}Marked")
+        marked_el.text = "True"
+
+    usage_terms = metadata.get("usage_terms")
+    if usage_terms:
+        remove_children(f"{{{NS['xmpRights']}}}UsageTerms")
+        terms_el = etree.SubElement(desc, f"{{{NS['xmpRights']}}}UsageTerms")
+        alt = etree.SubElement(terms_el, f"{{{NS['rdf']}}}Alt")
+        li = etree.SubElement(alt, f"{{{NS['rdf']}}}li")
+        li.set("{http://www.w3.org/XML/1998/namespace}lang", "x-default")
+        li.text = usage_terms
+
+    web_statement = metadata.get("web_statement")
+    if web_statement:
+        remove_children(f"{{{NS['xmpRights']}}}WebStatement")
+        web_el = etree.SubElement(desc, f"{{{NS['xmpRights']}}}WebStatement")
+        web_el.text = web_statement
+
+    # 4. Título (dc:title)
+    title = metadata.get("title")
+    if title:
+        remove_children(f"{{{NS['dc']}}}title")
+        title_el = etree.SubElement(desc, f"{{{NS['dc']}}}title")
+        alt = etree.SubElement(title_el, f"{{{NS['rdf']}}}Alt")
+        li = etree.SubElement(alt, f"{{{NS['rdf']}}}li")
+        li.set("{http://www.w3.org/XML/1998/namespace}lang", "x-default")
+        li.text = title
+
+    # 5. Ubicación (photoshop:City, photoshop:Country)
+    city = metadata.get("city")
+    if city:
+        remove_children(f"{{{NS['photoshop']}}}City")
+        city_el = etree.SubElement(desc, f"{{{NS['photoshop']}}}City")
+        city_el.text = city
+
+    country = metadata.get("country")
+    if country:
+        remove_children(f"{{{NS['photoshop']}}}Country")
+        country_el = etree.SubElement(desc, f"{{{NS['photoshop']}}}Country")
+        country_el.text = country
+
+    # 6. Palabras Clave (dc:subject -> rdf:Bag -> rdf:li)
+    new_keywords = metadata.get("keywords") or []
+    if new_keywords:
+        final_tags = []
+        seen_lower = set()
+
+        if keywords_mode == "append":
+            for subj in desc.findall(f"{{{NS['dc']}}}subject"):
+                for li in subj.findall(f".//{{{NS['rdf']}}}li"):
+                    t = (li.text or "").strip()
+                    if t and t.lower() not in seen_lower:
+                        seen_lower.add(t.lower())
+                        final_tags.append(t)
+
+        for kw in new_keywords:
+            k = kw.strip()
+            if k and k.lower() not in seen_lower:
+                seen_lower.add(k.lower())
+                final_tags.append(k)
+
+        remove_children(f"{{{NS['dc']}}}subject")
+        if final_tags:
+            subj_el = etree.SubElement(desc, f"{{{NS['dc']}}}subject")
+            bag = etree.SubElement(subj_el, f"{{{NS['rdf']}}}Bag")
+            for t in final_tags:
+                li = etree.SubElement(bag, f"{{{NS['rdf']}}}li")
+                li.text = t
+
+    xml_bytes = etree.tostring(xmpmeta, encoding="utf-8", pretty_print=True)
+    packet = _XPACKET_OPEN + xml_bytes + _XPACKET_CLOSE
+
+    success = False
+    try:
+        if is_raw:
+            _atomic_write(sidecar_path, packet)
+        else:
+            _embed_xmp_in_jpeg(p, packet)
+        success = True
+    except Exception as e:
+        logger.error(f"Error guardando metadatos para {p}: {e}")
+
+    # Si tiene pareja dual RAW+JPG, actualizar también
+    if success and update_dual_partner:
+        parent_dir = p.parent
+        stem = p.stem
+        if is_raw:
+            # Buscar JPG compañero
+            for ext in (".jpg", ".jpeg", ".JPG", ".JPEG"):
+                jpg_cand = parent_dir / f"{stem}{ext}"
+                if jpg_cand.exists():
+                    update_file_metadata(str(jpg_cand), metadata, keywords_mode=keywords_mode, update_dual_partner=False)
+                    break
+        else:
+            # Buscar RAW compañero
+            for ext in RAW_EXTENSIONS:
+                for cand_name in (f"{stem}{ext}", f"{stem}{ext.upper()}"):
+                    raw_cand = parent_dir / cand_name
+                    if raw_cand.exists():
+                        update_file_metadata(str(raw_cand), metadata, keywords_mode=keywords_mode, update_dual_partner=False)
+                        break
+
+    return success
+

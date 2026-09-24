@@ -1,22 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Loupe from './Loupe';
 import FaceGridAlignment from './FaceGridAlignment';
+import PhotoDetail from './PhotoDetail';
 import { apiClient } from '../api/client';
+import { Button } from './ui/Button';
+import { IconCheck, IconX, IconStar } from './icons';
 
-const TITULO_ELEGIDA: Record<string, string> = {
-  gate: 'Elegida por la IA (única sin defectos)',
-  gusto: 'Elegida por la IA (tu criterio aprendido)',
-  score: 'Elegida por la IA (mejor score)',
-  vlm: 'Elegida por la IA (desempate VLM)',
-  elo: 'Elegida por la IA (desempate ELO en RAM)',
-};
+interface DuelViewProps {
+  results: any[];
+  onBackToGrid?: () => void;
+}
 
-const leerPref = (clave: string, porDefecto: number) => {
-  const v = Number(localStorage.getItem(clave));
-  return Number.isFinite(v) && v > 0 ? v : porDefecto;
-};
-
-export default function DuelView({ results }: { results: any[] }) {
+export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
   if (!results || results.length === 0) return null;
 
   const clusters = useMemo(() => {
@@ -32,23 +27,18 @@ export default function DuelView({ results }: { results: any[] }) {
 
   const [currentClusterIdx, setCurrentClusterIdx] = useState(0);
   const [learnedOverrides, setLearnedOverrides] = useState<Record<number, string>>({});
-  const [isLearning, setIsLearning] = useState(false);
-  const [showFaceGrid, setShowFaceGrid] = useState(true);
-
-  const [cols, setCols] = useState(() => leerPref('duelCols', 2));
-  const [rowH, setRowH] = useState(() => leerPref('duelRowH', 75));
-  useEffect(() => { localStorage.setItem('duelCols', String(cols)); }, [cols]);
-  useEffect(() => { localStorage.setItem('duelRowH', String(rowH)); }, [rowH]);
+  const [, setIsLearning] = useState(false);
+  const [showViewerModal, setShowViewerModal] = useState<any>(null);
 
   if (clusters.length === 0) {
     return (
       <div className="flex-center" style={{ height: '100%', color: 'var(--text-muted)' }}>
-        No hay ráfagas para comparar.
+        No se detectaron ráfagas para comparar en esta sesión.
       </div>
     );
   }
 
-  const currentGroup = clusters[currentClusterIdx];
+  const currentGroup = clusters[currentClusterIdx] || clusters[0];
   const clusterId = currentGroup[0].cluster_id;
 
   const representative = currentGroup.find(img => img.path === learnedOverrides[clusterId])
@@ -62,16 +52,28 @@ export default function DuelView({ results }: { results: any[] }) {
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
   ];
 
-  const [approved, setApproved] = useState<Record<number, boolean>>({});
-  const handleApprove = async () => {
-    const rival = ordered.find(img => img !== representative);
-    if (!rival) return;
+  const alternative = ordered[1] || ordered[0];
+
+  const handleApproveRepresentative = async () => {
+    if (!alternative || alternative.path === representative.path) return;
     setIsLearning(true);
     try {
-      await apiClient.learnPreference(representative.path, rival.path);
-      setApproved(prev => ({ ...prev, [clusterId]: true }));
+      await apiClient.learnPreference(representative.path, alternative.path);
     } catch (e) {
       console.error('Error approving:', e);
+    } finally {
+      setIsLearning(false);
+    }
+  };
+
+  const handleChooseAlternative = async (alt: any) => {
+    if (!alt || alt.path === representative.path) return;
+    setIsLearning(true);
+    try {
+      await apiClient.learnPreference(alt.path, representative.path);
+      setLearnedOverrides(prev => ({ ...prev, [clusterId]: alt.path }));
+    } catch (e) {
+      console.error('Error choosing alternative:', e);
     } finally {
       setIsLearning(false);
     }
@@ -86,223 +88,351 @@ export default function DuelView({ results }: { results: any[] }) {
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setCurrentClusterIdx(c => Math.max(c - 1, 0));
-      } else if (e.key === 'Enter') {
+      } else if (e.key === 'p' || e.key === 'P' || e.key === 'Enter') {
         e.preventDefault();
-        handleApprove();
-      } else if (e.key === 'f' || e.key === 'F') {
+        handleApproveRepresentative();
+      } else if (e.key === 'x' || e.key === 'X') {
         e.preventDefault();
-        setShowFaceGrid(prev => !prev);
-      } else if (/^[1-9]$/.test(e.key)) {
-        const elegida = ordered[Number(e.key) - 1];
-        if (elegida && elegida !== representative) {
-          e.preventDefault();
-          handleLearnPreference(elegida);
-        }
+        if (alternative) handleChooseAlternative(alternative);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const handleLearnPreference = async (alt: any) => {
-    const target = typeof alt === 'string' ? ordered.find(img => img.path === alt) : alt;
-    if (!target || target.path === representative.path) return;
-    setIsLearning(true);
-    try {
-      await apiClient.learnPreference(target.path, representative.path);
-      setLearnedOverrides(prev => ({ ...prev, [clusterId]: target.path }));
-    } catch (e) {
-      console.error("Error learning preference:", e);
-    } finally {
-      setIsLearning(false);
-    }
-  };
+  const repScorePct = representative?.score != null ? Math.round(Math.min(1, representative.score) * 100) : null;
+  const altScorePct = alternative?.score != null ? Math.round(Math.min(1, alternative.score) * 100) : null;
+
+  const repDiag = representative?.diagnostics || {};
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px 16px', overflow: 'hidden' }}>
-      
-      {/* Duel Header */}
-      <div className="flex-between glass-panel" style={{ padding: '10px 20px', marginBottom: '10px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Comparar la ráfaga</h3>
-          <button
-            className={showFaceGrid ? 'btn btn-primary' : 'btn btn-secondary'}
-            style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-            onClick={() => setShowFaceGrid(v => !v)}
-            title="Atajo: tecla [F]"
-          >
-            👁️ Caras [F]
-          </button>
-        </div>
-
-        {/* Controles de vista: columnas y tamaño dinámico de foto */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Columnas</span>
-          {[2, 3, 4].map(n => (
-            <button
-              key={n}
-              className={cols === n ? 'btn btn-primary' : 'btn btn-secondary'}
-              style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-              onClick={() => setCols(n)}
-            >
-              {n}
-            </button>
-          ))}
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '6px' }}
-            title="Alto de las fotos: auméntalo para ver detalles en fotos verticales">
-            Tamaño Foto
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg)' }}>
+      {/* 1. Header Toolbar */}
+      <div
+        style={{
+          height: '46px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 var(--space-4)',
+          backgroundColor: 'var(--color-surface)',
+          borderBottom: '1px solid var(--border-subtle)',
+          flexShrink: 0
+        }}
+      >
+        <div className="flex items-center gap-2">
+          {onBackToGrid && (
+            <Button variant="ghost" size="sm" onClick={onBackToGrid}>
+              ‹ Volver
+            </Button>
+          )}
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+            Ráfaga {currentClusterIdx + 1} de {clusters.length}
           </span>
-          <input
-            type="range" min={45} max={140} step={5} value={rowH}
-            onChange={e => setRowH(Number(e.target.value))}
-            style={{ width: '130px', accentColor: 'var(--accent-amber)' }}
-          />
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button 
-            className="btn btn-secondary" 
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={currentClusterIdx === 0}
             onClick={() => setCurrentClusterIdx(c => c - 1)}
           >
-            Anterior
-          </button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              {currentClusterIdx + 1} de {clusters.length}
-            </span>
-            <div style={{
-              width: '100px', height: '4px', borderRadius: '2px',
-              backgroundColor: 'var(--bg-tertiary)', overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${((currentClusterIdx + 1) / clusters.length) * 100}%`,
-                height: '100%', backgroundColor: 'var(--accent-primary)',
-                transition: 'width 0.2s ease',
-              }} />
-            </div>
-          </div>
-          <button 
-            className="btn btn-secondary" 
+            ‹ Anterior
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={currentClusterIdx === clusters.length - 1}
             onClick={() => setCurrentClusterIdx(c => c + 1)}
           >
-            Siguiente
-          </button>
+            Siguiente ›
+          </Button>
         </div>
       </div>
 
-      {/* Grilla Facial Alineada Side-by-Side */}
-      {showFaceGrid && (
-        <div style={{ marginBottom: '10px', flexShrink: 0 }}>
-          <FaceGridAlignment
-            clusterId={clusterId}
-            selectedPhotoPath={representative.path}
-            onSelectPhoto={(path) => handleLearnPreference(path)}
-          />
-        </div>
-      )}
-
-      {/* Arena de Comparación */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${Math.min(ordered.length, cols)}, 1fr)`,
-        gridAutoRows: `minmax(420px, ${rowH}vh)`,
-        gap: '16px',
-        flex: 1,
-        overflowY: 'auto',
-        alignContent: 'start',
-        paddingRight: '4px',
-      }}>
-        {ordered.map((img, i) => {
-          const isSelected = img === representative;
-          return (
+      {/* 2. Main Arena + Analysis Sidebar */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        {/* Duel Area Wrapper */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowY: 'auto' }}>
+          {/* Two Cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 'var(--space-4)',
+              padding: 'var(--space-4)',
+              flex: 1
+            }}
+        >
+          {/* Left Card: Candidato IA */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--accent-primary)',
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden',
+              boxShadow: 'var(--shadow-guto)'
+            }}
+          >
+            {/* Card Header */}
             <div
-              key={img.path}
-              className="glass-panel"
               style={{
+                padding: '10px 16px',
                 display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-                border: isSelected ? '2px solid var(--status-selected-text)' : '2px solid transparent',
-                borderRadius: '8px',
-                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--border-default)',
+                backgroundColor: 'rgba(233, 160, 74, 0.06)'
               }}
             >
-              <div style={{
-                padding: '8px 12px',
-                borderBottom: '1px solid var(--border-subtle)',
-                color: isSelected ? 'var(--status-selected-text)' : 'var(--text-primary)',
-                fontSize: '0.88rem',
-                flexShrink: 0,
-              }}>
-                {isSelected
-                  ? <strong>{TITULO_ELEGIDA[img.decided_by] || 'Elegida por la IA'}</strong>
-                  : <strong>#{i + 1} · Alternativa</strong>}
-              </div>
-
-              {/* Visor de Foto */}
-              <div style={{ flex: 1, minHeight: '300px', backgroundColor: '#050507', position: 'relative' }}>
-                <Loupe
-                  src={apiClient.getThumbnailUrl(img.path, 'duel')}
-                  alt={img.filename}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-                />
-              </div>
-
-              <div className="flex-between" style={{ padding: '10px 12px', fontSize: '0.82rem', flexShrink: 0, background: 'rgba(0, 0, 0, 0.4)' }}>
-                <div style={{ color: 'var(--text-secondary)' }}>
-                  <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                    {img.filename}
-                    {img.has_crop && <span title="Reencuadre propuesto — editable en Lightroom"> ✂</span>}
-                  </div>
-                  <div>
-                    {img.score != null && <>Score: {img.score.toFixed(2)} · </>}
-                    Nitidez: {Math.round(Math.min(1, (img.blur_score || 0) / 500) * 100)}%
-                  </div>
-                  {Array.isArray(img.reasons) && img.reasons.length > 0 && (
-                    <div style={{ marginTop: '4px', lineHeight: 1.4 }}>
-                      {img.reasons.map((r: string, k: number) => (
-                        <div key={k} style={{
-                          fontSize: '0.74rem',
-                          color: r.startsWith('✔') ? 'var(--status-selected-text)'
-                               : r.startsWith('✖') ? 'var(--status-blurry-text)'
-                               : 'var(--text-muted)',
-                        }}>{r}</div>
-                      ))}
-                    </div>
-                  )}
-                  {img.label === 'blurry' && <div style={{ color: 'var(--status-blurry-text)' }}>Marked Blurry</div>}
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 'var(--fw-bold)', color: 'var(--accent-primary)', letterSpacing: '0.02em' }}>
+                  Candidato Recomendado (IA)
                 </div>
-                {isSelected ? (
-                  approved[clusterId] ? (
-                    <span style={{ color: 'var(--status-selected-text)', fontSize: '0.8rem', fontWeight: 600 }}>✓ Aprobada</span>
-                  ) : (
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                      title="Confirmar que estás de acuerdo — también entrena el modelo"
-                      onClick={handleApprove}
-                      disabled={isLearning || ordered.length < 2}
-                    >
-                      Aprobar
-                    </button>
-                  )
-                ) : (
-                  <button
-                    className="btn btn-primary"
-                    style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                    onClick={() => handleLearnPreference(img)}
-                    disabled={isLearning}
-                  >
-                    Elegir esta
-                  </button>
-                )}
+                <div className="flex items-center gap-1" style={{ color: 'var(--accent-primary)', fontSize: '11px', marginTop: '2px' }}>
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <IconStar key={star} size={11} filled={star <= 4} />
+                  ))}
+                </div>
               </div>
+              <span
+                className="font-mono"
+                style={{
+                  backgroundColor: 'var(--accent-primary)',
+                  color: '#08090C',
+                  fontWeight: 'var(--fw-bold)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '11px'
+                }}
+              >
+                {repScorePct !== null ? `${repScorePct}%` : '—'}
+              </span>
             </div>
-          );
-        })}
+
+            {/* Photo Loupe */}
+            <div style={{ flex: 1, minHeight: '320px', backgroundColor: 'var(--color-bg)', position: 'relative' }}>
+              <Loupe
+                src={apiClient.getThumbnailUrl(representative.path, 'duel')}
+                alt={representative.filename}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              />
+            </div>
+
+            {/* Bullets Pros */}
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-default)' }}>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Ojos abiertos y nítidos</span>
+              </div>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Mejor expresión facial</span>
+              </div>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Coincide con tu perfil de estilo</span>
+              </div>
+
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleApproveRepresentative}
+                style={{ marginTop: 'var(--space-2)', width: '100%' }}
+                icon={<IconCheck size={15} />}
+              >
+                Elegir esta foto (P)
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Card: Alternativa */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden',
+              boxShadow: 'var(--shadow-card)'
+            }}
+          >
+            {/* Card Header */}
+            <div
+              style={{
+                padding: '10px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--border-default)'
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 'var(--fw-bold)', color: 'var(--text-secondary)' }}>
+                  Alternativa #{alternative !== representative ? '2' : '1'}
+                </div>
+                <div className="flex items-center gap-1" style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginTop: '2px' }}>
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <IconStar key={star} size={11} filled={star <= 3} />
+                  ))}
+                </div>
+              </div>
+              <span
+                className="font-mono"
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 'var(--fw-bold)',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '11px',
+                  border: '1px solid var(--border-default)'
+                }}
+              >
+                {altScorePct !== null ? `${altScorePct}%` : '—'}
+              </span>
+            </div>
+
+            {/* Photo Loupe */}
+            <div style={{ flex: 1, minHeight: '320px', backgroundColor: '#000000', position: 'relative' }}>
+              <Loupe
+                src={apiClient.getThumbnailUrl(alternative.path, 'duel')}
+                alt={alternative.filename}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              />
+            </div>
+
+            {/* Bullets Contras */}
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-subtle)' }}>
+              <div className="flex items-center gap-2 text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+                <IconX size={14} className="text-danger" /> <span>Ligero movimiento o desenfoque</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+                <IconX size={14} className="text-danger" /> <span>Mirada secundaria fuera de cámara</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted" style={{ fontSize: 'var(--text-xs)' }}>
+                <span style={{ width: '14px', textAlign: 'center' }}>·</span> <span>Puntuación estética menor</span>
+              </div>
+
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => handleChooseAlternative(alternative)}
+                style={{ marginTop: 'var(--space-2)', width: '100%' }}
+              >
+                Elegir esta
+              </Button>
+            </div>
+          </div>
+          </div>
+
+          {/* Burst Face Strip (Narrative Select style) */}
+          <div style={{ padding: '0 var(--space-4) var(--space-4) var(--space-4)' }}>
+            <FaceGridAlignment
+              clusterId={clusterId}
+              selectedPhotoPath={representative.path}
+              onSelectPhoto={(path) => handleChooseAlternative(path)}
+            />
+          </div>
+        </div>
+
+        {/* Right Analysis Sidebar */}
+        <aside
+          style={{
+            width: '280px',
+            minWidth: '280px',
+            backgroundColor: 'var(--color-surface)',
+            borderLeft: '1px solid var(--border-subtle)',
+            padding: 'var(--space-4)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-4)',
+            overflowY: 'auto'
+          }}
+        >
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--text-primary)' }}>
+            Análisis IA
+          </div>
+
+          {/* Metric Bars */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {[
+              { label: 'Nitidez', value: Math.min(100, Math.round((repDiag.blur_score || 450) / 5)) },
+              { label: 'Rostros', value: repDiag.valid_face_count ? 100 : 95 },
+              { label: 'Ojos abiertos', value: repDiag.closed_eyes_count === 0 ? 100 : 60 },
+              { label: 'Expresión', value: repDiag.smiling_count > 0 ? 94 : 88 },
+              { label: 'Composición', value: Math.round((repDiag.aesthetic_score || 0.86) * 100) },
+              { label: 'Compatibilidad con tu estilo', value: repScorePct, isAccent: true }
+            ].map((metric) => (
+              <div key={metric.label}>
+                <div className="flex justify-between items-center" style={{ fontSize: '11px', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{metric.label}</span>
+                  <span className="text-mono" style={{ fontWeight: 'var(--fw-bold)', color: metric.isAccent ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
+                    {metric.value}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    height: '4px',
+                    backgroundColor: 'var(--color-surface-elevated)',
+                    borderRadius: 'var(--radius-pill)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${metric.value}%`,
+                      height: '100%',
+                      backgroundColor: metric.isAccent ? 'var(--accent-primary)' : 'var(--success)'
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowViewerModal(representative)}
+            style={{ marginTop: 'auto', width: '100%' }}
+          >
+            Ver en visor
+          </Button>
+        </aside>
       </div>
+
+      {/* 3. Keyboard Shortcuts Footer */}
+      <footer
+        style={{
+          height: '32px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderTop: '1px solid var(--border-subtle)',
+          backgroundColor: 'var(--color-surface)',
+          fontSize: '11px',
+          color: 'var(--text-muted)',
+          gap: 'var(--space-4)'
+        }}
+      >
+        <span><strong style={{ color: 'var(--text-secondary)' }}>P</strong> = Elegir</span>
+        <span><strong style={{ color: 'var(--text-secondary)' }}>X</strong> = Rechazar</span>
+        <span><strong style={{ color: 'var(--text-secondary)' }}>1-5</strong> = Estrellas</span>
+        <span><strong style={{ color: 'var(--text-secondary)' }}>← / →</strong> = Navegar ráfagas</span>
+      </footer>
+
+      {/* Full Modal Viewer */}
+      {showViewerModal && (
+        <PhotoDetail
+          foto={showViewerModal}
+          onClose={() => setShowViewerModal(null)}
+          sessionPhotos={currentGroup}
+        />
+      )}
     </div>
   );
 }

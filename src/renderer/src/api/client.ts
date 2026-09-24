@@ -13,7 +13,9 @@ import {
   CalibrationStatsResponse,
   LearningSummary,
   CachedProject,
-  StorylineChapter
+  LibraryProject,
+  StorylineChapter,
+  VIPSubject
 } from '../types/api';
 
 export const BACKEND_URL = 'http://127.0.0.1:8000';
@@ -78,24 +80,136 @@ export const apiClient = {
       body: JSON.stringify({ nombre })
     }),
 
-  getWorkflowProfiles: () => request<Record<string, any>>('/workflow_profiles'),
 
-  applyWorkflowProfile: (profileId: string) =>
-    request<{ success: boolean; applied: string }>('/workflow_profiles/apply', {
-      method: 'POST',
-      body: JSON.stringify({ profile_id: profileId })
-    }),
 
   // --- Culling & Pipeline ---
-  startIngest: (directory: string, mode: 'cull' | 'cull_edit' = 'cull_edit') =>
+  getHardwareProfile: () => request<HardwareProfile>('/hardware-profile'),
+
+  getCullingEstimate: (directory: string, eventType: string = 'wedding', selectivity: string = 'standard') =>
+    request<CullingEstimate>(
+      `/estimate?directory=${encodeURIComponent(directory)}&event_type=${encodeURIComponent(eventType)}&selectivity=${encodeURIComponent(selectivity)}`
+    ),
+
+  getAvailablePresets: () => request<PresetItem[]>('/available-presets'),
+
+  startIngest: (
+    directory: string,
+    mode: 'cull' | 'cull_edit' = 'cull_edit',
+    eventType: string = 'wedding',
+    selectivity: string = 'standard',
+    preEditOverrides?: Record<string, any>,
+    extraDirectories?: string[]
+  ) =>
     request<{ job_id: string; status: string; mode: string }>('/ingest', {
       method: 'POST',
-      body: JSON.stringify({ directory, mode })
+      body: JSON.stringify({
+        directory,
+        mode,
+        event_type: eventType,
+        selectivity,
+        pre_edit_overrides: preEditOverrides,
+        ...(extraDirectories && extraDirectories.length > 0 ? { extra_directories: extraDirectories } : {})
+      })
     }),
 
   getStatus: () => request<JobStatus>('/status'),
-
   getResults: () => request<JobResults>('/results'),
+  loadSession: (directory: string) => 
+    request<{ status: string; results: any[]; stats: any }>('/session/load', {
+      method: 'POST',
+      body: JSON.stringify({ directory })
+    }),
+
+  // --- Herramientas de Cliente ---
+  exportPreviews: (inputDir: string, outputDir: string, filterMode: string) =>
+    request<{ status: string; exported: number; errors: number }>('/tools/export-previews', {
+      method: 'POST',
+      body: JSON.stringify({ input_dir: inputDir, output_dir: outputDir, filter_mode: filterMode })
+    }),
+    
+  importSelection: (baseDir: string, filenames: string[], clientFolder?: string) =>
+    request<{ status: string; updated: number }>('/tools/import-selection', {
+      method: 'POST',
+      body: JSON.stringify({ base_dir: baseDir, filenames, client_folder: clientFolder })
+    }),
+
+  // --- Metadatos, Copyright & GPS ---
+  getMetadataConfig: () =>
+    request<{
+      profiles: Array<{
+        id: string
+        name: string
+        creator: string
+        copyright_notice: string
+        credit?: string
+        usage_terms?: string
+        web_statement?: string
+        is_default?: boolean
+      }>
+      taxonomy: Record<string, { label: string; has_age: boolean; default_age?: string; base_tags: string[] }>
+      cities: string[]
+    }>('/tools/metadata/config'),
+
+  saveMetadataProfile: (profile: {
+    id?: string
+    name: string
+    creator: string
+    copyright_notice: string
+    credit?: string
+    usage_terms?: string
+    web_statement?: string
+    is_default?: boolean
+  }) =>
+    request<{ status: string; profile: any }>('/tools/metadata/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile)
+    }),
+
+  deleteMetadataProfile: (profileId: string) =>
+    request<{ status: string }>(`/tools/metadata/profiles/${profileId}`, {
+      method: 'DELETE'
+    }),
+
+  setDefaultMetadataProfile: (profileId: string) =>
+    request<{ status: string }>(`/tools/metadata/profiles/${profileId}/set-default`, {
+      method: 'POST'
+    }),
+
+  detectGPS: (directory: string) =>
+    request<{
+      has_gps: boolean
+      latitude: number | null
+      longitude: number | null
+      suggested_city: string | null
+      sample_file?: string
+      existing_creator?: string | null
+      existing_copyright?: string | null
+    }>('/tools/metadata/detect-gps', {
+      method: 'POST',
+      body: JSON.stringify({ directory })
+    }),
+
+  applyBatchMetadata: (data: {
+    directory: string
+    filter_mode: 'all' | 'selected'
+    profile_id?: string
+    profile_custom?: any
+    event_type: string
+    age?: string
+    protagonist?: string
+    city?: string
+    custom_tags?: string
+    keywords_mode: 'append' | 'replace'
+  }) =>
+    request<{
+      status: string
+      updated_shots: number
+      errors: number
+      applied_metadata: any
+    }>('/tools/metadata/apply-batch', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
 
   // --- Ráfagas, Duelos & Rostros ---
   learnPreference: (winnerPath: string, loserPath: string) =>
@@ -189,17 +303,49 @@ export const apiClient = {
       `/search/semantic?q=${encodeURIComponent(q)}&directory=${encodeURIComponent(directory)}&limit=${limit}`
     ),
 
-  getStoryline: (directory: string, gap: number = 30) =>
+  getStoryline: (directory: string) =>
     request<{ storyline: StorylineChapter[] }>(
-      `/storyline?directory=${encodeURIComponent(directory)}&gap=${gap}`
+      `/storyline?directory=${encodeURIComponent(directory)}`
     ),
+
+  getStorylineVocabulary: () => request<{ vocabulary: string[] }>('/storyline/vocabulary'),
+
+  renameStorylineChapter: (directory: string, chapterId: string, newName: string) =>
+    request<{ status: string; term_learned: string }>('/storyline/rename', {
+      method: 'POST',
+      body: JSON.stringify({ directory, chapter_id: chapterId, new_name: newName })
+    }),
+
+  overrideStorylineChapter: (directory: string, photoPath: string, chapterId: string) =>
+    request<{ status: string }>('/storyline/override', {
+      method: 'POST',
+      body: JSON.stringify({ directory, photo_path: photoPath, chapter_id: chapterId })
+    }),
+
+  getVIPSubjects: (directory: string) =>
+    request<{ subjects: VIPSubject[] }>(
+      `/vip-subjects?directory=${encodeURIComponent(directory)}`
+    ),
+
+  renameVIPSubject: (directory: string, identityId: number, name: string) =>
+    request<{ status: string; identity_id: number; name: string }>('/vip-subjects/rename', {
+      method: 'POST',
+      body: JSON.stringify({ directory, identity_id: identityId, name })
+    }),
 
   getCachedProjects: () => request<CachedProject[]>('/cache/projects'),
 
-  clearCache: (directory: string) =>
+  getLibraryProjects: () => request<{ projects: LibraryProject[] }>('/library/projects'),
+
+  cleanupLibrary: () =>
+    request<{ success: boolean; deleted_count: number }>('/library/cleanup', {
+      method: 'DELETE'
+    }),
+
+  clearCache: (directory: string, db_hash?: string) =>
     request<{ success: boolean }>('/cache/clear', {
       method: 'POST',
-      body: JSON.stringify({ directory })
+      body: JSON.stringify({ directory, db_hash })
     }),
 
   openCacheFolder: () =>
@@ -239,6 +385,9 @@ export const apiClient = {
     return `${BACKEND_URL}/bursts/face_crop_img?path=${encodeURIComponent(path)}&x=${x}&y=${y}&w=${w}&h=${h}&size=${size}`;
   },
 
+  getCalibrationFaceUrl: (path: string, x: number, y: number, w: number, h: number) =>
+    `${BACKEND_URL}/calibration/face?path=${encodeURIComponent(path)}&x=${x}&y=${y}&w=${w}&h=${h}`,
+
   getDebugOverlayUrl: (path: string) =>
     `${BACKEND_URL}/debug/overlay?path=${encodeURIComponent(path)}`,
 
@@ -263,5 +412,21 @@ export const apiClient = {
     request<{ status: string; applied_count: number }>('/advanced/skin_retouch', {
       method: 'POST',
       body: JSON.stringify(params)
-    })
+    }),
+
+  // --- Configuración Inicial & Descarga de Modelos ---
+  checkSetupReady: () =>
+    request<{ ready: boolean; missing: string[] }>('/setup/required_ready'),
+
+  getSetupModels: () =>
+    request<{ models: any[] }>('/setup/models'),
+
+  startModelDownload: (modelIds: string[]) =>
+    request<{ started: boolean; message: string }>('/setup/download', {
+      method: 'POST',
+      body: JSON.stringify({ model_ids: modelIds })
+    }),
+
+  getModelDownloadStreamUrl: () => `${BACKEND_URL}/setup/download/stream`
 };
+

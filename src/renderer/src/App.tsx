@@ -1,75 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
 import MainContent from './components/MainContent';
 import SettingsModal from './components/SettingsModal';
+import ShortcutsModal from './components/ShortcutsModal';
 import SyncReminder from './components/SyncReminder';
 import { ModelDownloadWizard } from './components/ModelDownloadWizard';
+import { PreCullingModal, PreCullingConfig } from './components/PreCullingModal';
+import { SleepCountdownModal } from './components/SleepCountdownModal';
+import { ClientToolsModal } from './components/ClientToolsModal';
 import { ToastProvider, useToast } from './components/Toast';
 import { apiClient, BACKEND_URL } from './api/client';
 import './index.css';
-
-// Fallback for browser testing connected to real FastAPI backend
-if (typeof window !== 'undefined' && !window.api) {
-  (window as any).api = {
-    getBackendStatus: async () => {
-      try {
-        const res = await apiClient.getHealth();
-        return { running: true, status: 'running', url: BACKEND_URL };
-      } catch (e) {
-        return { running: false, status: 'stopped', url: BACKEND_URL };
-      }
-    },
-    getHardwareInfo: async () => {
-      try {
-        return await apiClient.getHardware();
-      } catch (e) {
-        return { using_gpu: false, gpu_provider: null, physical_cores: 0, logical_cores: 0 };
-      }
-    },
-    sendSettings: async (settings: any) => {
-      return await apiClient.saveSettings(settings);
-    },
-    getSettings: async () => {
-      return await apiClient.getSettings();
-    },
-    ingestMedia: async (directory: string, mode: string = 'cull_edit') => {
-      return await apiClient.startIngest(directory, mode as any);
-    },
-    getJobStatus: async () => {
-      return await apiClient.getStatus();
-    },
-    getJobResults: async () => {
-      return await apiClient.getResults();
-    },
-    checkUndoAvailable: async (directory: string) => {
-      try {
-        return await apiClient.checkUndo(directory);
-      } catch (e) {
-        return { disponible: false };
-      }
-    },
-    undoExport: async (directory: string) => {
-      return await apiClient.undoExport(directory);
-    },
-    selectFolder: async (_defaultPath?: string) => {
-      return null;
-    },
-    onBackendLog: (_cb: any) => {
-      return () => {};
-    },
-    onBackendStatusChange: (cb: any) => {
-      const interval = setInterval(async () => {
-        try {
-          const res = await apiClient.getHealth();
-          cb(res ? 'running' : 'stopped');
-        } catch (e) {
-          cb('stopped');
-        }
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  };
-}
 
 function MainApp() {
   const [backendStatus, setBackendStatus] = useState<'starting' | 'running' | 'stopped' | 'error' | 'unknown'>('unknown');
@@ -80,13 +22,57 @@ function MainApp() {
   const [jobResults, setJobResults] = useState<any>(null);
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'grid' | 'duel' | 'calib'>('grid');
+  const [currentView, setCurrentView] = useState<'library' | 'grid' | 'duel' | 'calib'>('grid');
   const [lastDirectory, setLastDirectory] = useState<string>(() => localStorage.getItem('lastDirectory') || '');
   const [undoAvailable, setUndoAvailable] = useState<boolean>(false);
   const [staleBackend, setStaleBackend] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
   const [showModelWizard, setShowModelWizard] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isClientToolsOpen, setIsClientToolsOpen] = useState(false);
+  const [clientToolsDir, setClientToolsDir] = useState<string>('');
+
+  // New batch & pre-culling state
+  const [preCullingFolder, setPreCullingFolder] = useState<string | null>(null);
+  const [batchQueue, setBatchQueue] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('culling_batch_queue');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeConfig, setActiveConfig] = useState<PreCullingConfig | null>(null);
+  const [autoSleepActive, setAutoSleepActive] = useState<boolean>(false);
+  const autoSleepRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    autoSleepRef.current = autoSleepActive;
+  }, [autoSleepActive]);
+
+  const [showSleepModal, setShowSleepModal] = useState<boolean>(false);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    localStorage.setItem('culling_batch_queue', JSON.stringify(batchQueue));
+  }, [batchQueue]);
+
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === '?') {
+        e.preventDefault();
+        setIsShortcutsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeys);
+    return () => window.removeEventListener('keydown', handleGlobalKeys);
+  }, []);
 
   // El backend corre desde que se abre la app: si el código en disco cambió
   // después (actualización), este proceso sirve lógica vieja sin avisar.
@@ -130,8 +116,7 @@ function MainApp() {
         setSettings(st);
         // Verificar si los modelos requeridos están presentes
         try {
-          const res = await fetch(`http://127.0.0.1:8000/setup/required_ready`);
-          const data = await res.json();
+          const data = await apiClient.checkSetupReady();
           if (!data.ready) {
             setShowModelWizard(true);
           }
@@ -162,7 +147,63 @@ function MainApp() {
         if (state.status === 'completed' && !jobResults) {
           const res = await window.api.getJobResults();
           setJobResults(res);
+          
+          // Check if there are more event groups to process
+          if (activeConfig && activeConfig.eventGroups && activeConfig.eventGroups.length > 1) {
+            // Find which group just finished by checking lastDirectory
+            const currentGroupIndex = activeConfig.eventGroups.findIndex(g => g[0] === lastDirectory);
+            if (currentGroupIndex >= 0 && currentGroupIndex < activeConfig.eventGroups.length - 1) {
+              const nextIndex = currentGroupIndex + 1;
+              const nextGroup = activeConfig.eventGroups[nextIndex];
+              const [primary, ...extras] = nextGroup;
+              
+              // Calculate remaining folders in the queue for visual state
+              const remainingDirs = activeConfig.eventGroups.slice(nextIndex).flatMap(g => g);
+              setBatchQueue(remainingDirs);
+              
+              const groupLabel = nextGroup.length > 1
+                ? `${nextGroup.length} carpetas como 1 evento`
+                : (primary || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? primary;
+
+              showToast(`Lote completado. Iniciando: ${groupLabel}`, 'info');
+              
+              const targetEventType = activeConfig.eventGroupTypes && activeConfig.eventGroupTypes.length > nextIndex
+                ? activeConfig.eventGroupTypes[nextIndex]
+                : activeConfig.eventType;
+
+              setTimeout(async () => {
+                try {
+                  await apiClient.startIngest(
+                    primary,
+                    activeConfig.mode,
+                    targetEventType,
+                    activeConfig.selectivity,
+                    {
+                      preset_path: activeConfig.presetPath,
+                      auto_crop: activeConfig.autoCrop
+                    },
+                    extras.length > 0 ? extras : undefined
+                  );
+                  setLastDirectory(primary);
+                  localStorage.setItem('lastDirectory', primary);
+                  setJobResults(null);
+                } catch (e: any) {
+                  showToast(`Error iniciando siguiente lote: ${e.message || e}`, 'error');
+                }
+              }, 1500);
+              return; // Stop here, don't execute "Cola completa" logic
+            }
+          }
+          
+          // Cola completa
+          setBatchQueue([]);
           showToast('¡Culling completado con éxito!', 'success');
+          if (window.api?.allowSleep) {
+            await window.api.allowSleep();
+          }
+          if (autoSleepRef.current) {
+            setShowSleepModal(true);
+          }
         } else if (state.status !== 'completed') {
           // Clear old results if running a new job
           setJobResults(null);
@@ -174,7 +215,7 @@ function MainApp() {
 
     const interval = setInterval(pollJob, 1000);
     return () => clearInterval(interval);
-  }, [backendStatus, jobResults, showToast]);
+  }, [backendStatus, jobResults, batchQueue, activeConfig, autoSleepActive, showToast, lastDirectory]);
 
   // 3. Centralized Undo Check
   const checkUndo = useCallback(async (dir?: string) => {
@@ -196,14 +237,78 @@ function MainApp() {
   }, [checkUndo, jobResults]);
 
   // Actions
-  const handleIngest = async (directory: string, mode: string = 'cull_edit') => {
+  const handleStartPreCulling = (directory: string) => {
+    setPreCullingFolder(directory);
+  };
+
+  const handleConfirmPreCulling = async (config: PreCullingConfig) => {
+    setPreCullingFolder(null);
+    setActiveConfig(config);
+    setAutoSleepActive(config.autoSleep);
+
+    // eventGroups: [[dir_A, dir_B], [dir_C], [dir_D]]
+    // Each group = one unified event job. Groups with >1 folder pass extra_directories.
+    const groups = config.eventGroups && config.eventGroups.length > 0
+      ? config.eventGroups
+      : config.queue.map(d => [d]);
+
+    if (groups.length === 0) return;
+
+    const firstDir = groups[0][0];
     try {
-      await window.api.ingestMedia(directory, mode);
-      setLastDirectory(directory);
-      localStorage.setItem('lastDirectory', directory);
-      setJobResults(null); // Reset results for new job
-      setCurrentView('grid'); // Reset view
-      showToast(`Iniciando procesamiento en: ${directory}`, 'info');
+      if (window.api?.preventSleep) {
+        await window.api.preventSleep();
+      }
+      // Launch first group immediately
+      const [primary, ...extras] = groups[0];
+      const targetEventType = config.eventGroupTypes && config.eventGroupTypes.length > 0 
+        ? config.eventGroupTypes[0] 
+        : config.eventType;
+      
+      // Inyectar metadatos configurados en el lote antes de iniciar culling
+      if (config.metadataPayload) {
+        showToast('Inyectando metadatos y copyright al lote...', 'info');
+        try {
+          const targetFolders = config.queue && config.queue.length > 0 ? config.queue : [primary];
+          for (const folder of targetFolders) {
+            await apiClient.applyBatchMetadata({
+              directory: folder,
+              filter_mode: 'all',
+              profile_id: config.metadataPayload.profile_id,
+              event_type: config.metadataPayload.event_type,
+              age: config.metadataPayload.age,
+              protagonist: config.metadataPayload.protagonist,
+              city: config.metadataPayload.city,
+              custom_tags: config.metadataPayload.custom_tags,
+              keywords_mode: config.metadataPayload.keywords_mode
+            });
+          }
+        } catch (metaErr: any) {
+          console.error('Error aplicando metadatos antes de culling:', metaErr);
+          showToast(`Aviso: Error aplicando metadatos: ${metaErr.message || metaErr}`, 'warning');
+        }
+      }
+
+      await apiClient.startIngest(
+        primary,
+        config.mode,
+        targetEventType,
+        config.selectivity,
+        { preset_path: config.presetPath, auto_crop: config.autoCrop },
+        extras.length > 0 ? extras : undefined
+      );
+      setLastDirectory(firstDir);
+      localStorage.setItem('lastDirectory', firstDir);
+      setJobResults(null);
+      setCurrentView('grid');
+      const groupLabel = groups[0].length > 1
+        ? `${groups[0].length} carpetas como 1 evento`
+        : (firstDir || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? firstDir;
+      showToast(`Iniciando culling (${config.eventType}): ${groupLabel}`, 'info');
+
+      // Remaining groups go to the batch queue (processed sequentially after current job)
+      const remainingDirs = groups.length > 1 ? groups.slice(1).flatMap(g => g) : [];
+      setBatchQueue(remainingDirs);
     } catch (err: any) {
       console.error('Ingest error:', err);
       showToast(`Error al iniciar culling: ${err?.message || err}`, 'error');
@@ -241,13 +346,12 @@ function MainApp() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div className="app-shell">
       <Sidebar 
         backendStatus={backendStatus}
         hardwareInfo={hardwareInfo}
         jobState={jobState}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onStartIngest={handleIngest}
+        onStartIngest={handleStartPreCulling}
         currentView={currentView}
         onViewChange={setCurrentView}
         hasResults={!!jobResults}
@@ -261,28 +365,80 @@ function MainApp() {
         onUndoExport={handleUndoExport}
       />
       
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <main className="main-viewport">
         {staleBackend && (
           <div style={{
             backgroundColor: 'var(--status-blurry-bg)', color: 'var(--status-blurry-text)',
-            padding: '8px 16px', fontSize: '0.85rem', textAlign: 'center',
+            padding: '8px 16px', fontSize: 'var(--text-sm)', textAlign: 'center',
             borderBottom: '1px solid var(--border-subtle)',
           }}>
             ⚠ El motor se actualizó desde que abriste la app — cierra y vuelve a abrir Guto Flow
             para usar la versión nueva. Lo que corras ahora usará la lógica anterior.
           </div>
         )}
-        <SyncReminder active={backendStatus === 'running'} />
-        <MainContent
+        
+        <Topbar
+          currentView={currentView}
+          directory={lastDirectory}
           jobState={jobState}
           jobResults={jobResults}
-          settings={settings}
-          viewMode={currentView}
-          directory={lastDirectory}
-          undoAvailable={undoAvailable}
-          onUndoExport={handleUndoExport}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onOpenClientTools={lastDirectory ? () => setIsClientToolsOpen(true) : undefined}
         />
-      </div>
+
+        <div className="content-viewport">
+          <SyncReminder active={backendStatus === 'running'} />
+          <MainContent
+            jobState={jobState}
+            jobResults={jobResults}
+            settings={settings}
+            viewMode={currentView}
+            directory={lastDirectory}
+            undoAvailable={undoAvailable}
+            onUndoExport={handleUndoExport}
+            onStartIngest={handleStartPreCulling}
+            onSelectProject={async (dir) => {
+              try {
+                const res = await apiClient.loadSession(dir);
+                if (res.status === 'completed') {
+                  setJobResults({ results: res.results, stats: res.stats });
+                  setLastDirectory(dir);
+                  localStorage.setItem('lastDirectory', dir);
+                  setCurrentView('grid');
+                  showToast('Sesión cargada exitosamente', 'success');
+                }
+              } catch (err: any) {
+                showToast(`Error al cargar la sesión: ${err.message}`, 'error');
+              }
+            }}
+            onOpenClientTools={(dir: string) => {
+              setClientToolsDir(dir);
+              setIsClientToolsOpen(true);
+            }}
+          />
+        </div>
+      </main>
+
+      <PreCullingModal
+        isOpen={!!preCullingFolder}
+        initialDirectory={preCullingFolder || ''}
+        initialQueue={preCullingFolder ? [preCullingFolder] : []}
+        onClose={() => setPreCullingFolder(null)}
+        onConfirm={handleConfirmPreCulling}
+      />
+
+      {/* Auto-Sleep Countdown Modal */}
+      <SleepCountdownModal
+        isOpen={showSleepModal}
+        onCancel={() => setShowSleepModal(false)}
+      />
+
+      <ClientToolsModal
+        isOpen={isClientToolsOpen}
+        onClose={() => setIsClientToolsOpen(false)}
+        currentDirectory={clientToolsDir}
+      />
 
       {isSettingsOpen && (
         <SettingsModal 
@@ -291,6 +447,11 @@ function MainApp() {
           onSave={handleSaveSettings}
         />
       )}
+
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
 
       {showModelWizard && (
         <ModelDownloadWizard

@@ -10,6 +10,41 @@ export interface HardwareInfo {
   logical_cores: number;
 }
 
+export interface HardwareProfile {
+  tier: 'ultra' | 'balanced' | 'cpu_light' | 'low_spec';
+  tier_label: string;
+  description: string;
+  specs: {
+    has_gpu: boolean;
+    gpu_name: string;
+    vram_gb: number;
+    cpu_physical_cores: number;
+    cpu_logical_threads: number;
+    ram_gb: number;
+  };
+  recommended_config: {
+    use_cascade: boolean;
+    heavy_detector: string;
+    safety_cap: number;
+    max_workers: number;
+  };
+  last_scan: string;
+}
+
+export interface CullingEstimate {
+  total_photos: number;
+  min_photos: number;
+  max_photos: number;
+  estimated_percentage: number;
+  is_calibrated: boolean;
+  samples_count: number;
+}
+
+export interface PresetItem {
+  name: string;
+  path: string;
+}
+
 export interface BackendStatus {
   running: boolean;
   status: 'starting' | 'running' | 'stopped' | 'error' | 'unknown';
@@ -221,6 +256,27 @@ export interface CachedProject {
   db_hash: string;
 }
 
+export interface LibraryProject {
+  directory: string;
+  folder_name: string;
+  last_accessed: number;
+  exported_at?: string;
+  size_mb: number;
+  total_photos: number;
+  bursts_count: number;
+  selected_count: number;
+  highlighted_count: number;
+  discarded_count: number;
+  duplicates_count: number;
+  blurry_count: number;
+  closed_eyes_count: number;
+  last_synced_at?: string | null;
+  synced_count?: number;
+  sample_photo?: string;
+  status: 'completed' | 'in_progress' | 'cached';
+  progress?: number;
+}
+
 export interface StorylinePhoto {
   path: string;
   thumb_url: string;
@@ -229,10 +285,23 @@ export interface StorylinePhoto {
 }
 
 export interface StorylineChapter {
-  id: number;
+  id: string;
+  name: string;
+  is_broll?: boolean;
   start_time: string;
   end_time: string;
-  total_photos: number;
-  medoid: StorylinePhoto;
-  highlights: StorylinePhoto[];
+  photo_count: number;
+  medoid_thumb: string;
+  medoid_path: string;
+  paths: string[];
 }
+
+export interface VIPSubject {
+  id: number;
+  count: number;
+  name: string;
+  representative_thumb: string;
+  representative_path?: string;
+}
+
+

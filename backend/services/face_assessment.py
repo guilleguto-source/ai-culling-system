@@ -12,8 +12,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Umbral de probabilidad para clasificar un ojo como "cerrado"
-# (OCEC: cerrado cuando prob_open <= 0.42, i.e. prob_closed >= 0.58)
-EYE_CLOSED_THRESHOLD = 0.58
+# (OCEC: cerrado cuando prob_open <= 0.25, i.e. prob_closed >= 0.75)
+EYE_CLOSED_THRESHOLD = 0.75
 
 # Índices de landmarks de YuNet: [ojo_izq, ojo_der, nariz, boca_izq, boca_der]
 LANDMARK_LEFT_EYE = 0
@@ -98,10 +98,16 @@ def _eye_aspect_ratio_from_patch(eye_patch_gray: np.ndarray) -> float:
 def _extract_eye_patch(
     img_gray: np.ndarray,
     landmark: list[int],
-    patch_size: int = 32,
+    face_width: int | None = None,
 ) -> np.ndarray:
     """Recorta un parche cuadrado centrado en el punto de landmark del ojo."""
     cx, cy = landmark[0], landmark[1]
+    
+    if face_width is not None:
+        patch_size = max(20, int(face_width * 0.14))
+    else:
+        patch_size = 32
+        
     half = patch_size // 2
     h, w = img_gray.shape
     x1 = max(0, cx - half)
@@ -114,6 +120,7 @@ def _extract_eye_patch(
 def evaluate_eyes_fast(
     img_rgb: np.ndarray,
     eye_landmarks: list[list[list[int]]],  # Por rostro: [[x,y] x 5 landmarks]
+    face_bboxes: list[list[int]] | None = None,
 ) -> ImageFaceResult:
     """
     Evaluación rápida de ojos usando análisis de gradiente (sin modelo ONNX).
@@ -130,26 +137,35 @@ def evaluate_eyes_fast(
     face_results = []
     any_closed = False
 
+    is_crowd = len(eye_landmarks) >= 6
+
     for i, landmarks in enumerate(eye_landmarks):
         if len(landmarks) < 2:
             continue
 
-        left_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_LEFT_EYE])
-        right_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_RIGHT_EYE])
+        face_width = face_bboxes[i][2] if face_bboxes and i < len(face_bboxes) else None
+
+        left_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_LEFT_EYE], face_width=face_width)
+        right_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_RIGHT_EYE], face_width=face_width)
 
         left_score = _eye_aspect_ratio_from_patch(left_patch)
         right_score = _eye_aspect_ratio_from_patch(right_patch)
 
         avg_ear = (left_score + right_score) / 2.0
-        left_closed = left_score < (1.0 - EYE_CLOSED_THRESHOLD)
-        right_closed = right_score < (1.0 - EYE_CLOSED_THRESHOLD)
-        has_closed = left_closed or right_closed
+        
+        # Filtros de precisión:
+        # 1. Ignorar rostros pequeños (< 75px) o grupos numerosos (>= 6 rostros)
+        # 2. Ojo verdaderamente cerrado exige avg_ear < 0.10 o ambas pupilas < 0.12
+        if is_crowd or (face_width is not None and face_width < 75):
+            has_closed = False
+        else:
+            has_closed = avg_ear < 0.10 or (left_score < 0.12 and right_score < 0.12)
 
         if has_closed:
             any_closed = True
             logger.debug(
                 f"Rostro {i}: ojos cerrados detectados "
-                f"(izq={left_score:.2f}, der={right_score:.2f})"
+                f"(izq={left_score:.2f}, der={right_score:.2f}, ear={avg_ear:.2f})"
             )
 
         face_results.append(FaceAssessmentResult(

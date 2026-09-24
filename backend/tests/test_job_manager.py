@@ -105,3 +105,40 @@ def test_job_manager_concurrency_stress():
         t.join()
 
     assert len(errors) == 0, f"Ocurrieron errores de concurrencia: {errors}"
+
+
+def test_job_manager_phases_and_reset():
+    jm = JobManager()
+    expected_ids = ["thumbnails", "analysis", "clustering", "selection", "pre_edit", "export"]
+    
+    # Check initial phases
+    phase_ids = [p["id"] for p in jm.get_status()["phases"]]
+    assert phase_ids == expected_ids
+
+    # Start job
+    jm.start_job("job_phases_test")
+    status = jm.get_status()
+    assert [p["id"] for p in status["phases"]] == expected_ids
+
+    # Update phase progress
+    jm.update_phase_progress("selection", 25, 100)
+    status = jm.get_status()
+    selection_phase = next(p for p in status["phases"] if p["id"] == "selection")
+    assert selection_phase["status"] == "running"
+    assert selection_phase["progress"] == 25
+    assert status["processed"] == 25
+    assert status["total"] == 100
+
+    # Complete phase
+    jm.complete_phase("selection")
+    status = jm.get_status()
+    selection_phase = next(p for p in status["phases"] if p["id"] == "selection")
+    assert selection_phase["status"] == "completed"
+    assert selection_phase["progress"] == 100
+
+    # Reset
+    jm.reset()
+    status = jm.get_status()
+    assert status["status"] == "idle"
+    assert [p["id"] for p in status["phases"]] == expected_ids
+

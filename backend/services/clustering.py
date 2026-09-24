@@ -37,12 +37,13 @@ def _parse_exif_datetime(dt_str: str) -> float:
 
 
 def _hash_to_bits(hash_str: str) -> np.ndarray:
-    """Convierte un pHash hexadecimal a array de bits para calcular distancia de Hamming."""
+    """Convierte un pHash hexadecimal a array de 64 bits usando np.unpackbits."""
     try:
-        val = int(hash_str, 16)
-        bits = [(val >> i) & 1 for i in range(64)]
-        return np.array(bits, dtype=np.uint8)
-    except (ValueError, TypeError):
+        raw_bytes = bytes.fromhex(str(hash_str).strip())
+        if len(raw_bytes) < 8:
+            raw_bytes = raw_bytes.ljust(8, b"\x00")
+        return np.unpackbits(np.frombuffer(raw_bytes[:8], dtype=np.uint8))
+    except Exception:
         return np.zeros(64, dtype=np.uint8)
 
 
@@ -57,15 +58,17 @@ def cluster_images(
     scene_types: list[str],
     epsilon_hash: int = 12,
     max_time_gap_seconds: float = 5.0,
+    burst_ids: list[int | None] | None = None,
 ) -> list[ImageCluster]:
     """
-    Agrupa imágenes en ráfagas/grupos de similitud.
+    Agrupa imágenes en ráfagas/grupos de similitud de forma optimizada O(n·k)
+    mediante ventana temporal deslizante y componentes conexos (Union-Find).
 
     Estrategia:
-    1. Separa las imágenes en dos grupos: retratos y detalles.
-    2. Dentro de cada grupo, agrupa por similitud de pHash (distancia Hamming ≤ epsilon)
-       y proximidad temporal (diferencia de tiempo EXIF ≤ max_time_gap_seconds).
-    3. Imágenes sin fecha EXIF o con hash inválido se tratan como grupos individuales.
+    1. Separa las imágenes por tipo de escena ("portrait" | "detail").
+    2. Dentro de cada tipo, ordena por timestamp EXIF y compara únicamente dentro
+       de una ventana temporal deslizante (|Δt| <= 2 * max_time_gap_seconds).
+    3. Imágenes sin fecha EXIF o hashes inválidos se evalúan de forma segura.
 
     Args:
         phashes: Lista de pHash hexadecimales.
@@ -84,60 +87,108 @@ def cluster_images(
     # Convertir hashes y fechas
     hash_bits = [_hash_to_bits(h) for h in phashes]
     timestamps = [_parse_exif_datetime(dt) for dt in exif_datetimes]
+    if burst_ids is None:
+        burst_ids = [None] * n
 
-    # Construir matriz de distancia combinada (hash + temporal)
-    # Normalizamos ambas métricas a [0,1] y las combinamos
-    distance_matrix = np.zeros((n, n), dtype=np.float32)
+    # --- Adaptive Threshold ---
+    valid_ts = sorted([t for t in timestamps if t > 0])
+    if len(valid_ts) > 10:
+        dts = np.diff(valid_ts)
+        median_dt = float(np.median(dts[dts < 60.0])) # ignorar saltos > 1 min
+        if median_dt < 1.5:
+            max_time_gap_seconds = min(max_time_gap_seconds, 2.0)
+            epsilon_hash = min(epsilon_hash, 10)
+        elif median_dt > 4.0:
+            max_time_gap_seconds = max(max_time_gap_seconds, 6.0)
+            epsilon_hash = max(epsilon_hash, 14)
+    # --------------------------
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            # Solo agrupar imágenes del mismo tipo de escena
-            if scene_types[i] != scene_types[j]:
-                distance_matrix[i, j] = 9999.0
-                distance_matrix[j, i] = 9999.0
-                continue
+    # Estructura Union-Find con compresión de caminos
+    parent = list(range(n))
 
-            hash_dist = _hamming_distance(hash_bits[i], hash_bits[j])
+    def find(i: int) -> int:
+        path = []
+        while parent[i] != i:
+            path.append(i)
+            i = parent[i]
+        for node in path:
+            parent[node] = i
+        return i
 
-            # Distancia temporal (en segundos), ignorando si alguna es 0 (sin EXIF)
-            t_i, t_j = timestamps[i], timestamps[j]
-            if t_i > 0 and t_j > 0:
-                time_dist = abs(t_i - t_j)
-            else:
-                time_dist = 0.0  # Sin EXIF: no penalizar por tiempo
+    def union(i: int, j: int) -> None:
+        root_i, root_j = find(i), find(j)
+        if root_i != root_j:
+            parent[root_i] = root_j
 
-            # Combinar: si el hash es muy diferente O el tiempo es muy lejano → no agrupar
-            combined = hash_dist + (time_dist / max_time_gap_seconds) * (epsilon_hash / 2)
-            distance_matrix[i, j] = combined
-            distance_matrix[j, i] = combined
+    # Agrupar índices por tipo de escena
+    scene_groups: dict[str, list[int]] = {}
+    for idx, sc in enumerate(scene_types):
+        scene_groups.setdefault(sc, []).append(idx)
 
-    # DBSCAN con la matriz de distancia precalculada
-    db = DBSCAN(
-        eps=epsilon_hash,
-        min_samples=1,
-        metric="precomputed",
-    )
-    labels = db.fit_predict(distance_matrix)
+    max_dt_allowed = 2.0 * max_time_gap_seconds
 
-    # Construir clusters
+    for sc, indices in scene_groups.items():
+        has_time = [i for i in indices if timestamps[i] > 0]
+        no_time = [i for i in indices if timestamps[i] <= 0]
+
+        # 1. Comparar fotos con timestamp cronológico en ventana deslizante
+        has_time.sort(key=lambda idx: timestamps[idx])
+        for k in range(len(has_time)):
+            i = has_time[k]
+            t_i = timestamps[i]
+            h_i = hash_bits[i]
+            for m in range(k + 1, len(has_time)):
+                j = has_time[m]
+                dt = timestamps[j] - t_i
+                if dt > max_dt_allowed:
+                    break
+                h_dist = int(np.sum(h_i != hash_bits[j]))
+                
+                # Si las fotos tienen el mismo Burst ID (y no es None), forzamos la unión
+                b_i = burst_ids[i]
+                b_j = burst_ids[j]
+                if b_i is not None and b_i == b_j:
+                    union(i, j)
+                    continue
+
+                # Si las fotos fueron tomadas con <= 1.5s de diferencia, es la misma ráfaga
+                # incluso si el pHash cambia drásticamente por cambio de orientación (Horizontal vs Vertical).
+                if dt <= 1.5:
+                    union(i, j)
+                else:
+                    combined = h_dist + (dt / max_time_gap_seconds) * (epsilon_hash / 2)
+                    if combined <= epsilon_hash:
+                        union(i, j)
+
+        # 2. Comparar fotos sin timestamp (o 0) con el grupo
+        for i in no_time:
+            h_i = hash_bits[i]
+            for j in indices:
+                if i != j:
+                    h_dist = int(np.sum(h_i != hash_bits[j]))
+                    if h_dist <= epsilon_hash:
+                        union(i, j)
+
+    # Construir clusters a partir de las raíces de Union-Find
     clusters_dict: dict[int, list[int]] = {}
-    for idx, label in enumerate(labels):
-        if label not in clusters_dict:
-            clusters_dict[label] = []
-        clusters_dict[label].append(idx)
+    for idx in range(n):
+        root = find(idx)
+        clusters_dict.setdefault(root, []).append(idx)
+
+    # Ordenar clusters según el primer índice que aparece
+    sorted_groups = sorted(clusters_dict.values(), key=lambda g: min(g))
 
     clusters = []
-    for cluster_id, indices in sorted(clusters_dict.items()):
-      # Determinar el tipo de escena del cluster (todos deberían ser iguales)
-      scene = scene_types[indices[0]] if indices else "detail"
-      clusters.append(ImageCluster(
-          cluster_id=int(cluster_id),
-          scene_type=scene,
-          image_indices=indices,
-      ))
+    for cluster_id, indices in enumerate(sorted_groups):
+        scene = scene_types[indices[0]] if indices else "detail"
+        clusters.append(ImageCluster(
+            cluster_id=int(cluster_id),
+            scene_type=scene,
+            image_indices=indices,
+        ))
 
     logger.info(
-        f"Clustering: {n} imágenes → {len(clusters)} grupos "
+        f"Clustering O(n·k): {n} imágenes → {len(clusters)} grupos "
         f"({sum(1 for c in clusters if c.scene_type == 'portrait')} retratos, "
         f"{sum(1 for c in clusters if c.scene_type == 'detail')} detalles)"
     )
@@ -176,3 +227,51 @@ def assign_cluster_representatives(
         cluster.representative_index = cluster.image_indices[best_local_idx]
 
     return clusters
+
+
+def find_exact_duplicates(
+    phashes: list[str],
+    exif_datetimes: list[str] | None = None,
+    max_hamming_distance: int = 2,
+    max_time_gap_seconds: float = 3.0,
+) -> dict[int, int]:
+    """
+    Identifica fotos que son duplicados exactos o cuasi-idénticos (pHash dist <= max_hamming_distance).
+    Retorna un diccionario {indice_duplicado: indice_original_maestro}.
+    
+    Permite detectar ráfagas continuas donde varias fotos son prácticamente el mismo encuadre.
+    """
+    n = len(phashes)
+    if n <= 1:
+        return {}
+
+    hash_bits = [_hash_to_bits(h) for h in phashes]
+    timestamps = [_parse_exif_datetime(dt) for dt in exif_datetimes] if exif_datetimes else [0.0] * n
+
+    duplicates_map: dict[int, int] = {}
+    indices = list(range(n))
+    if any(t > 0 for t in timestamps):
+        indices.sort(key=lambda idx: (timestamps[idx] if timestamps[idx] > 0 else float("inf"), idx))
+
+    for k in range(len(indices)):
+        i = indices[k]
+        if i in duplicates_map:
+            continue
+        h_i = hash_bits[i]
+        t_i = timestamps[i]
+
+        for m in range(k + 1, len(indices)):
+            j = indices[m]
+            if j in duplicates_map:
+                continue
+
+            t_j = timestamps[j]
+            if t_i > 0 and t_j > 0 and (t_j - t_i) > max_time_gap_seconds:
+                break
+
+            h_dist = int(np.sum(h_i != hash_bits[j]))
+            if h_dist <= max_hamming_distance:
+                duplicates_map[j] = i
+
+    return duplicates_map
+
