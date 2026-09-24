@@ -255,9 +255,7 @@ def load_historical_session(req: LoadSessionRequest):
     if not snapshot or not snapshot.get("items"):
         raise HTTPException(status_code=404, detail="Sesión no encontrada o vacía.")
 
-    conn, analyses = get_all_analysis(directory)
-    if conn:
-        conn.close()
+    analyses = get_all_analysis(directory)
 
     settings = load_settings()
     ratings_map = settings.get("ratings_mapping", {})
@@ -275,18 +273,29 @@ def load_historical_session(req: LoadSessionRequest):
         stars = mapping.get("stars", 0)
         
         ana = ana_map.get(p)
-        cluster_id = hash(ana.phash) % 1000 if ana and ana.phash else 0
+        cluster_id = abs(hash(ana.phash)) % 1000 if ana and ana.phash else 0
         scene_type = ana.scene_type if ana else "unknown"
         aesthetic_score = ana.aesthetic_score if ana else 0
+        
+        diagnostics = {
+            "valid_face_count": getattr(ana, "valid_face_count", 0) if ana else 0,
+            "closed_eyes_count": getattr(ana, "closed_eyes_count", 0) if ana else 0,
+            "smiling_count": getattr(ana, "smiling_count", 0) if ana else 0,
+            "blur_score": getattr(ana, "blur_score", 0) if ana else 0,
+            "aesthetic_score": aesthetic_score,
+        } if ana else {}
             
         results.append({
             "path": p,
+            "filename": Path(p).name,
             "label": label,
             "stars": stars,
             "cluster_id": cluster_id,
+            "is_cluster_representative": label in ("selected", "highlighted", "recommended"),
             "scene_type": scene_type,
             "reasons": [],
             "score": aesthetic_score,
+            "diagnostics": diagnostics,
             "margin": 0,
             "crop": crops.get(p),
             "develop": develops.get(p),

@@ -47,10 +47,10 @@ export const Topbar: React.FC<TopbarProps> = ({
       case 'library':
         return (
           <div className="flex items-center gap-2">
-            <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+            <span style={{ fontSize: '15px', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               Biblioteca de Sesiones
             </span>
-            <span className="text-secondary" style={{ fontSize: 'var(--text-sm)' }}>
+            <span className="text-tertiary" style={{ fontSize: 'var(--text-xs)' }}>
               · Historial y Sincronización
             </span>
           </div>
@@ -58,11 +58,11 @@ export const Topbar: React.FC<TopbarProps> = ({
       case 'duel':
         return (
           <div className="flex items-center gap-2">
-            <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+            <span style={{ fontSize: '15px', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               Comparar Ráfagas
             </span>
             {totalClusters > 0 && (
-              <span className="text-secondary" style={{ fontSize: 'var(--text-sm)' }}>
+              <span className="text-secondary font-mono" style={{ fontSize: 'var(--text-xs)' }}>
                 · {totalClusters} grupos detectados
               </span>
             )}
@@ -72,10 +72,10 @@ export const Topbar: React.FC<TopbarProps> = ({
       case 'style':
         return (
           <div className="flex items-center gap-2">
-            <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+            <span style={{ fontSize: '15px', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               Tu Estilo
             </span>
-            <span className="text-tertiary" style={{ fontSize: 'var(--text-sm)' }}>
+            <span className="text-tertiary" style={{ fontSize: 'var(--text-xs)' }}>
               · Perfil fotográfico aprendido
             </span>
           </div>
@@ -83,15 +83,21 @@ export const Topbar: React.FC<TopbarProps> = ({
       case 'grid':
       default:
         return (
-          <div className="flex items-center gap-2">
-            <span style={{ fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)' }}>
+          <div className="flex items-center gap-2.5">
+            <span style={{ fontSize: '15px', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
               {folderName ? folderName : 'Culling Workspace'}
             </span>
             {totalPhotos > 0 && (
-              <span className="text-secondary text-mono" style={{ fontSize: 'var(--text-sm)' }}>
-                · {totalPhotos.toLocaleString()} fotografías
-                {totalClusters > 0 ? ` · ${totalClusters} ráfagas` : ''}
-              </span>
+              <div className="flex items-center gap-1.5 font-mono text-secondary" style={{ fontSize: 'var(--text-xs)' }}>
+                <span className="text-tertiary">·</span>
+                <span>{totalPhotos.toLocaleString()} fotos</span>
+                {totalClusters > 0 && (
+                  <>
+                    <span className="text-tertiary">·</span>
+                    <span>{totalClusters} ráfagas</span>
+                  </>
+                )}
+              </div>
             )}
           </div>
         );
@@ -105,17 +111,24 @@ export const Topbar: React.FC<TopbarProps> = ({
         {renderViewContext()}
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex items-center gap-2">
+      {/* Quick Actions & Processing Indicator */}
+      <div className="flex items-center gap-3">
+        {isProcessing && (
+          <div className="flex items-center gap-2 text-xs font-mono" style={{ color: 'var(--accent-primary)', marginRight: '4px' }}>
+            <span className="gf-dot gf-dot-warning" />
+            <span>{progressPercent}%</span>
+          </div>
+        )}
+
         {onOpenShortcuts && (
           <Tooltip content="Atajos de teclado (?)" position="bottom">
             <button
               className="gf-btn gf-btn-ghost gf-btn-sm"
               onClick={onOpenShortcuts}
               aria-label="Atajos de teclado"
-              style={{ padding: '6px' }}
+              style={{ padding: '6px 8px' }}
             >
-              <IconHelp size={16} />
+              <IconHelp size={15} />
             </button>
           </Tooltip>
         )}
@@ -128,8 +141,8 @@ export const Topbar: React.FC<TopbarProps> = ({
               aria-label="Herramientas Cliente"
               style={{ gap: '6px', color: 'var(--accent-primary)' }}
             >
-              <IconLibrary size={16} />
-              <span style={{ fontSize: 'var(--text-sm)' }}>Cliente</span>
+              <IconLibrary size={15} />
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--fw-medium)' }}>Cliente</span>
             </button>
           </Tooltip>
         )}
@@ -141,8 +154,8 @@ export const Topbar: React.FC<TopbarProps> = ({
             aria-label="Configuración"
             style={{ gap: '6px' }}
           >
-            <IconSettings size={16} />
-            <span style={{ fontSize: 'var(--text-sm)' }}>Ajustes</span>
+            <IconSettings size={15} />
+            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--fw-medium)' }}>Ajustes</span>
           </button>
         </Tooltip>
       </div>

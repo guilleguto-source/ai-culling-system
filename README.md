@@ -201,4 +201,32 @@ ai_culling_system/
 
 ---
 
+## 📜 Historial de Versiones y Evolución del Motor
+
+Para consultar el análisis técnico detallado, los benchmarks completos y la arquitectura interna de cada versión, revisa el [CHANGELOG.md](CHANGELOG.md).
+
+### Tabla de Evolución Tecnológica e IA
+
+| Componente / Tarea | Enfoque Anterior | Enfoque Actual (`v2.3`) | Motivo & Beneficio Clave |
+| :--- | :--- | :--- | :--- |
+| **Detección Facial** | MediaPipe FaceMesh | **UniFace (SCRFD ONNX)** | Eliminación de dependencias pesadas (-200MB) y +40% FPS en CPU. |
+| **Reconocimiento Facial** | InsightFace | **ArcFace (UniFace 512D)** | Integración limpia en ONNX Runtime sin dependencias C++ conflictivas. |
+| **Búsqueda Semántica** | CLIP ViT-B/32 | **SigLIP Local** | -25% falsos positivos en descripciones complejas de eventos y bodas. |
+| **Detección de Ráfagas** | pHash visual + $\Delta t$ fijo | **Rust MakerNotes + Adaptive DBSCAN** | 100% de fiabilidad en ráfagas de cámara; tolerante a grano ISO alto. |
+| **Selección de Candidatas**| Score estático | **Hero Shot (Yaw $< 15^\circ$) + Pacing** | Prioriza mirada frontal directa y evita huecos narrativos en el evento. |
+| **Storyline & Ritmo** | Línea de tiempo plana | **Storyline 2.0 con Escisión B-Roll** | Aísla tomas de detalles/decoración para no alterar el ritmo cronológico. |
+| **Interfaz & Renderizado** | DOM estándar | **Digital Darkroom + `react-virtuoso`** | Interfaz oscura profesional con renderizado a 60 FPS en 15,000+ fotos. |
+
+### Resumen de Versiones
+
+* **v2.3.0 (Actual):** Extracción nativa de MakerNotes en Rust (Sony/Nikon/Canon), DBSCAN adaptativo, Hero Shot por ángulo *Yaw*, Storyline 2.0 con B-Roll y rediseño UI "Digital Darkroom".
+* **v2.1.0:** Motor de Selección V2 con supervivencia por capítulo, soporte unificado para pares RAW+JPEG, suite de herramientas de cliente y persistencia histórica en SQLite.
+* **v2.0.0:** Re-arquitectura limpia con migración integral a UniFace (SCRFD + ArcFace), SigLIP semántico, Lazy Loading de modelos (-73% cold start) y 325 pruebas unitarias.
+* **v1.3.0:** Storyline 1.0, streaming de progreso en tiempo real con SSE, multi-selección avanzada (`Ctrl+A`, `Shift+Click`) y reglas de orientación H/V.
+* **v1.2.0:** Búsqueda semántica offline, refinamiento con modelos de visión (VLM), lupa de inspección al 100% y pipeline de empaquetado de producción para Windows.
+* **v1.1.0:** Sincronización y aprendizaje bidireccional desde Lightroom Classic, Modo Duelo (Duel View) y calibración de preferencias de usuario.
+* **v1.0.0:** MVP inicial con motor de culling automático (blur, parpadeo, clustering), pre-edición tonal y auto-crop no destructivo inyectado en `.XMP`.
+
+---
+
 © 2026 Guto Flow. Todos los derechos reservados.

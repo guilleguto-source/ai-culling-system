@@ -102,29 +102,40 @@
   --space-16: 64px;
 
   /* --- Layout Shell Dimensions --- */
-  --sidebar-width: 250px;
-  --topbar-height: 48px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
+  --topbar-height: 56px;
+  --inspector-width: 320px;
 
   /* --- Border Radius --- */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-pill: 9999px;
   --radius-photo: 2px;         /* Las fotografías no deben tener redondeo excesivo */
 
-  /* --- Sombras Sutiles (Contraste fotográfico) --- */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  /* --- Sombras Darkroom (Contraste fotográfico y elevación) --- */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-elevated: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-dropdown: 0 10px 15px rgba(0, 0, 0, 0.5);
+  --shadow-sm: var(--shadow-card);
+  --shadow-md: var(--shadow-elevated);
   --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.55);
-  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-glow-amber: 0 0 20px rgba(231, 161, 58, 0.12);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.65);
+  --shadow-guto: 0 0 20px rgba(233, 160, 74, 0.15);
+  --shadow-glow-amber: var(--shadow-guto);
+
+  /* --- Glassmorphism sutil para overlays flotantes --- */
+  --glass-bg: rgba(19, 22, 29, 0.85);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --glass-blur: blur(12px);
 
   /* --- Transiciones y Curvas --- */
   --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --t-fast: 120ms;
-  --t-normal: 220ms;
+  --t-fast: 150ms;
+  --t-normal: 250ms;
   --t-slow: 350ms;
 
   --transition-fast: var(--t-fast) var(--ease-out);

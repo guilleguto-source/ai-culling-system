@@ -138,26 +138,25 @@ export default function LibraryView({
       <div className="flex-between items-center" style={{
         backgroundColor: 'var(--color-surface)',
         padding: 'var(--space-4) var(--space-6)',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--border-subtle)',
-        boxShadow: 'var(--shadow-sm)'
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--border-default)',
+        boxShadow: 'var(--shadow-card)'
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div className="flex items-center gap-2">
             <h1 style={{
-              fontSize: 'var(--text-xl)',
+              fontSize: '16px',
               fontWeight: 'var(--fw-bold)',
               color: 'var(--text-primary)',
-              margin: 0
+              margin: 0,
+              letterSpacing: '-0.02em'
             }}>
               Evento: {eventName}
             </h1>
-            <IconEdit size={16} style={{ color: 'var(--text-muted)', cursor: 'pointer' }} />
+            <IconEdit size={15} style={{ color: 'var(--text-tertiary)', cursor: 'pointer' }} />
           </div>
-          <span style={{
-            fontSize: 'var(--text-xs)',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)'
+          <span className="font-mono text-tertiary" style={{
+            fontSize: '11px'
           }}>
             {directory || 'Selecciona una carpeta para comenzar'}
           </span>
@@ -169,7 +168,7 @@ export default function LibraryView({
               <Button
                 variant="secondary"
                 size="sm"
-                icon={<IconFolder size={15} />}
+                icon={<IconFolder size={14} />}
                 onClick={() => {
                   try {
                     apiClient.openCacheFolder();
@@ -178,12 +177,12 @@ export default function LibraryView({
                   }
                 }}
               >
-                Abrir en Explorer
+                Explorador
               </Button>
               <Button
                 variant="primary"
                 size="sm"
-                icon={<IconSync size={15} className={syncingDir === directory ? 'animate-spin' : ''} />}
+                icon={<IconSync size={14} className={syncingDir === directory ? 'animate-spin' : ''} />}
                 onClick={() => handleSyncLightroom(directory)}
                 disabled={syncingDir === directory}
               >
@@ -193,7 +192,7 @@ export default function LibraryView({
                 <Button
                   variant="outline"
                   size="sm"
-                  icon={<IconLibrary size={15} />}
+                  icon={<IconLibrary size={14} />}
                   onClick={() => onOpenClientTools(directory)}
                 >
                   Cliente
@@ -205,7 +204,7 @@ export default function LibraryView({
             <Button
               variant="outline"
               size="sm"
-              icon={<IconFolder size={15} />}
+              icon={<IconFolder size={14} />}
               onClick={onOpenFolderPicker}
             >
               Cargar otra sesión
@@ -222,30 +221,31 @@ export default function LibraryView({
       }}>
         <div style={{
           backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-md)',
           padding: 'var(--space-4) var(--space-5)',
           display: 'flex',
           alignItems: 'center',
-          gap: 'var(--space-4)'
+          gap: 'var(--space-4)',
+          boxShadow: 'var(--shadow-card)'
         }}>
           <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 'var(--radius-md)',
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            width: 40,
+            height: 40,
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--color-surface-elevated)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--text-secondary)'
           }}>
-            <IconCamera size={22} />
+            <IconCamera size={20} />
           </div>
           <div>
-            <div style={{ fontSize: 'var(--text-2xl)', fontWeight: 'var(--fw-bold)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+            <div className="font-mono" style={{ fontSize: '20px', fontWeight: 'var(--fw-bold)', color: 'var(--text-primary)' }}>
               {activePhotosCount.toLocaleString()}
             </div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Fotografías</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fotografías</div>
           </div>
         </div>
 
@@ -516,8 +516,9 @@ export default function LibraryView({
                     key={proj.directory}
                     onClick={() => setSelectedProj(proj)}
                     style={{
-                      backgroundColor: isActive ? 'rgba(231, 161, 58, 0.04)' : isSelected ? 'var(--color-surface-elevated)' : 'var(--color-surface)',
-                      border: `1px solid ${isActive ? 'var(--accent-primary)' : isSelected ? 'var(--border-default)' : 'var(--border-subtle)'}`,
+                      backgroundColor: isActive ? 'rgba(233, 160, 74, 0.04)' : isSelected ? 'var(--color-surface-elevated)' : 'var(--color-surface)',
+                      border: `1px solid ${isActive ? 'var(--accent-primary)' : isSelected ? 'var(--border-strong)' : 'var(--border-default)'}`,
+                      boxShadow: isActive ? 'var(--shadow-guto)' : 'var(--shadow-card)',
                       borderRadius: 'var(--radius-md)',
                       padding: 'var(--space-3) var(--space-4)',
                       display: 'flex',
@@ -533,14 +534,14 @@ export default function LibraryView({
                       <div style={{
                         width: 56,
                         height: 42,
-                        borderRadius: 'var(--radius-sm)',
+                        borderRadius: 'var(--radius-photo)',
                         backgroundColor: 'var(--color-surface-elevated)',
                         overflow: 'hidden',
                         flexShrink: 0,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        border: '1px solid var(--border-subtle)'
+                        border: '1px solid var(--border-default)'
                       }}>
                         {proj.sample_photo ? (
                           <img
@@ -552,14 +553,14 @@ export default function LibraryView({
                             }}
                           />
                         ) : (
-                          <IconCamera size={18} style={{ color: 'var(--text-muted)' }} />
+                          <IconCamera size={18} style={{ color: 'var(--text-tertiary)' }} />
                         )}
                       </div>
 
                       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <div className="flex items-center gap-2">
                           <span style={{
-                            fontSize: 'var(--text-sm)',
+                            fontSize: '13px',
                             fontWeight: 'var(--fw-semibold)',
                             color: 'var(--text-primary)'
                           }} className="truncate">
@@ -570,7 +571,7 @@ export default function LibraryView({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-3" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                        <div className="flex items-center gap-3 font-mono text-tertiary" style={{ fontSize: '11px' }}>
                           <span>{proj.total_photos.toLocaleString()} fotos</span>
                           <span>·</span>
                           <span style={{ color: 'var(--success)' }}>{proj.selected_count} elegidas</span>

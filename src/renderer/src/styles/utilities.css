@@ -42,3 +42,17 @@
 .border-subtle { border: 1px solid var(--border-subtle); }
 .border-default { border: 1px solid var(--border-default); }
 .border-strong { border: 1px solid var(--border-strong); }
+
+/* Overlays & Darkroom Glass */
+.glass-panel-dark {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+}
+
+/* Tracking Helpers */
+.tracking-tight { letter-spacing: -0.025em; }
+.tracking-wide { letter-spacing: 0.05em; }
+.tracking-widest { letter-spacing: 0.1em; }
+.font-mono { font-family: var(--font-mono); }

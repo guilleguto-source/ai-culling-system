@@ -12,13 +12,13 @@ from services.thumbnail_store import thumb_url
 
 logger = logging.getLogger(__name__)
 
-# Storyline 2.0 - Parámetros de segmentación ajustados
-MIN_SEGMENT_PHOTOS = 6                  # Min fotos para considerar un segmento consolidado
-MIN_SEGMENT_DURATION_MINUTES = 1.0      # Min duración de un segmento antes de permitir un soft cut por escena
-MIN_SEMANTIC_PHOTOS = 3                 # Min fotos antes de empezar a chequear cambios semánticos
+# Storyline 2.0 - Parámetros de segmentación calibrados para eventos de varias horas
+MIN_SEGMENT_PHOTOS = 10                 # Min fotos para considerar un segmento consolidado
+MIN_SEGMENT_DURATION_MINUTES = 3.0      # Min duración antes de permitir un soft cut semántico
+MIN_SEMANTIC_PHOTOS = 5                 # Min fotos antes de chequear cambios semánticos
 
-HARD_GAP_MINUTES = 3.0                  # Inactividad absoluta (corte seguro)
-SOFT_GAP_MINUTES = 1.0                  # Pausa notable en sesión activa
+HARD_GAP_MINUTES = 15.0                 # Inactividad absoluta (cambio de lugar real, descanso largo)
+SOFT_GAP_MINUTES = 5.0                  # Pausa notable entre momentos del evento (ej. cena → baile)
 CONTEXT_CHANGE_THRESHOLD = 0.12         # Sensibilidad semántica estándar
 STRONG_SCENE_CHANGE = 0.18              # Cambio drástico de ambiente/escena corta
 
@@ -145,8 +145,8 @@ def build_storyline(directory: str) -> list[dict]:
         if delta_sec > HARD_GAP_MINUTES * 60:
             force_cut = True
             
-        # Señal B: Soft Gap (Pausa notable >= 2 min con suficientes fotos en el segmento)
-        elif delta_sec > SOFT_GAP_MINUTES * 60 and len(current_segment) >= MIN_SEMANTIC_PHOTOS:
+        # Señal B: Soft Gap (Pausa notable >= SOFT_GAP_MINUTES, independiente del tamaño del segmento)
+        elif delta_sec > SOFT_GAP_MINUTES * 60:
             force_cut = True
             
         # Señal C: Cambio Semántico de Escena
@@ -178,38 +178,47 @@ def build_storyline(directory: str) -> list[dict]:
         segments.append(current_segment)
 
     # 3.5 Extraer "B-Roll / Detalles" en un segmento especial
+    # Solo se mueven fotos "detail" si el segmento tiene suficientes no-detail para seguir siendo válido
+    BROLL_MIN_MAIN_PHOTOS = 8   # Mínimo de fotos no-detail para que el segmento sobreviva la extracción
     broll_segment = []
     main_segments = []
     for segment in segments:
-        main_seg = []
-        for p in segment:
-            if p.get("scene_type") == "detail":
-                broll_segment.append(p)
-            else:
-                main_seg.append(p)
-        if main_seg:
+        main_seg = [p for p in segment if p.get("scene_type") != "detail"]
+        detail_seg = [p for p in segment if p.get("scene_type") == "detail"]
+
+        if len(main_seg) >= BROLL_MIN_MAIN_PHOTOS:
+            # El segmento tiene suficientes retratos: extraer el detalle
+            broll_segment.extend(detail_seg)
             main_segments.append(main_seg)
-    
+        else:
+            # Segmento pequeño: conservar todo junto para no dejarlo vacío
+            main_segments.append(segment)
+
     if broll_segment:
-        # B-Roll as a single separate segment at the end
+        # B-Roll como segmento especial al final, marcado con id especial
         main_segments.append(broll_segment)
 
     segments = main_segments
 
     # 4. Asignar IDs y crear diccionarios de segmentos iniciales
-    # Para permitir reasignación, usamos un mapa.
+    # El último segmento puede ser el B-Roll si existe
     chapter_map = {}
+    broll_segment_data = main_segments[-1] if broll_segment else None
+    moment_idx = 0
+
     for c_idx, segment in enumerate(segments):
-        c_id = f"segment_{c_idx}"
+        is_broll = broll_segment and segment is broll_segment_data
+        c_id = "segment_broll" if is_broll else f"segment_{moment_idx}"
         paths = [p["path"] for p in segment]
-        
+
         # Ordenamos temporalmente solo para sacar el medoid cronológico y horas
         segment.sort(key=lambda x: x["dt"])
         medoid_path = segment[len(segment) // 2]["path"]
-        
+
         chapter_map[c_id] = {
             "id": c_id,
-            "name": f"Momento {c_idx + 1}",
+            "name": "B-Roll / Detalles" if is_broll else f"Momento {moment_idx + 1}",
+            "is_broll": is_broll,
             "start_time": segment[0]["dt"].strftime("%H:%M"),
             "end_time": segment[-1]["dt"].strftime("%H:%M"),
             "photo_count": len(paths),
@@ -217,6 +226,8 @@ def build_storyline(directory: str) -> list[dict]:
             "medoid_path": medoid_path,
             "paths": paths
         }
+        if not is_broll:
+            moment_idx += 1
 
     # 5. Aplicar Overrides Manuales (si los hay)
     overrides = load_overrides(directory)

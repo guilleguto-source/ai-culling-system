@@ -28,3 +28,30 @@ def test_session_history_store_learning(tmp_path):
     assert est["samples_count"] == 3
     # Debe haber bajado significativamente del 35% teórico hacia el ~22% real
     assert est["estimated_percentage"] < 30
+
+def test_load_historical_session(tmp_path, monkeypatch):
+    from routers.culling import load_historical_session, LoadSessionRequest
+    from services.analysis import PhotoAnalysis
+
+    dummy_dir = str(tmp_path / "photos")
+
+    # Mock snapshot
+    monkeypatch.setattr("services.export_snapshot.load_snapshot", lambda d: {
+        "items": {f"{dummy_dir}/img1.jpg": "selected", f"{dummy_dir}/img2.jpg": "blurry"},
+        "crops": {},
+        "develops": {},
+        "identities": {}
+    })
+
+    # Mock analysis_store.get_all_analysis returning a list (NOT a tuple)
+    ana1 = PhotoAnalysis(path=f"{dummy_dir}/img1.jpg", mtime=123.0, index=0, phash="abcdef", aesthetic_score=0.85)
+    ana2 = PhotoAnalysis(path=f"{dummy_dir}/img2.jpg", mtime=123.0, index=1, phash="abcdef", aesthetic_score=0.45)
+    monkeypatch.setattr("services.analysis_store.get_all_analysis", lambda d: [ana1, ana2])
+
+    req = LoadSessionRequest(directory=dummy_dir)
+    res = load_historical_session(req)
+
+    assert res["status"] == "completed"
+    assert len(res["results"]) == 2
+    assert res["results"][0]["filename"] == "img1.jpg"
+    assert res["results"][0]["diagnostics"]["aesthetic_score"] == 0.85

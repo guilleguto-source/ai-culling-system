@@ -171,42 +171,42 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
               display: 'flex',
               flexDirection: 'column',
               backgroundColor: 'var(--color-surface)',
-              border: '1px solid rgba(53, 201, 149, 0.4)',
+              border: '1px solid var(--accent-primary)',
               borderRadius: 'var(--radius-md)',
               overflow: 'hidden',
-              boxShadow: 'var(--shadow-md)'
+              boxShadow: 'var(--shadow-guto)'
             }}
           >
             {/* Card Header */}
             <div
               style={{
-                padding: '10px 14px',
+                padding: '10px 16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                borderBottom: '1px solid var(--border-subtle)',
-                backgroundColor: 'rgba(53, 201, 149, 0.06)'
+                borderBottom: '1px solid var(--border-default)',
+                backgroundColor: 'rgba(233, 160, 74, 0.06)'
               }}
             >
               <div>
-                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--success)' }}>
-                  Candidato IA
+                <div style={{ fontSize: '13px', fontWeight: 'var(--fw-bold)', color: 'var(--accent-primary)', letterSpacing: '0.02em' }}>
+                  Candidato Recomendado (IA)
                 </div>
                 <div className="flex items-center gap-1" style={{ color: 'var(--accent-primary)', fontSize: '11px', marginTop: '2px' }}>
                   {[1, 2, 3, 4, 5].map(star => (
-                    <IconStar key={star} size={12} filled={star <= 4} />
+                    <IconStar key={star} size={11} filled={star <= 4} />
                   ))}
                 </div>
               </div>
               <span
-                className="text-mono"
+                className="font-mono"
                 style={{
-                  backgroundColor: 'var(--success)',
-                  color: '#0B0D10',
+                  backgroundColor: 'var(--accent-primary)',
+                  color: '#08090C',
                   fontWeight: 'var(--fw-bold)',
-                  padding: '3px 8px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontSize: 'var(--text-xs)'
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '11px'
                 }}
               >
                 {repScorePct !== null ? `${repScorePct}%` : '—'}
@@ -214,7 +214,7 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
             </div>
 
             {/* Photo Loupe */}
-            <div style={{ flex: 1, minHeight: '320px', backgroundColor: '#000000', position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: '320px', backgroundColor: 'var(--color-bg)', position: 'relative' }}>
               <Loupe
                 src={apiClient.getThumbnailUrl(representative.path, 'duel')}
                 alt={representative.filename}
@@ -223,15 +223,15 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
             </div>
 
             {/* Bullets Pros */}
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-subtle)' }}>
-              <div className="flex items-center gap-2 text-success" style={{ fontSize: 'var(--text-xs)' }}>
-                <IconCheck size={14} /> <span>Ojos abiertos y nítidos</span>
+            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--border-default)' }}>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Ojos abiertos y nítidos</span>
               </div>
-              <div className="flex items-center gap-2 text-success" style={{ fontSize: 'var(--text-xs)' }}>
-                <IconCheck size={14} /> <span>Mejor expresión facial</span>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Mejor expresión facial</span>
               </div>
-              <div className="flex items-center gap-2 text-success" style={{ fontSize: 'var(--text-xs)' }}>
-                <IconCheck size={14} /> <span>Coincide con tu perfil de estilo</span>
+              <div className="flex items-center gap-2 text-success" style={{ fontSize: '11px' }}>
+                <IconCheck size={13} /> <span>Coincide con tu perfil de estilo</span>
               </div>
 
               <Button
@@ -239,9 +239,9 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
                 size="md"
                 onClick={handleApproveRepresentative}
                 style={{ marginTop: 'var(--space-2)', width: '100%' }}
-                icon={<IconCheck size={16} />}
+                icon={<IconCheck size={15} />}
               >
-                Elegir esta (P)
+                Elegir esta foto (P)
               </Button>
             </div>
           </div>
@@ -255,39 +255,39 @@ export default function DuelView({ results, onBackToGrid }: DuelViewProps) {
               border: '1px solid var(--border-default)',
               borderRadius: 'var(--radius-md)',
               overflow: 'hidden',
-              boxShadow: 'var(--shadow-md)'
+              boxShadow: 'var(--shadow-card)'
             }}
           >
             {/* Card Header */}
             <div
               style={{
-                padding: '10px 14px',
+                padding: '10px 16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                borderBottom: '1px solid var(--border-subtle)'
+                borderBottom: '1px solid var(--border-default)'
               }}
             >
               <div>
-                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-bold)', color: 'var(--text-secondary)' }}>
+                <div style={{ fontSize: '13px', fontWeight: 'var(--fw-bold)', color: 'var(--text-secondary)' }}>
                   Alternativa #{alternative !== representative ? '2' : '1'}
                 </div>
-                <div className="flex items-center gap-1" style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px' }}>
+                <div className="flex items-center gap-1" style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginTop: '2px' }}>
                   {[1, 2, 3, 4, 5].map(star => (
-                    <IconStar key={star} size={12} filled={star <= 3} />
+                    <IconStar key={star} size={11} filled={star <= 3} />
                   ))}
                 </div>
               </div>
               <span
-                className="text-mono"
+                className="font-mono"
                 style={{
                   backgroundColor: 'var(--color-surface-elevated)',
                   color: 'var(--text-secondary)',
                   fontWeight: 'var(--fw-bold)',
-                  padding: '3px 8px',
-                  borderRadius: 'var(--radius-pill)',
-                  fontSize: 'var(--text-xs)',
-                  border: '1px solid var(--border-subtle)'
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '11px',
+                  border: '1px solid var(--border-default)'
                 }}
               >
                 {altScorePct !== null ? `${altScorePct}%` : '—'}

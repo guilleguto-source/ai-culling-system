@@ -287,6 +287,7 @@ export interface StorylinePhoto {
 export interface StorylineChapter {
   id: string;
   name: string;
+  is_broll?: boolean;
   start_time: string;
   end_time: string;
   photo_count: number;
