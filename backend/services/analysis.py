@@ -9,6 +9,7 @@ from services.technical_quality import evaluate_technical_quality, max_region_sh
 from services.aesthetic_assessment import evaluate_aesthetics_fast, evaluate_aesthetics_detailed
 from services.pre_edit import measure_luminance, estimate_wb, TARGET_MID
 from services import tonal_rescue
+from services.bw_recommender import compute_bw_recommendation
 
 logger = logging.getLogger("analysis")
 
@@ -58,6 +59,10 @@ class PhotoAnalysis:
     pre_clip_frac: float = 0.0
     pre_wb: tuple[float, float] | None = None
     tonal_adjustments: dict = field(default_factory=dict)
+    
+    is_bw_candidate: bool = False
+    bw_score: float = 0.0
+    bw_reasons: list = field(default_factory=list)
     
     error: str = ""
 
@@ -194,5 +199,11 @@ def analyze_photo(
     if pre_edit_enabled:
         tonal_rep = tonal_rescue.analyze_tonal_range(arr, analysis.face_bboxes)
         analysis.tonal_adjustments = tonal_rescue.suggest_tonal_adjustments(tonal_rep)
+
+    # Recomendación de Blanco y Negro (B&N)
+    bw_cand, bw_sc, bw_reas = compute_bw_recommendation(arr, analysis.face_bboxes)
+    analysis.is_bw_candidate = bw_cand
+    analysis.bw_score = bw_sc
+    analysis.bw_reasons = bw_reas
 
     return analysis

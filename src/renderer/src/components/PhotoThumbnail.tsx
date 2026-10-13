@@ -139,6 +139,30 @@ export const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
           </div>
         )}
 
+        {/* B&N Candidate Badge (Top Right) */}
+        {(photo.is_bw_candidate || photo.diagnostics?.is_bw_candidate) && (
+          <div
+            title={(photo.bw_reasons || photo.diagnostics?.bw_reasons || ['Recomendada para Blanco y Negro']).join(' • ')}
+            style={{
+              position: 'absolute',
+              top: '6px',
+              right: '6px',
+              padding: '2px 5px',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '9px',
+              fontWeight: 'var(--fw-bold)',
+              letterSpacing: '0.4px',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              color: '#FFFFFF',
+              border: '1px solid rgba(255, 255, 255, 0.35)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 2
+            }}
+          >
+            B&N
+          </div>
+        )}
+
         {/* AI Score Badge (Bottom Left) */}
         {photo.score !== undefined && photo.score > 0.8 && (
           <div

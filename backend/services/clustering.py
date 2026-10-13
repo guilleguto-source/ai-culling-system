@@ -59,6 +59,7 @@ def cluster_images(
     epsilon_hash: int = 12,
     max_time_gap_seconds: float = 5.0,
     burst_ids: list[int | None] | None = None,
+    face_counts: list[int] | None = None,
 ) -> list[ImageCluster]:
     """
     Agrupa imágenes en ráfagas/grupos de similitud de forma optimizada O(n·k)
@@ -144,6 +145,14 @@ def cluster_images(
                     break
                 h_dist = int(np.sum(h_i != hash_bits[j]))
                 
+                # Si una foto tiene 1 persona y otra tiene 2 (o diferente número de caras),
+                # no son duplicadas de ráfaga
+                if face_counts is not None:
+                    fc_i = face_counts[i]
+                    fc_j = face_counts[j]
+                    if fc_i != fc_j and (fc_i > 0 or fc_j > 0):
+                        continue
+
                 # Si las fotos tienen el mismo Burst ID (y no es None), forzamos la unión
                 b_i = burst_ids[i]
                 b_j = burst_ids[j]
@@ -165,6 +174,11 @@ def cluster_images(
             h_i = hash_bits[i]
             for j in indices:
                 if i != j:
+                    if face_counts is not None:
+                        fc_i = face_counts[i]
+                        fc_j = face_counts[j]
+                        if fc_i != fc_j and (fc_i > 0 or fc_j > 0):
+                            continue
                     h_dist = int(np.sum(h_i != hash_bits[j]))
                     if h_dist <= epsilon_hash:
                         union(i, j)

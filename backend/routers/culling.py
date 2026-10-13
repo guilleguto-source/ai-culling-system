@@ -283,7 +283,10 @@ def load_historical_session(req: LoadSessionRequest):
             "smiling_count": getattr(ana, "smiling_count", 0) if ana else 0,
             "blur_score": getattr(ana, "blur_score", 0) if ana else 0,
             "aesthetic_score": aesthetic_score,
-        } if ana else {}
+            "is_bw_candidate": getattr(ana, "is_bw_candidate", False) if ana else False,
+            "bw_score": getattr(ana, "bw_score", 0.0) if ana else 0.0,
+            "bw_reasons": getattr(ana, "bw_reasons", []) if ana else [],
+        }
             
         results.append({
             "path": p,
@@ -292,6 +295,9 @@ def load_historical_session(req: LoadSessionRequest):
             "stars": stars,
             "cluster_id": cluster_id,
             "is_cluster_representative": label in ("selected", "highlighted", "recommended"),
+            "is_bw_candidate": getattr(ana, "is_bw_candidate", False) if ana else False,
+            "bw_score": getattr(ana, "bw_score", 0.0) if ana else 0.0,
+            "bw_reasons": getattr(ana, "bw_reasons", []) if ana else [],
             "scene_type": scene_type,
             "reasons": [],
             "score": aesthetic_score,
@@ -624,6 +630,7 @@ def _run_culling_pipeline(
                 [a.scene_type for a in analyses],
                 epsilon_hash=dbscan_epsilon,
                 burst_ids=[r.burst_id for r in records],
+                face_counts=[a.valid_face_count for a in analyses],
             )
             clusters = assign_cluster_representatives(clusters, [a.blur_score for a in analyses], [a.aesthetic_score for a in analyses])
         else:

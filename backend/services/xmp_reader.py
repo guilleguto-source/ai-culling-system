@@ -19,10 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def _crs_fields(desc, fields: tuple[str, ...]) -> dict:
-    """Lee campos crs (revelado/recorte) de un rdf:Description como números."""
+    """Lee campos crs (revelado/recorte) de un rdf:Description como números (atributos o hijos)."""
     out = {}
     for f in fields:
         v = desc.get(f"{{{NS['crs']}}}{f}")
+        if v is None:
+            el = desc.find(f"{{{NS['crs']}}}{f}")
+            if el is not None and el.text:
+                v = el.text
         if v is None:
             continue
         try:
@@ -106,3 +110,65 @@ def read_xmp(image_path: str, full: bool = False) -> dict | None:
     except Exception as e:
         logger.warning(f"No se pudo leer XMP de {p.name}: {e}")
         return None
+
+
+def has_lightroom_edits(image_path: str) -> bool:
+    """
+    Determina si la imagen ya tiene ajustes manuales de revelado o recorte
+    realizados previamente en Adobe Lightroom / Camera Raw.
+    Evita que Guto Flow sobreescriba ediciones de revelado existentes.
+    """
+    p = Path(image_path)
+    try:
+        if p.suffix.lower() in RAW_EXTENSIONS:
+            xmp_path = _get_xmp_path(image_path)
+            if not xmp_path.exists():
+                return False
+            raw_bytes = xmp_path.read_bytes()
+        else:
+            if not p.exists():
+                return False
+            data = p.read_bytes()
+            raw_bytes = _extract_jpeg_xmp(data)
+            if not raw_bytes:
+                return False
+
+        start = raw_bytes.find(b"<x:xmpmeta")
+        if start == -1:
+            start = raw_bytes.find(b"<rdf:RDF")
+        if start == -1:
+            return False
+        end = raw_bytes.rfind(b"</x:xmpmeta>")
+        payload = raw_bytes[start:end + len(b"</x:xmpmeta>")] if end != -1 else raw_bytes[start:]
+        root = etree.fromstring(payload)
+    except Exception:
+        return False
+
+    xmptk = root.get(f"{{{NS['x']}}}xmptk", "")
+    # Si fue creado exclusivamente por Guto Flow y no ha sido tocado por Adobe
+    if xmptk == "AI Culling System 1.0":
+        return False
+
+    for desc in root.iter(f"{{{NS['rdf']}}}Description"):
+        has_settings = desc.get(f"{{{NS['crs']}}}HasSettings")
+        if not has_settings:
+            hs_el = desc.find(f"{{{NS['crs']}}}HasSettings")
+            if hs_el is not None and hs_el.text:
+                has_settings = hs_el.text
+        if has_settings and has_settings.strip().lower() == "true":
+            return True
+
+        if _crs_fields(desc, DEVELOP_FIELDS):
+            return True
+        if _crs_fields(desc, CROP_FIELDS):
+            return True
+
+        if desc.find(f"{{{NS['crs']}}}History") is not None:
+            return True
+        if desc.find(f"{{{NS['crs']}}}ToneCurvePV2012") is not None:
+            return True
+        if desc.find(f"{{{NS['crs']}}}MaskGroupBasedCorrections") is not None:
+            return True
+
+    return False
+

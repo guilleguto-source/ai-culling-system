@@ -173,6 +173,30 @@ export default function InspectorPanel({ foto, onClose }: { foto: any; onClose: 
           </div>
         )}
 
+        {/* Recomendación Blanco y Negro */}
+        {(foto.is_bw_candidate || foto.diagnostics?.is_bw_candidate) && (
+          <div style={{
+            padding: '10px 12px',
+            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid rgba(255, 255, 255, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontSize: '10px', color: '#FFFFFF', fontWeight: 'var(--fw-bold)', letterSpacing: '0.05em' }}>
+                ◐ CANDIDATA B&N
+              </span>
+              <span className="font-mono" style={{ fontSize: '10px', color: 'var(--accent-primary)', fontWeight: 'var(--fw-bold)' }}>
+                {Math.round(((foto.bw_score || foto.diagnostics?.bw_score || 0.6) * 100))}% idónea
+              </span>
+            </div>
+            {((foto.bw_reasons || foto.diagnostics?.bw_reasons || ['Recomendada para conversión a Blanco y Negro']).map((reas: string, idx: number) => (
+              <div key={idx} style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                • {reas}
+              </div>
+            )))}
+          </div>
+        )}
+
         {/* Razones Textuales */}
         {Array.isArray(foto.reasons) && foto.reasons.length > 0 && (
           <div style={{ padding: '12px', backgroundColor: 'var(--color-surface-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>

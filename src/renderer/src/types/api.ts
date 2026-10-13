@@ -180,6 +180,9 @@ export interface PhotoResult {
   crop?: CropData | null;
   develop?: DevelopData | null;
   thumb_url?: string;
+  is_bw_candidate?: boolean;
+  bw_score?: number;
+  bw_reasons?: string[];
   error?: string;
 }
 

@@ -185,7 +185,18 @@ def analyze_sharpness(
     Returns:
         (blur_score, region_label)
     """
-    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    r_mean = float(np.mean(img_rgb[:, :, 0]))
+    g_mean = float(np.mean(img_rgb[:, :, 1]))
+    b_mean = float(np.mean(img_rgb[:, :, 2]))
+    total_mean = max(1.0, r_mean + g_mean + b_mean)
+    is_monochrome = (max(r_mean, g_mean, b_mean) / total_mean) > 0.55
+
+    if is_monochrome:
+        # En escenas monocromáticas (ej. fondo y vestido rojo), cvtColor RGB->Gray
+        # aplasta el canal rojo en un 70%. np.max preserva la textura y bordes reales.
+        gray = np.max(img_rgb, axis=2)
+    else:
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
     if region_bbox is not None:
         x, y, w, h = region_bbox
@@ -219,7 +230,7 @@ def evaluate_blur(
     """
     Determina si la imagen es borrosa, adaptándose al tipo de escena con doble verificación CPBD.
 
-    - portrait: mide nitidez en el primer rostro detectado.
+    - portrait / rostros: mide nitidez en las caras principales y toma la mejor enfocada.
     - detail: mide nitidez en la región de saliencia mediante acutancia FFT.
     - doble verificación CPBD: si el Laplaciano dice "borrosa" pero CPBD detecta bordes
       nítidos inequívocos (bokeh a f/1.4), la foto se rescata evitando el falso descarte.
@@ -236,11 +247,16 @@ def evaluate_blur(
     
     adjusted_threshold = blur_threshold * iso_multiplier
 
-    if scene_type == "portrait" and face_bboxes:
-        # Ampliar ligeramente el bbox del rostro para incluir ojos y frente
-        x, y, w, h = face_bboxes[0]
-        region = (x, y, w, h)
-        score, label = analyze_sharpness(img_rgb, region, "face", use_fft=False)
+    if face_bboxes and len(face_bboxes) > 0:
+        # En retratos individuales o en pareja, evaluar hasta 3 caras y elegir la mejor
+        best_score = 0.0
+        best_label = "face"
+        for bbox in face_bboxes[:3]:
+            s, lbl = analyze_sharpness(img_rgb, tuple(bbox), "face", use_fft=False)
+            if s > best_score:
+                best_score = s
+                best_label = lbl
+        score, label = best_score, best_label
     elif scene_type == "detail" and saliency_region:
         # Para detalles (bodegones, anillos) usamos FFT Acutance
         score, label = analyze_sharpness(img_rgb, saliency_region, "saliency", use_fft=True)

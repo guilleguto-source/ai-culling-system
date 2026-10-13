@@ -13,6 +13,7 @@ const FILTROS: [string, string, (r: any) => boolean][] = [
   ['repetidas', 'Repetidas', r => r.label === 'duplicates'],
   ['descartes', 'Descartes', r => r.label === 'blurry' || r.label === 'closed_eyes'],
   ['dudosas', 'Dudosas', r => (r.margin ?? 1) < 0.05],
+  ['bw', 'B&N Recomendado', r => Boolean(r.is_bw_candidate || r.diagnostics?.is_bw_candidate)],
 ];
 
 interface GridViewProps {

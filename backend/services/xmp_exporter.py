@@ -324,6 +324,19 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
     """Escribe el rating/etiqueta de forma atómica. RAW -> sidecar; JPEG -> embebido. Respeta overwrite."""
     p = Path(image_path)
     try:
+        from services.xmp_reader import has_lightroom_edits
+        if has_lightroom_edits(image_path):
+            if not overwrite:
+                if _is_raw(p):
+                    xp = _get_xmp_path(image_path)
+                    if xp.exists() and _sidecar_has_rating(xp):
+                        return False
+                else:
+                    existing = _extract_jpeg_xmp(p.read_bytes())
+                    if existing is not None and _packet_has_rating(existing):
+                        return False
+            return patch_xmp_metadata(image_path, label=label, stars=stars, color=color, flag=flag)
+
         if develop and _is_raw(p):
             # Incremental WB no existe para RAW (usa Kelvin): solo exposición
             develop = {k: v for k, v in develop.items()
@@ -350,6 +363,127 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
         return True
     except Exception as e:
         logger.error(f"Error escribiendo XMP para {image_path}: {e}")
+        return False
+
+
+def patch_xmp_metadata(image_path: str, label: str = "selected",
+                       stars: int | None = None, color: str | None = None,
+                       flag: str | None = None) -> bool:
+    """
+    Actualiza atómicamente solo Rating, Label y Pick en el XMP existente
+    sin alterar ni sobreescribir los nodos de revelado (crs:*) existentes de Lightroom.
+    Si no existe paquete XMP previo, recurre a _build_xmp_packet con settings básicos.
+    """
+    p = Path(image_path)
+    try:
+        raw_bytes = read_raw_packet(image_path)
+    except Exception:
+        raw_bytes = None
+
+    if not raw_bytes:
+        packet = _build_xmp_packet(
+            stars=stars if stars is not None else 0,
+            color=color if color is not None else "",
+            label=label,
+            flag=flag,
+        )
+        if _is_raw(p):
+            _atomic_write(_get_xmp_path(image_path), packet)
+        else:
+            _embed_xmp_in_jpeg(p, packet)
+        return True
+
+    start = raw_bytes.find(b"<x:xmpmeta")
+    if start == -1:
+        start = raw_bytes.find(b"<rdf:RDF")
+    if start == -1:
+        packet = _build_xmp_packet(
+            stars=stars if stars is not None else 0,
+            color=color if color is not None else "",
+            label=label,
+            flag=flag,
+        )
+        if _is_raw(p):
+            _atomic_write(_get_xmp_path(image_path), packet)
+        else:
+            _embed_xmp_in_jpeg(p, packet)
+        return True
+
+    end = raw_bytes.rfind(b"</x:xmpmeta>")
+    payload = raw_bytes[start:end + len(b"</x:xmpmeta>")] if end != -1 else raw_bytes[start:]
+    try:
+        root = etree.fromstring(payload)
+    except Exception:
+        packet = _build_xmp_packet(
+            stars=stars if stars is not None else 0,
+            color=color if color is not None else "",
+            label=label,
+            flag=flag,
+        )
+        if _is_raw(p):
+            _atomic_write(_get_xmp_path(image_path), packet)
+        else:
+            _embed_xmp_in_jpeg(p, packet)
+        return True
+
+    desc = root.find(f".//{{{NS['rdf']}}}Description")
+    if desc is None:
+        rdf = root.find(f".//{{{NS['rdf']}}}RDF")
+        if rdf is None:
+            rdf = etree.SubElement(root, f"{{{NS['rdf']}}}RDF", nsmap={"rdf": NS["rdf"]})
+        desc = etree.SubElement(rdf, f"{{{NS['rdf']}}}Description", nsmap={"rdf": NS["rdf"], "xmp": NS["xmp"], "crs": NS["crs"]})
+        desc.set(f"{{{NS['rdf']}}}about", "")
+
+    # 1. Rating
+    if stars is not None:
+        star_str = str(max(0, min(5, stars)))
+        if f"{{{NS['xmp']}}}Rating" in desc.attrib:
+            desc.attrib[f"{{{NS['xmp']}}}Rating"] = star_str
+        rating_el = desc.find(f"{{{NS['xmp']}}}Rating")
+        if rating_el is not None:
+            rating_el.text = star_str
+        else:
+            rating_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Rating")
+            rating_el.text = star_str
+
+    # 2. Label
+    if color is not None:
+        if f"{{{NS['xmp']}}}Label" in desc.attrib:
+            desc.attrib[f"{{{NS['xmp']}}}Label"] = color
+        label_el = desc.find(f"{{{NS['xmp']}}}Label")
+        if label_el is not None:
+            label_el.text = color
+        else:
+            label_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Label")
+            label_el.text = color
+
+    # 3. Pick
+    pick_val = FLAG_TO_PICK.get(flag) if flag in FLAG_TO_PICK else PICK_STATUS_MAP.get(label)
+    if pick_val is not None:
+        for ns_key, tag in (("xmp", "Pick"), ("crs", "Pick")):
+            attr_name = f"{{{NS[ns_key]}}}{tag}"
+            if attr_name in desc.attrib:
+                del desc.attrib[attr_name]
+            el = desc.find(attr_name)
+            if el is not None:
+                el.text = pick_val
+            else:
+                el = etree.SubElement(desc, attr_name)
+                el.text = pick_val
+
+    body = etree.tostring(root, encoding="utf-8", xml_declaration=False)
+    new_packet = _XPACKET_OPEN + body + _XPACKET_CLOSE
+
+    try:
+        if _is_raw(p):
+            xmp_path = _get_xmp_path(image_path)
+            _atomic_write(xmp_path, new_packet)
+        else:
+            _embed_xmp_in_jpeg(p, new_packet)
+        logger.debug(f"Patched XMP {p.name} [{label}/{stars}★/{color}]")
+        return True
+    except Exception as e:
+        logger.error(f"Error parchando XMP para {image_path}: {e}")
         return False
 
 

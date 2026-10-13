@@ -10,7 +10,7 @@ import io
 from core.job_manager import job_manager
 from services.thumbnail_store import get_thumbnail_cache_paths
 from services.xmp_exporter import write_xmp, update_file_metadata
-from services.export_snapshot import load_snapshot
+from services.export_snapshot import load_snapshot, update_labels
 from services.metadata_manager import (
     get_metadata_profiles,
     save_or_update_profile,
@@ -106,19 +106,27 @@ def import_selection(req: ImportSelectionRequest):
     if not target_stems:
         raise HTTPException(status_code=400, detail="No se proporcionaron archivos o la carpeta está vacía")
         
+    base_path = Path(req.base_dir)
+    if not base_path.exists() or not base_path.is_dir():
+        raise HTTPException(status_code=400, detail="El directorio base no existe")
+
+    valid_extensions = {".jpg", ".jpeg", ".cr2", ".cr3", ".arw", ".dng", ".raf", ".nef"}
     paths_to_check = []
     snapshot = load_snapshot(req.base_dir)
     
     if snapshot and snapshot.get("items"):
         paths_to_check = list(snapshot["items"].keys())
+        matched_stems = {Path(p).stem.lower() for p in paths_to_check if Path(p).stem.lower() in target_stems}
+        missing_stems = target_stems - matched_stems
+        if missing_stems:
+            for f in base_path.rglob("*"):
+                if f.is_file() and f.suffix.lower() in valid_extensions and f.stem.lower() in missing_stems:
+                    paths_to_check.append(str(f))
     else:
-        base_path = Path(req.base_dir)
-        if not base_path.exists() or not base_path.is_dir():
-            raise HTTPException(status_code=400, detail="El directorio base no existe")
-        valid_extensions = {".jpg", ".jpeg", ".cr2", ".cr3", ".arw", ".dng", ".raf", ".nef"}
         paths_to_check = [str(f) for f in base_path.rglob("*") if f.is_file() and f.suffix.lower() in valid_extensions]
 
     updated_count = 0
+    promoted_labels = {}
     
     for file_str in paths_to_check:
         f = Path(file_str)
@@ -126,17 +134,24 @@ def import_selection(req: ImportSelectionRequest):
             try:
                 write_xmp(
                     image_path=file_str,
-                    label="Red",
+                    label="selected",
                     stars=4,
                     color="Red",
                     flag="pick",
                     overwrite=True
                 )
+                promoted_labels[file_str] = "selected"
                 updated_count += 1
             except Exception as e:
                 print(f"Error updating XMP for {f.name}: {e}")
                 
-    return {"status": "ok", "updated": updated_count}
+    if promoted_labels and snapshot:
+        update_labels(req.base_dir, promoted_labels)
+
+    matched_all = {Path(p).stem.lower() for p in paths_to_check if Path(p).stem.lower() in target_stems}
+    not_found_count = len(target_stems - matched_all)
+
+    return {"status": "ok", "updated": updated_count, "not_found": not_found_count}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
