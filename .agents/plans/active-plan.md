@@ -1,48 +1,31 @@
-# Plan Operativo: Respaldo GutoCraft y Procesamiento Masivo en NAS
+# Plan de Corrección: Segmentación de Cuerpo Completo en Grupos Masivos (Paridad Sujeto Lightroom)
 
-## 1. Alcance y Objetivos
-1. **Cierre y Respaldo de GutoCraft:**
-   - Archivar las fotos de auditoría en `docs/audit_mattes/`.
-   - Commit y push en `GUTOFLOW` (`ai-culling-system`).
-   - Configuración de `GutoCraft` como repositorio independiente en GitHub (`guilleguto-source/GutoCraft`).
-2. **Procesamiento Masivo en Producción (1,951 fotos en NAS):**
-   - Carpeta 1: `\\MYCLOUDEX2ULTRA\Public\Guto Gutierrez\2026\2026-09-26\Giler` (436 fotos)
-   - Carpeta 2: `\\MYCLOUDEX2ULTRA\Public\Guto Gutierrez\2026\2026-10-03\Dayana` (679 fotos)
-   - Carpeta 3: `\\MYCLOUDEX2ULTRA\Public\Guto Gutierrez\2026\2026-10-03\Gioconda` (836 fotos)
+## 1. Causa Raíz Identificada
+- En `IMG_0257` (30+ niños en plano general), `selfie_segmenter.tflite` solo cubre el 3.4% de la imagen porque está optimizado para 1-2 personas en plano medio/primer plano.
+- En el collage de auditoría (`IMG_0257_audit.jpg`), solo se observaba tinte en los rostros porque correspondía a la capa `facial_skin` (YuNet + FaceMesh), mientras que `person.png` (Sujeto Pop) estaba casi vacía.
 
 ---
 
-## 2. Fases de Ejecución
-
-```
-[Fase 1: Respaldo y Git GutoCraft]
-  ├── Archivar 4 collages en docs/audit_mattes/
-  ├── Commit + Push en repo principal GUTOFLOW
-  └── Commit en gutoflow-rust/lightcraft -> remote GutoCraft
-        │
-        ▼
-[Fase 2: Procesamiento Masivo en Lote (GutoFlow + LightCraft)]
-  ├── 1. Ingesta, culling y métricas de enfoque en GUTOFLOW
-  ├── 2. Generación neural de los 5 planos de máscaras IA (GutoCraft)
-  ├── 3. Aplicación de recetas de revelado con capas locales:
-  │      - Suavizado sutil de piel (Texture/Clarity negativo)
-  │      - Realce de iris (+Exposure, +Clarity)
-  │      - Blanqueamiento de dientes (-Saturation, +Exposure)
-  │      - Esclera limpia (-Saturation suave)
-  │      - Pop de sujeto (+Exposure sutil, contraste)
-  └── 4. Escritura de sidecars XMP compatibles con Adobe Lightroom
-```
+## 2. Arquitectura Propuesta: Tiled Hybrid Subject Segmentation
+Para igualar la selección de "Sujeto" de Lightroom en grupos masivos:
+1. **Detección Global de Personas:** Ejecutar `person_yolov8n.onnx` (`detect_persons`) para localizar todos los cuerpos de la escena (en `IMG_0257` detecta 20 cuerpos completos).
+2. **Segmentación por Recorte (Tiled Segmentation):**
+   - Para cada persona detectada, extraer el crop con 10% de margen.
+   - Enviar cada crop individual a `selfie_segmenter` (donde cada niño ocupa el 100% del frame, permitiendo que el modelo opere en su rango óptimo de confianza con mean > 0.45 y max 1.0).
+3. **Anatomical Face Fallback:** Para cualquier rostro YuNet no englobado en una caja de persona, proyectar la extensión anatómica del torso y segmentar el recorte.
+4. **Fusión Máxima:** Combinar la máscara global con todos los recortes segmentados (`np.maximum`), preservando alpha continuo y bordes limpios sin invadir el césped.
 
 ---
 
-## 3. Estado de Ejecución por Carpeta del NAS
-- **Giler (407 fotos JPG):** ✅ Completado (407/407 XMP + máscaras binarias generadas, 0 errores).
-- **Dayana (679 fotos CR2 RAW):** ✅ Completado (679/679 XMP + máscaras binarias generadas, 0 errores).
-- **Gioconda (836 fotos JPG):** ✅ Completado (836/836 XMP + máscaras binarias generadas, 0 errores).
-- **TOTAL:** ✅ **1,922 / 1,922 fotos procesadas con éxito (0 fallos).**
+## 3. Archivos Afectados
+- `backend/services/mask_generator.py`: Lógica de `person.png` con soporte híbrido global + recortes YOLOv8/YuNet.
+- `backend/scripts/run_mask_suite.py`: Re-generación del collage de auditoría `IMG_0257_audit.jpg`.
+- `docs/audit_mattes/IMG_0257_audit.jpg`: Actualización del registro visual.
 
 ---
 
-## 4. Repositorio Remoto GutoCraft
-- Repo local sincronizado en rama `gutoflow` (`da36d64`).
-- Pendiente: Crear `GutoCraft` en GitHub (https://github.com/new) para habilitar el push final.
+## 4. Checklist de Validación
+- [ ] Implementar función de segmentación por baldosas en `mask_generator.py`.
+- [ ] Ejecutar prueba de verificación en `IMG_0257.JPG`.
+- [ ] Generar nuevo collage de auditoría `IMG_0257_audit.jpg` con cuerpos y ropa tintados en rojo/naranja.
+- [ ] Re-procesar sidecars XMP de la sesión `Giler` en el NAS.

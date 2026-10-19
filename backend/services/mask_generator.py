@@ -120,55 +120,7 @@ def generate_all_masks(img_path: str, output_dir: str):
     teeth_full = np.zeros((h0, w0), dtype=np.uint8)
 
     # -------------------------------------------------------------
-    # 1. Sujeto / Pop: Segmentación precisa con Selfie Segmenter
-    # -------------------------------------------------------------
-    person_segmented = False
-    if SEGMENTER_PATH.exists():
-        try:
-            import mediapipe as mp
-            from mediapipe.tasks import python as mp_python
-            from mediapipe.tasks.python import vision
-
-            base_opts = mp_python.BaseOptions(model_asset_path=str(SEGMENTER_PATH))
-            opts = vision.ImageSegmenterOptions(
-                base_options=base_opts,
-                running_mode=vision.RunningMode.IMAGE,
-                output_confidence_masks=True
-            )
-            with vision.ImageSegmenter.create_from_options(opts) as segmenter:
-                scale = 1024.0 / max(h0, w0)
-                sw, sh = int(round(w0 * scale)), int(round(h0 * scale))
-                small = cv2.resize(img_rgb, (sw, sh), interpolation=cv2.INTER_AREA)
-                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=small)
-                res = segmenter.segment(mp_img)
-                if res.confidence_masks:
-                    conf = res.confidence_masks[0].numpy_view()
-                    # Rescalar a tamaño completo con bordes suaves
-                    conf_u8 = (np.clip(conf, 0.0, 1.0) * 255.0).astype(np.uint8)
-                    person_full = cv2.resize(conf_u8, (w0, h0), interpolation=cv2.INTER_LINEAR)
-                    person_segmented = True
-        except Exception as e:
-            sys.stderr.write(f"Warning: selfie segmenter failed: {e}\n")
-
-    if not person_segmented:
-        # Fallback YOLOv8 bounding boxes
-        person_boxes = detect_persons(img_rgb)
-        if person_boxes:
-            for (bx, by, bw, bh) in person_boxes:
-                x0, y0 = max(0, bx), max(0, by)
-                x1, y1 = min(w0, bx + bw), min(h0, by + bh)
-                if x1 <= x0 or y1 <= y0:
-                    continue
-                sub_w, sub_h = x1 - x0, y1 - y0
-                cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
-                p_layer = np.zeros((h0, w0), dtype=np.uint8)
-                cv2.ellipse(p_layer, (cx, cy), (sub_w // 2, sub_h // 2), 0, 0, 360, 255, -1)
-                ksize = max(5, int(min(sub_w, sub_h) * 0.08) | 1)
-                p_layer = cv2.GaussianBlur(p_layer, (ksize, ksize), 0)
-                person_full = np.maximum(person_full, p_layer)
-
-    # -------------------------------------------------------------
-    # 2. Detección Facial con YuNet y Filtro NMS
+    # 1. Detección Facial con YuNet y Filtro NMS
     # -------------------------------------------------------------
     img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
     confirmed_faces = []
@@ -184,6 +136,79 @@ def generate_all_masks(img_path: str, output_dir: str):
             scores = [float(f[14]) for f in raw_faces]
             keep_idx = nms_boxes(boxes, scores, iou_thresh=0.35)
             confirmed_faces = [raw_faces[i] for i in keep_idx]
+
+    # -------------------------------------------------------------
+    # 2. Sujeto / Pop: Segmentación Híbrida (Global + Crops YOLOv8 + Torso YuNet)
+    # -------------------------------------------------------------
+    if SEGMENTER_PATH.exists():
+        try:
+            import mediapipe as mp
+            from mediapipe.tasks import python as mp_python
+            from mediapipe.tasks.python import vision
+
+            base_opts = mp_python.BaseOptions(model_asset_path=str(SEGMENTER_PATH))
+            opts = vision.ImageSegmenterOptions(
+                base_options=base_opts,
+                running_mode=vision.RunningMode.IMAGE,
+                output_confidence_masks=True
+            )
+            with vision.ImageSegmenter.create_from_options(opts) as segmenter:
+                # 2.1 Pase global para planos medios / sujetos principales
+                scale = 1024.0 / max(h0, w0)
+                sw, sh = int(round(w0 * scale)), int(round(h0 * scale))
+                small = cv2.resize(img_rgb, (sw, sh), interpolation=cv2.INTER_AREA)
+                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=small)
+                res = segmenter.segment(mp_img)
+                if res.confidence_masks:
+                    conf = res.confidence_masks[0].numpy_view()
+                    conf_u8 = (np.clip(conf, 0.0, 1.0) * 255.0).astype(np.uint8)
+                    person_full = cv2.resize(conf_u8, (w0, h0), interpolation=cv2.INTER_LINEAR)
+
+                # 2.2 Segmentación por recorte para cuerpos YOLOv8 (grupos y sujetos lejanos)
+                person_boxes = detect_persons(img_rgb)
+                for bx, by, bw, bh in person_boxes:
+                    mx, my = int(bw * 0.10), int(bh * 0.10)
+                    x0 = max(0, bx - mx)
+                    y0 = max(0, by - my)
+                    x1 = min(w0, bx + bw + mx)
+                    y1 = min(h0, by + bh + my)
+                    crop = img_rgb[y0:y1, x0:x1]
+                    if crop.size == 0:
+                        continue
+                    ch, cw = crop.shape[:2]
+                    cscale = 512.0 / max(ch, cw)
+                    c_small = cv2.resize(crop, (max(1, int(round(cw * cscale))), max(1, int(round(ch * cscale)))), interpolation=cv2.INTER_AREA)
+                    mp_crop = mp.Image(image_format=mp.ImageFormat.SRGB, data=c_small)
+                    res_crop = segmenter.segment(mp_crop)
+                    if res_crop.confidence_masks:
+                        cmask = res_crop.confidence_masks[0].numpy_view()
+                        cmask_u8 = (np.clip(cmask, 0.0, 1.0) * 255.0).astype(np.uint8)
+                        cmask_full = cv2.resize(cmask_u8, (cw, ch), interpolation=cv2.INTER_LINEAR)
+                        person_full[y0:y1, x0:x1] = np.maximum(person_full[y0:y1, x0:x1], cmask_full)
+
+                # 2.3 Segmentación de torso para rostros YuNet no cubiertos por cajas de personas
+                for f in confirmed_faces:
+                    fx, fy, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+                    fcx, fcy = int(fx + fw / 2), int(fy + fh / 2)
+                    if person_full[min(h0 - 1, max(0, fcy)), min(w0 - 1, max(0, fcx))] < 100:
+                        bx = int(max(0, fcx - fw * 1.5))
+                        by = int(max(0, fy - fh * 0.5))
+                        bw = int(min(w0 - bx, fw * 3.0))
+                        bh = int(min(h0 - by, fh * 4.5))
+                        crop = img_rgb[by:by + bh, bx:bx + bw]
+                        if crop.size > 0:
+                            ch, cw = crop.shape[:2]
+                            cscale = 512.0 / max(ch, cw)
+                            c_small = cv2.resize(crop, (max(1, int(round(cw * cscale))), max(1, int(round(ch * cscale)))), interpolation=cv2.INTER_AREA)
+                            mp_crop = mp.Image(image_format=mp.ImageFormat.SRGB, data=c_small)
+                            res_crop = segmenter.segment(mp_crop)
+                            if res_crop.confidence_masks:
+                                cmask = res_crop.confidence_masks[0].numpy_view()
+                                cmask_u8 = (np.clip(cmask, 0.0, 1.0) * 255.0).astype(np.uint8)
+                                cmask_full = cv2.resize(cmask_u8, (cw, ch), interpolation=cv2.INTER_LINEAR)
+                                person_full[by:by + bh, bx:bx + bw] = np.maximum(person_full[by:by + bh, bx:bx + bw], cmask_full)
+        except Exception as e:
+            sys.stderr.write(f"Warning: selfie segmenter failed: {e}\n")
 
     # -------------------------------------------------------------
     # 3. MediaPipe FaceLandmarker (478 landmarks)
@@ -365,6 +390,9 @@ def generate_all_masks(img_path: str, output_dir: str):
         with open(bin_path, "wb") as f:
             f.write(resized.tobytes())
         return str(png_path)
+
+    # Asegurar que toda piel facial sea parte de la máscara de sujeto
+    person_full = np.maximum(person_full, skin_full)
 
     p_saved = save_layer(person_full, "person")
     sk_saved = save_layer(skin_full, "facial_skin")
