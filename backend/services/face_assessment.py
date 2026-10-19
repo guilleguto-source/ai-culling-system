@@ -12,8 +12,8 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Umbral de probabilidad para clasificar un ojo como "cerrado"
-# (OCEC: cerrado cuando prob_open <= 0.42, i.e. prob_closed >= 0.58)
-EYE_CLOSED_THRESHOLD = 0.58
+# (OCEC: cerrado cuando prob_open <= 0.25, i.e. prob_closed >= 0.75)
+EYE_CLOSED_THRESHOLD = 0.75
 
 # Índices de landmarks de YuNet: [ojo_izq, ojo_der, nariz, boca_izq, boca_der]
 LANDMARK_LEFT_EYE = 0
@@ -98,10 +98,16 @@ def _eye_aspect_ratio_from_patch(eye_patch_gray: np.ndarray) -> float:
 def _extract_eye_patch(
     img_gray: np.ndarray,
     landmark: list[int],
-    patch_size: int = 32,
+    face_width: int | None = None,
 ) -> np.ndarray:
     """Recorta un parche cuadrado centrado en el punto de landmark del ojo."""
     cx, cy = landmark[0], landmark[1]
+    
+    if face_width is not None:
+        patch_size = max(20, int(face_width * 0.14))
+    else:
+        patch_size = 32
+        
     half = patch_size // 2
     h, w = img_gray.shape
     x1 = max(0, cx - half)
@@ -114,6 +120,7 @@ def _extract_eye_patch(
 def evaluate_eyes_fast(
     img_rgb: np.ndarray,
     eye_landmarks: list[list[list[int]]],  # Por rostro: [[x,y] x 5 landmarks]
+    face_bboxes: list[list[int]] | None = None,
 ) -> ImageFaceResult:
     """
     Evaluación rápida de ojos usando análisis de gradiente (sin modelo ONNX).
@@ -130,26 +137,35 @@ def evaluate_eyes_fast(
     face_results = []
     any_closed = False
 
+    is_crowd = len(eye_landmarks) >= 6
+
     for i, landmarks in enumerate(eye_landmarks):
         if len(landmarks) < 2:
             continue
 
-        left_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_LEFT_EYE])
-        right_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_RIGHT_EYE])
+        face_width = face_bboxes[i][2] if face_bboxes and i < len(face_bboxes) else None
+
+        left_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_LEFT_EYE], face_width=face_width)
+        right_patch = _extract_eye_patch(img_gray, landmarks[LANDMARK_RIGHT_EYE], face_width=face_width)
 
         left_score = _eye_aspect_ratio_from_patch(left_patch)
         right_score = _eye_aspect_ratio_from_patch(right_patch)
 
         avg_ear = (left_score + right_score) / 2.0
-        left_closed = left_score < (1.0 - EYE_CLOSED_THRESHOLD)
-        right_closed = right_score < (1.0 - EYE_CLOSED_THRESHOLD)
-        has_closed = left_closed or right_closed
+        
+        # Filtros de precisión:
+        # 1. Ignorar rostros pequeños (< 75px) o grupos numerosos (>= 6 rostros)
+        # 2. Ojo verdaderamente cerrado exige avg_ear < 0.10 o ambas pupilas < 0.12
+        if is_crowd or (face_width is not None and face_width < 75):
+            has_closed = False
+        else:
+            has_closed = avg_ear < 0.10 or (left_score < 0.12 and right_score < 0.12)
 
         if has_closed:
             any_closed = True
             logger.debug(
                 f"Rostro {i}: ojos cerrados detectados "
-                f"(izq={left_score:.2f}, der={right_score:.2f})"
+                f"(izq={left_score:.2f}, der={right_score:.2f}, ear={avg_ear:.2f})"
             )
 
         face_results.append(FaceAssessmentResult(
@@ -239,3 +255,95 @@ def evaluate_eyes_onnx(
         any_closed_eyes=any_closed,
         face_results=face_results,
     )
+
+
+# --- MediaPipe 478 FaceMesh Biometrics (Gaze, Smile & 3D EAR) ---
+
+LEFT_IRIS_CENTER = 468
+RIGHT_IRIS_CENTER = 473
+LEFT_EYE_OUTER = 33
+LEFT_EYE_INNER = 133
+RIGHT_EYE_OUTER = 362
+RIGHT_EYE_INNER = 263
+LEFT_EYE_TOP = 159
+LEFT_EYE_BOTTOM = 145
+RIGHT_EYE_TOP = 386
+RIGHT_EYE_BOTTOM = 374
+
+LIP_CORNER_LEFT = 61
+LIP_CORNER_RIGHT = 291
+LIP_MID_TOP = 0
+LIP_MID_BOTTOM = 17
+
+
+def compute_biometric_face_attributes(
+    landmarks_478,
+    teeth_detected: bool = False,
+    gap_ratio: float = 0.0,
+) -> dict:
+    """
+    Calcula atributos biométricos continuos de alta precisión para Culling:
+    - ear: Apertura palpebral relativa (EAR 3D).
+    - blink: Probabilidad de parpadeo (1.0 si EAR < 0.15).
+    - gaze_score: Coincidencia del iris con el eje óptico (1.0 = mirando al lente, 0.0 = desviado).
+    - gaze_out: True si la mirada se desvía más de 30% del centro.
+    - smile_score: Intensidad de sonrisa [0.0 - 1.0].
+    - is_smiling: True si hay curvatura cigomática clara o dientes expuestos.
+    """
+    if landmarks_478 is None or len(landmarks_478) < 478:
+        return {
+            "ear": 0.22, "blink": 0.0, "eyes_closed": False,
+            "gaze_score": 0.85, "gaze_out": False,
+            "smile_score": 0.0, "smile": False,
+        }
+
+    lm = landmarks_478
+
+    # 1. Apertura palpebral (EAR) y parpadeo
+    l_eye_w = max(1e-4, abs(lm[LEFT_EYE_INNER].x - lm[LEFT_EYE_OUTER].x))
+    r_eye_w = max(1e-4, abs(lm[RIGHT_EYE_INNER].x - lm[RIGHT_EYE_OUTER].x))
+    l_ear = abs(lm[LEFT_EYE_TOP].y - lm[LEFT_EYE_BOTTOM].y) / l_eye_w
+    r_ear = abs(lm[RIGHT_EYE_TOP].y - lm[RIGHT_EYE_BOTTOM].y) / r_eye_w
+    mean_ear = float((l_ear + r_ear) / 2.0)
+    eyes_closed = bool(mean_ear < 0.15)
+    blink = float(max(0.0, min(1.0, (0.18 - mean_ear) / 0.08))) if mean_ear < 0.18 else 0.0
+
+    # 2. Dirección de mirada (Eye Gaze Vector)
+    l_ratio = (lm[LEFT_IRIS_CENTER].x - lm[LEFT_EYE_OUTER].x) / l_eye_w
+    r_ratio = (lm[RIGHT_IRIS_CENTER].x - lm[RIGHT_EYE_OUTER].x) / r_eye_w
+    mean_ratio = float((l_ratio + r_ratio) / 2.0)
+    # 0.50 es mirada perfectamente centrada hacia la cámara
+    dev_h = abs(mean_ratio - 0.50)
+
+    # Desviación vertical (mirar hacia el piso o techo)
+    l_eye_mid_y = (lm[LEFT_EYE_TOP].y + lm[LEFT_EYE_BOTTOM].y) / 2.0
+    r_eye_mid_y = (lm[RIGHT_EYE_TOP].y + lm[RIGHT_EYE_BOTTOM].y) / 2.0
+    l_dev_v = abs(lm[LEFT_IRIS_CENTER].y - l_eye_mid_y) / max(1e-4, abs(lm[LEFT_EYE_BOTTOM].y - lm[LEFT_EYE_TOP].y))
+    r_dev_v = abs(lm[RIGHT_IRIS_CENTER].y - r_eye_mid_y) / max(1e-4, abs(lm[RIGHT_EYE_BOTTOM].y - lm[RIGHT_EYE_TOP].y))
+    dev_v = float((l_dev_v + r_dev_v) / 2.0)
+
+    gaze_score = float(max(0.0, min(1.0, 1.0 - (dev_h * 2.8 + dev_v * 1.5))))
+    gaze_out = bool(dev_h > 0.16 or dev_v > 0.35)
+
+    # 3. Sonrisa (Arco cigomático + Dientes)
+    mid_lip_y = (lm[LIP_MID_TOP].y + lm[LIP_MID_BOTTOM].y) / 2.0
+    corner_y = (lm[LIP_CORNER_LEFT].y + lm[LIP_CORNER_RIGHT].y) / 2.0
+    mouth_h = max(1e-4, abs(lm[LIP_MID_BOTTOM].y - lm[LIP_MID_TOP].y))
+    smile_elevation = (mid_lip_y - corner_y) / mouth_h
+
+    # Exposición dental o comisuras hacia arriba
+    smile_score = float(max(0.0, min(1.0, smile_elevation * 1.5)))
+    if teeth_detected or gap_ratio >= 0.025:
+        smile_score = float(max(smile_score, 0.70 + min(0.30, gap_ratio * 4.0)))
+
+    is_smiling = bool(smile_score >= 0.35)
+
+    return {
+        "ear": round(mean_ear, 3),
+        "blink": round(blink, 3),
+        "eyes_closed": eyes_closed,
+        "gaze_score": round(gaze_score, 3),
+        "gaze_out": gaze_out,
+        "smile_score": round(smile_score, 3),
+        "smile": is_smiling,
+    }

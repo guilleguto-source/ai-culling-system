@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from services.history_store import HistoryStore
 from services.history_taste import label_sign
 from services.crop_style import descriptors, is_real_crop, learn_crop_style, MIN_PER_SCENE
-from services.face_identity import group_identities, is_available
+from services.face_identity import group_identities
 
 
 # --- H2: gusto ---
@@ -85,8 +85,3 @@ def test_group_identities_maneja_none():
     a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
     ids = group_identities([a, None, a])
     assert ids[1] == -1 and ids[0] == ids[2]
-
-
-def test_arcface_degradacion_sin_modelo():
-    # En el entorno de test no está el .onnx → is_available False, sin crash.
-    assert is_available() in (True, False)

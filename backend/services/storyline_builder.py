@@ -2,18 +2,96 @@ import logging
 from datetime import datetime
 from pathlib import Path
 import numpy as np
+import json
+import hashlib
 
 from services.analysis_store import get_all_analysis
+from services.app_paths import get_analysis_dir
 from services import embedding_service
-from services.scene_grouping import cluster_embeddings
 from services.thumbnail_store import thumb_url
 
 logger = logging.getLogger(__name__)
 
-def build_storyline(directory: str, gap_minutes: int = 30, max_subchapters: int = 5) -> list[dict]:
+# Storyline 2.0 - Parámetros de segmentación calibrados para eventos de varias horas
+MIN_SEGMENT_PHOTOS = 10                 # Min fotos para considerar un segmento consolidado
+MIN_SEGMENT_DURATION_MINUTES = 3.0      # Min duración antes de permitir un soft cut semántico
+MIN_SEMANTIC_PHOTOS = 5                 # Min fotos antes de chequear cambios semánticos
+
+HARD_GAP_MINUTES = 15.0                 # Inactividad absoluta (cambio de lugar real, descanso largo)
+SOFT_GAP_MINUTES = 5.0                  # Pausa notable entre momentos del evento (ej. cena → baile)
+CONTEXT_CHANGE_THRESHOLD = 0.12         # Sensibilidad semántica estándar
+STRONG_SCENE_CHANGE = 0.18              # Cambio drástico de ambiente/escena corta
+
+def get_overrides_path(directory: str) -> Path:
+    dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
+    get_analysis_dir().mkdir(parents=True, exist_ok=True)
+    return get_analysis_dir() / f"{dir_hash}_storyline_overrides.json"
+
+def load_overrides(directory: str) -> dict:
+    p = get_overrides_path(directory)
+    if p.exists():
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error cargando overrides: {e}")
+    return {}
+
+def save_override(directory: str, photo_path: str, chapter_id: str):
+    overrides = load_overrides(directory)
+    overrides[photo_path] = chapter_id
+    p = get_overrides_path(directory)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(overrides, f, indent=2)
+
+
+def build_photo_chapter_map_from_records(records: list, analyses: list | None = None) -> dict[int, str]:
     """
-    Construye el storyline dividiendo cronológicamente (basado en huecos de tiempo)
-    y subdividiendo visualmente cada capítulo.
+    Construye un mapa rápido {idx_foto: chapter_id} para segmentar el evento
+    en capítulos cronológicos (pacing) usando los EXIF datetime de los records.
+    """
+    if not records:
+        return {}
+
+    parsed = []
+    for idx, r in enumerate(records):
+        dt = None
+        dt_str = getattr(r, "exif_datetime", None)
+        if dt_str:
+            for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    dt = datetime.strptime(str(dt_str).strip()[:19], fmt)
+                    break
+                except Exception:
+                    pass
+        parsed.append((idx, dt))
+
+    chapter_map: dict[int, str] = {}
+    current_chapter_idx = 0
+    last_dt = None
+
+    for idx, dt in parsed:
+        is_detail = analyses and analyses[idx].scene_type == "detail"
+        if is_detail:
+            chapter_map[idx] = "capitulo_broll"
+            continue
+
+        if dt is not None and last_dt is not None:
+            delta_sec = (dt - last_dt).total_seconds()
+            if delta_sec > HARD_GAP_MINUTES * 60:
+                current_chapter_idx += 1
+        
+        chapter_map[idx] = f"capitulo_{current_chapter_idx}"
+        if dt is not None:
+            last_dt = dt
+
+    return chapter_map
+
+
+def build_storyline(directory: str) -> list[dict]:
+    """
+    Storyline Engine (V2):
+    Divide el evento en 'Segmentos' y luego aplica overrides manuales.
     """
     photos = get_all_analysis(directory)
     if not photos:
@@ -26,70 +104,151 @@ def build_storyline(directory: str, gap_minutes: int = 30, max_subchapters: int 
         if not dt_str:
             continue
         try:
-            # Formato común EXIF: "YYYY:MM:DD HH:MM:SS"
             dt = datetime.strptime(dt_str[:19].replace(":", "-", 2), "%Y-%m-%d %H:%M:%S")
-            valid_photos.append({"path": p.path, "dt": dt,
-                                 "mtime": p.mtime, "filename": Path(p.path).name})
+            valid_photos.append({
+                "path": p.path, 
+                "dt": dt,
+                "mtime": p.mtime, 
+                "filename": Path(p.path).name,
+                "embedding": None,
+                "scene_type": p.scene_type,
+            })
         except Exception:
             continue
 
     valid_photos.sort(key=lambda x: x["dt"])
-
     if not valid_photos:
         return []
 
-    # 2. División Temporal Inicial (Capítulos Principales)
-    chapters = []
-    current_chapter = [valid_photos[0]]
-    
+    # 2. Cargar embeddings
+    for ph in valid_photos:
+        vec = embedding_service.load_cached_embedding(ph["path"], ph["mtime"])
+        if vec is not None:
+            ph["embedding"] = vec
+
+    # 3. Motor Temporal y Semántico
+    segments = []
+    current_segment = [valid_photos[0]]
+    recent_embeddings = [valid_photos[0]["embedding"]] if valid_photos[0]["embedding"] is not None else []
+
     for i in range(1, len(valid_photos)):
-        delta = valid_photos[i]["dt"] - valid_photos[i-1]["dt"]
-        if delta.total_seconds() > gap_minutes * 60:
-            chapters.append(current_chapter)
-            current_chapter = []
-        current_chapter.append(valid_photos[i])
+        curr_photo = valid_photos[i]
+        prev_photo = valid_photos[i-1]
+        curr_emb = curr_photo["embedding"]
         
-    if current_chapter:
-        chapters.append(current_chapter)
-
-    # 3. Subdivisión Visual (Escenas dentro del Capítulo) y Medoides
-    storyline = []
-    
-    for c_idx, chapter_photos in enumerate(chapters):
-        paths = [p["path"] for p in chapter_photos]
-
-        # Recuperar embeddings ya cacheados (mtime en memoria: sin re-stat del NAS)
-        vecs = []
-        kept_paths = []
-        for ph in chapter_photos:
-            vec = embedding_service.load_cached_embedding(ph["path"], ph["mtime"])
-            if vec is not None:
-                vecs.append(vec)
-                kept_paths.append(ph["path"])
-
-        medoid_path = paths[len(paths) // 2] # Fallback medoid temporal
+        delta_sec = (curr_photo["dt"] - prev_photo["dt"]).total_seconds()
+        duration_sec = (curr_photo["dt"] - current_segment[0]["dt"]).total_seconds()
         
-        if vecs:
-            X = np.stack(vecs)
-            k = min(max_subchapters, len(vecs))
-            labels, centers = cluster_embeddings(X, k=k)
+        force_cut = False
+        
+        # Señal A: Hard Gap (Inactividad absoluta >= 5 min)
+        if delta_sec > HARD_GAP_MINUTES * 60:
+            force_cut = True
             
-            # El medoide principal del capítulo es el del cluster más grande
-            sizes = [sum(1 for l in labels if l == ci) for ci in range(k)]
-            biggest_cluster = int(np.argmax(sizes))
+        # Señal B: Soft Gap (Pausa notable >= SOFT_GAP_MINUTES, independiente del tamaño del segmento)
+        elif delta_sec > SOFT_GAP_MINUTES * 60:
+            force_cut = True
             
-            # Encontrar foto más central del cluster más grande
-            idxs = [i for i, l in enumerate(labels) if l == biggest_cluster]
-            dists = [float(np.linalg.norm(X[i] - centers[biggest_cluster])) for i in idxs]
-            medoid_path = kept_paths[idxs[int(np.argmin(dists))]]
+        # Señal C: Cambio Semántico de Escena
+        elif len(current_segment) >= MIN_SEMANTIC_PHOTOS:
+            if curr_emb is not None and recent_embeddings:
+                avg_context = np.mean(recent_embeddings[-3:], axis=0)
+                norm = np.linalg.norm(avg_context)
+                if norm > 0:
+                    avg_context = avg_context / norm
+                    context_change = 1.0 - float(np.dot(curr_emb, avg_context))
+                    # C1. Cambio drástico de escena (ej. cambio de habitación / mesa de dulces / exterior)
+                    if context_change > STRONG_SCENE_CHANGE:
+                        force_cut = True
+                    # C2. Cambio acumulado moderado con duración mínima de segmento
+                    elif len(current_segment) >= MIN_SEGMENT_PHOTOS and duration_sec >= MIN_SEGMENT_DURATION_MINUTES * 60 and context_change > CONTEXT_CHANGE_THRESHOLD:
+                        force_cut = True
+        
+        if force_cut:
+            segments.append(current_segment)
+            current_segment = [curr_photo]
+            recent_embeddings = []
+        else:
+            current_segment.append(curr_photo)
+            
+        if curr_emb is not None:
+            recent_embeddings.append(curr_emb)
 
-        storyline.append({
-            "id": f"chapter_{c_idx}",
-            "start_time": chapter_photos[0]["dt"].strftime("%H:%M"),
-            "end_time": chapter_photos[-1]["dt"].strftime("%H:%M"),
-            "photo_count": len(chapter_photos),
+    if current_segment:
+        segments.append(current_segment)
+
+    # 3.5 Extraer "B-Roll / Detalles" en un segmento especial
+    # Solo se mueven fotos "detail" si el segmento tiene suficientes no-detail para seguir siendo válido
+    BROLL_MIN_MAIN_PHOTOS = 8   # Mínimo de fotos no-detail para que el segmento sobreviva la extracción
+    broll_segment = []
+    main_segments = []
+    for segment in segments:
+        main_seg = [p for p in segment if p.get("scene_type") != "detail"]
+        detail_seg = [p for p in segment if p.get("scene_type") == "detail"]
+
+        if len(main_seg) >= BROLL_MIN_MAIN_PHOTOS:
+            # El segmento tiene suficientes retratos: extraer el detalle
+            broll_segment.extend(detail_seg)
+            main_segments.append(main_seg)
+        else:
+            # Segmento pequeño: conservar todo junto para no dejarlo vacío
+            main_segments.append(segment)
+
+    if broll_segment:
+        # B-Roll como segmento especial al final, marcado con id especial
+        main_segments.append(broll_segment)
+
+    segments = main_segments
+
+    # 4. Asignar IDs y crear diccionarios de segmentos iniciales
+    # El último segmento puede ser el B-Roll si existe
+    chapter_map = {}
+    broll_segment_data = main_segments[-1] if broll_segment else None
+    moment_idx = 0
+
+    for c_idx, segment in enumerate(segments):
+        is_broll = broll_segment and segment is broll_segment_data
+        c_id = "segment_broll" if is_broll else f"segment_{moment_idx}"
+        paths = [p["path"] for p in segment]
+
+        # Ordenamos temporalmente solo para sacar el medoid cronológico y horas
+        segment.sort(key=lambda x: x["dt"])
+        medoid_path = segment[len(segment) // 2]["path"]
+
+        chapter_map[c_id] = {
+            "id": c_id,
+            "name": "B-Roll / Detalles" if is_broll else f"Momento {moment_idx + 1}",
+            "is_broll": is_broll,
+            "start_time": segment[0]["dt"].strftime("%H:%M"),
+            "end_time": segment[-1]["dt"].strftime("%H:%M"),
+            "photo_count": len(paths),
             "medoid_thumb": thumb_url(medoid_path),
-            "medoid_path": medoid_path
-        })
+            "medoid_path": medoid_path,
+            "paths": paths
+        }
+        if not is_broll:
+            moment_idx += 1
 
-    return storyline
+    # 5. Aplicar Overrides Manuales (si los hay)
+    overrides = load_overrides(directory)
+    if overrides:
+        # Remover de su lugar original y poner en el nuevo
+        for p_path, new_cid in overrides.items():
+            if new_cid not in chapter_map:
+                continue # Capítulo destino no existe
+                
+            # Buscar dónde estaba
+            for cid, c_data in chapter_map.items():
+                if p_path in c_data["paths"] and cid != new_cid:
+                    c_data["paths"].remove(p_path)
+                    chapter_map[new_cid]["paths"].append(p_path)
+                    break
+
+        # Recalcular photo_count y eliminar capítulos vacíos si quedaron
+        for cid in list(chapter_map.keys()):
+            chapter_map[cid]["photo_count"] = len(chapter_map[cid]["paths"])
+            if chapter_map[cid]["photo_count"] == 0:
+                del chapter_map[cid]
+
+    # Convertir a lista y devolver
+    return list(chapter_map.values())

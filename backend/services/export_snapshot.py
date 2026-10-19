@@ -25,30 +25,53 @@ def _snapshot_path(directory: str) -> Path:
 
 
 def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
-                  edits_applied: bool = True) -> None:
+                  edits_applied: bool = True, extra_directories: list[str] | None = None) -> None:
     """Guarda {path: label} de lo exportado en el último culling del directorio."""
-    items = {
-        r["path"]: r["label"]
-        for r in results
-        if r.get("label") and not r.get("error")
-    }
+    items = {}
+    crops = {}
+    develops = {}
+    identities = {}
+
+    for r in results:
+        if r.get("label") and not r.get("error"):
+            p = r["path"]
+            lbl = r["label"]
+            items[p] = lbl
+            if r.get("crop"):
+                crops[p] = r["crop"]
+            if r.get("develop"):
+                develops[p] = r["develop"]
+            if r.get("identity_ids"):
+                identities[p] = r["identity_ids"]
+
+            lr = r.get("linked_raw_path")
+            if lr:
+                items[lr] = lbl
+                if r.get("crop"):
+                    crops[lr] = r["crop"]
+                if r.get("develop"):
+                    develops[lr] = r["develop"]
+                if r.get("identity_ids"):
+                    identities[lr] = r["identity_ids"]
+
+    resolved_primary = str(Path(directory).resolve())
+    resolved_extras = [
+        str(Path(d).resolve())
+        for d in (extra_directories or [])
+        if str(Path(d).resolve()).lower() != resolved_primary.lower()
+    ]
+
     data = {
-        "directory": str(Path(directory).resolve()),
+        "directory": resolved_primary,
+        "extra_directories": resolved_extras,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         # False = modo "solo culling": crop/develop propuestos pero no escritos
         "edits_applied": edits_applied,
         "items": items,
         # Crops/develop propuestos: el re-export tras un duelo los reutiliza
-        "crops": {
-            r["path"]: r["crop"]
-            for r in results
-            if r.get("crop") and not r.get("error")
-        },
-        "develops": {
-            r["path"]: r["develop"]
-            for r in results
-            if r.get("develop") and not r.get("error")
-        },
+        "crops": crops,
+        "develops": develops,
+        "identities": identities,
         "preset_path": preset_path,
     }
     try:
@@ -56,17 +79,42 @@ def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
         _snapshot_path(directory).write_text(
             json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
         )
+        # Registrar punteros para carpetas secundarias y subdirectorios de fotos
+        parent_dirs = set(resolved_extras)
+        for p in items.keys():
+            try:
+                p_dir = str(Path(p).parent.resolve())
+                if p_dir.lower() != resolved_primary.lower():
+                    parent_dirs.add(p_dir)
+            except Exception:
+                pass
+        pointer_payload = json.dumps({"redirect_to": resolved_primary}, ensure_ascii=False)
+        for ext_dir in parent_dirs:
+            try:
+                _snapshot_path(ext_dir).write_text(pointer_payload, encoding="utf-8")
+            except Exception as ptr_err:
+                logger.debug(f"No se pudo guardar puntero de snapshot para {ext_dir}: {ptr_err}")
     except Exception as e:
         logger.error(f"No se pudo guardar el snapshot de export: {e}")
 
 
-def load_snapshot(directory: str) -> dict | None:
+def load_snapshot(directory: str, _visited: set[str] | None = None) -> dict | None:
     """Carga el snapshot del directorio, o None si nunca se exportó."""
     sp = _snapshot_path(directory)
     if not sp.exists():
         return None
     try:
-        return json.loads(sp.read_text(encoding="utf-8"))
+        data = json.loads(sp.read_text(encoding="utf-8"))
+        redirect_target = data.get("redirect_to")
+        if redirect_target:
+            visited = _visited or set()
+            norm_curr = str(Path(directory).resolve()).lower()
+            norm_target = str(Path(redirect_target).resolve()).lower()
+            if norm_target != norm_curr and norm_target not in visited:
+                visited.add(norm_curr)
+                return load_snapshot(redirect_target, _visited=visited)
+            return None
+        return data
     except Exception as e:
         logger.error(f"Snapshot ilegible ({sp.name}): {e}")
         return None
@@ -74,7 +122,8 @@ def load_snapshot(directory: str) -> dict | None:
 
 def _save(directory: str, data: dict) -> None:
     try:
-        _snapshot_path(directory).write_text(
+        target_dir = data.get("directory") or directory
+        _snapshot_path(target_dir).write_text(
             json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
         )
     except Exception as e:

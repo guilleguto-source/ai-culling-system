@@ -24,12 +24,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ratings_mapping": {
         "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
         "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
+        "recommended": {"stars": 1, "color": "Amarillo", "flag": "pick"},
         "blurry": {"stars": 0, "color": "Rojo", "flag": "reject"},
         "closed_eyes": {"stars": 0, "color": "", "flag": "none"},
         "duplicates": {"stars": 0, "color": "", "flag": "none"},
     },
     "selection_preferences": {
-        "selectivity_target": "standard",   # "few" | "standard" | "more"
+        "selectivity_target": "few",      # "few" | "standard" | "more"
         "detect_duplicates": True,
         "detect_highlights": True,
         "detect_blurry": True,

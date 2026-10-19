@@ -5,14 +5,14 @@ import { LutProfile, LutStatusResponse } from '../types/api';
 interface AdvancedPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedPhotoPath?: string;
+  selectedPaths?: string[];
   onRefreshResults?: () => void;
 }
 
 export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
   isOpen,
   onClose,
-  selectedPhotoPath,
+  selectedPaths = [],
   onRefreshResults
 }) => {
   const [lutStatus, setLutStatus] = useState<LutStatusResponse | null>(null);
@@ -56,10 +56,10 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
-  const handleApplyLut = async (allSelected: boolean) => {
+  const handleApplyLut = async () => {
     setIsApplying('lut');
     try {
-      const paths = !allSelected && selectedPhotoPath ? [selectedPhotoPath] : undefined;
+      const paths = selectedPaths.length > 0 ? selectedPaths : undefined;
       const res = await apiClient.applyLut({
         lut_id: selectedLut,
         strength: lutStrength,
@@ -74,10 +74,10 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
     }
   };
 
-  const handleApplyRelight = async (allSelected: boolean) => {
+  const handleApplyRelight = async () => {
     setIsApplying('relight');
     try {
-      const paths = !allSelected && selectedPhotoPath ? [selectedPhotoPath] : undefined;
+      const paths = selectedPaths.length > 0 ? selectedPaths : undefined;
       const res = await apiClient.relightFaces({
         intensity: relightIntensity,
         image_paths: paths
@@ -91,10 +91,10 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
     }
   };
 
-  const handleApplySkin = async (allSelected: boolean) => {
+  const handleApplySkin = async () => {
     setIsApplying('skin');
     try {
-      const paths = !allSelected && selectedPhotoPath ? [selectedPhotoPath] : undefined;
+      const paths = selectedPaths.length > 0 ? selectedPaths : undefined;
       const res = await apiClient.skinRetouch({
         smoothness: skinSmoothness,
         image_paths: paths
@@ -107,6 +107,8 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
       setIsApplying(null);
     }
   };
+
+  const applyText = selectedPaths.length > 0 ? `Aplicar a ${selectedPaths.length} Seleccionadas` : 'Aplicar a Todas';
 
   if (!isOpen) return null;
 
@@ -280,7 +282,7 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
               <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <button
                   disabled={isApplying !== null}
-                  onClick={() => handleApplyLut(true)}
+                  onClick={() => handleApplyLut()}
                   style={{
                     flex: 1,
                     padding: '8px 12px',
@@ -293,25 +295,8 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
                     cursor: isApplying ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {isApplying === 'lut' ? 'Aplicando...' : 'Aplicar a Seleccionadas'}
+                  {isApplying === 'lut' ? 'Aplicando...' : applyText}
                 </button>
-                {selectedPhotoPath && (
-                  <button
-                    disabled={isApplying !== null}
-                    onClick={() => handleApplyLut(false)}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#3f3f46',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.78rem',
-                      cursor: isApplying ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Solo esta foto
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -354,7 +339,7 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
               <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <button
                   disabled={isApplying !== null}
-                  onClick={() => handleApplyRelight(true)}
+                  onClick={() => handleApplyRelight()}
                   style={{
                     flex: 1,
                     padding: '8px 12px',
@@ -367,25 +352,8 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
                     cursor: isApplying ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {isApplying === 'relight' ? 'Procesando...' : 'Re-iluminar Seleccionadas'}
+                  {isApplying === 'relight' ? 'Procesando...' : applyText}
                 </button>
-                {selectedPhotoPath && (
-                  <button
-                    disabled={isApplying !== null}
-                    onClick={() => handleApplyRelight(false)}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#3f3f46',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.78rem',
-                      cursor: isApplying ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Solo esta foto
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -428,7 +396,7 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
               <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                 <button
                   disabled={isApplying !== null}
-                  onClick={() => handleApplySkin(true)}
+                  onClick={() => handleApplySkin()}
                   style={{
                     flex: 1,
                     padding: '8px 12px',
@@ -441,25 +409,8 @@ export const AdvancedPanel: React.FC<AdvancedPanelProps> = ({
                     cursor: isApplying ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {isApplying === 'skin' ? 'Procesando...' : 'Retocar Seleccionadas'}
+                  {isApplying === 'skin' ? 'Procesando...' : applyText}
                 </button>
-                {selectedPhotoPath && (
-                  <button
-                    disabled={isApplying !== null}
-                    onClick={() => handleApplySkin(false)}
-                    style={{
-                      padding: '8px 12px',
-                      backgroundColor: '#3f3f46',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.78rem',
-                      cursor: isApplying ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Solo esta foto
-                  </button>
-                )}
               </div>
             </div>
           </div>

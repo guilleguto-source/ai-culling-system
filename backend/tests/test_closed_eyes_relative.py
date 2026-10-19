@@ -22,7 +22,8 @@ from services.decision import apply_decision_logic
 
 def _rec(i):
     return SimpleNamespace(path=f"C:/ev/IMG_{i}.jpg", filename=f"IMG_{i}.jpg",
-                           is_raw=False, error="", thumb_ai=None, linked_raw_path=None)
+                           is_raw=False, error="", thumb_ai=None, linked_raw_path=None,
+                           width=6000, height=4000)
 
 
 def _an(i, closed=0, faces=3, away=0):

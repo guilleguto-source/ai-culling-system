@@ -1,0 +1,31 @@
+[project]
+name = "photoselect"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python>=4.8",
+    "rawpy>=0.19",
+    "imagehash>=4.3",
+    "Pillow>=10",
+    "numpy>=1.26,<2.0",
+    "onnxruntime>=1.16",
+    "PyYAML>=6.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5"]
+
+[project.scripts]
+photoselect = "photoselect.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

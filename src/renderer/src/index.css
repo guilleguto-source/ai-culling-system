@@ -1,236 +1,34 @@
+/* ==========================================================================
+   GUTO FLOW 2.0 — MASTER STYLES ENTRYPOINT
+   ========================================================================== */
+
 @import url('./styles/tokens.css');
+@import url('./styles/global.css');
+@import url('./styles/layout.css');
+@import url('./styles/components.css');
+@import url('./styles/utilities.css');
 
-:root {
-  /* Legacy Mappings to new Dark Studio tokens */
-  --bg-primary: var(--bg-deep);
-  --bg-secondary: var(--bg-surface);
-  --bg-tertiary: var(--bg-elevated);
-  --bg-glass: rgba(13, 15, 20, 0.65);
-
-  /* Accent Colors */
-  --accent-primary: var(--accent-amber);
-  --accent-hover: #FBBF24;
-  --accent-active: #D97706;
-  --accent-contrast: var(--bg-deep);
-  --accent-glow: rgba(232, 146, 60, 0.35);
-
-  --border-subtle: var(--border-subtle);
-  --border-strong: var(--border-strong);
-  --border-focus: rgba(232, 146, 60, 0.5);
-
-  /* Status Colors mapped to Dark Studio semantic colors */
-  --status-selected-bg: rgba(45, 212, 168, 0.16);
-  --status-selected-text: var(--accent-teal);
-  --status-selected-border: rgba(45, 212, 168, 0.4);
-
-  --status-highlight-bg: rgba(91, 141, 239, 0.16);
-  --status-highlight-text: var(--accent-blue);
-  --status-highlight-border: rgba(91, 141, 239, 0.4);
-
-  --status-blurry-bg: rgba(232, 93, 117, 0.16);
-  --status-blurry-text: var(--accent-rose);
-  --status-blurry-border: rgba(232, 93, 117, 0.4);
-
-  --status-duplicate-bg: rgba(232, 146, 60, 0.16);
-  --status-duplicate-text: var(--accent-amber);
-
-  --status-closed-bg: rgba(232, 93, 117, 0.16);
-  --status-closed-text: var(--accent-rose);
-
-  /* Radii & Shadows */
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
-  --radius-xl: 20px;
-
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.5), 0 3px 6px -2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 16px 24px -4px rgba(0, 0, 0, 0.6), 0 8px 12px -4px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.3);
-
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
-  user-select: none;
-}
-
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-md);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
-/* Glassmorphism Utilities */
+/* Compatibility overrides for existing legacy components */
 .glass-panel {
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--color-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-sm);
 }
 
 .glass-card {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-normal);
+  border-radius: var(--radius-sm);
 }
 
-.glass-card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+.card-solid {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
 }
 
-/* Layout Utilities */
 .flex-center {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.flex-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: var(--radius-md);
-  font-family: inherit;
-  font-weight: 500;
-  font-size: 0.88rem;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 1px solid transparent;
-  outline: none;
-}
-
-.btn:active {
-  transform: scale(0.97);
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-active));
-  color: var(--accent-contrast);
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
-}
-.btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent-hover), var(--accent-primary));
-  box-shadow: var(--shadow-glow);
-}
-
-.btn-secondary {
-  background-color: var(--bg-tertiary);
-  border-color: var(--border-subtle);
-  color: var(--text-primary);
-}
-.btn-secondary:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: var(--border-strong);
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Neon Pulse Indicator */
-.pulse-indicator {
-  position: relative;
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--status-selected-text);
-}
-.pulse-indicator::after {
-  content: '';
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background-color: var(--status-selected-text);
-  opacity: 0.4;
-  animation: pulse-ring 1.8s infinite cubic-bezier(0.45, 0, 0.55, 1);
-}
-
-@keyframes pulse-ring {
-  0% { transform: scale(0.8); opacity: 0.8; }
-  100% { transform: scale(2.2); opacity: 0; }
-}
-
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up {
-  animation: fade-in-up var(--transition-normal) forwards;
-}
-
-/* Badge Styles */
-.badge {
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.badge-selected {
-  background: var(--status-selected-bg);
-  color: var(--status-selected-text);
-  border: 1px solid var(--status-selected-border);
-}
-.badge-blurry {
-  background: var(--status-blurry-bg);
-  color: var(--status-blurry-text);
-  border: 1px solid var(--status-blurry-border);
-}
-.badge-highlight {
-  background: var(--status-highlight-bg);
-  color: var(--status-highlight-text);
-  border: 1px solid var(--status-highlight-border);
 }

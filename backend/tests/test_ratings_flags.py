@@ -13,7 +13,7 @@ from services import settings_manager
 
 def _pick(packet: bytes) -> str:
     s = packet.decode("utf-8")
-    return s.split("<xmp:PickStatus>")[1].split("</xmp:PickStatus>")[0]
+    return s.split("<crs:Pick>")[1].split("</crs:Pick>")[0]
 
 
 def test_flag_configurable_pisa_el_default():

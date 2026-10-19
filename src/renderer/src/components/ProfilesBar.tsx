@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
+import { Button } from './ui/Button';
 
 /**
  * Perfiles de workflow: bodas, infantil, corporativo…
@@ -47,37 +48,53 @@ export default function ProfilesBar() {
   };
 
   return (
-    <div style={{
-      border: '1px solid var(--border-subtle)', borderRadius: '6px',
-      padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px',
-    }}>
+    <div
+      style={{
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-sm)',
+        backgroundColor: 'var(--color-surface-elevated)',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)'
+      }}
+    >
       <div className="flex-between">
         <div>
-          <div style={{ fontWeight: 500 }}>Perfiles de workflow</div>
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+          <div style={{ fontWeight: 'var(--fw-medium)', fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
+            Perfiles de workflow
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
             Guarda esta configuración con un nombre y reutilízala por tipo de evento
           </div>
         </div>
-        <button className="btn btn-secondary" style={{ padding: '4px 10px' }}
-          onClick={guardar} disabled={ocupado}>
+        <Button variant="secondary" size="sm" onClick={guardar} disabled={ocupado}>
           Guardar actual
-        </button>
+        </Button>
       </div>
 
       {perfiles.length > 0 && (
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           {perfiles.map(p => (
-            <button key={p} className="btn btn-secondary"
-              style={{ padding: '4px 10px' }}
-              onClick={() => aplicar(p)} disabled={ocupado}
-              title="Aplicar este perfil a las preferencias actuales">
+            <Button
+              key={p}
+              variant="secondary"
+              size="sm"
+              onClick={() => aplicar(p)}
+              disabled={ocupado}
+              title="Aplicar este perfil a las preferencias actuales"
+            >
               {p}
-            </button>
+            </Button>
           ))}
         </div>
       )}
 
-      {msg && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{msg}</div>}
+      {msg && (
+        <div style={{ fontSize: '11px', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>
+          {msg}
+        </div>
+      )}
     </div>
   );
 }

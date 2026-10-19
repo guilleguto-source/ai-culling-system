@@ -8,8 +8,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.calibration_store import CalibrationStore, ATTRIBUTES
-from services import face_mesh
-from services.face_mesh import FaceAttributes
+from services.legacy import face_mesh
+from services.legacy.face_mesh import FaceAttributes
 
 
 def _store(tmp_path):

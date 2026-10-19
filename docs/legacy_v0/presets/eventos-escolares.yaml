@@ -1,0 +1,12 @@
+blur: moderado
+eyes_closed: score_only
+duplicates: stack
+stars_keeper: 3
+keep_detail_shots: true
+# Conjunto de etiquetas de color de Lightroom (español por defecto, masculino).
+# Confirmado por Aftershoot: Rojo / Amarillo / Verde / Azul / Morado.
+# Deben coincidir EXACTO con tu "Conjunto de etiquetas de color" o LR no las pinta.
+labels:
+  keeper: Verde
+  highlight: Azul
+  reject: Rojo

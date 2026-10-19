@@ -10,9 +10,11 @@ declare global {
       ingestMedia: (directory: string, mode?: string) => Promise<{ job_id: string; status: string }>;
       getJobStatus: () => Promise<JobStatus>;
       getJobResults: () => Promise<JobResults>;
-      checkUndoAvailable?: (directory: string) => Promise<{ disponible: boolean }>;
-      undoExport?: (directory: string) => Promise<{ success: boolean; restauradas: number; limpiadas?: number; fallidas?: number }>;
+
       selectFolder: (defaultPath?: string) => Promise<string | null>;
+      preventSleep: () => Promise<number>;
+      allowSleep: () => Promise<boolean>;
+      suspendPC: () => Promise<boolean>;
       onBackendLog: (callback: (log: string) => void) => () => void;
       onBackendStatusChange: (callback: (status: string) => void) => () => void;
     };

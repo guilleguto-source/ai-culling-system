@@ -19,7 +19,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Límites por nivel: máximo % lineal removible por dimensión
-LEVEL_LIMITS = {"minimo": 0.10, "medio": 0.20, "agresivo": 0.35}
+LEVEL_LIMITS = {"minimo": 0.15, "medio": 0.30, "agresivo": 0.45}
 
 MAX_LEVEL_ANGLE = 7.0      # grados; más inclinación = holandés intencional o error
 ROTATION_CROP_PER_DEG = 0.015  # recorte lineal que consume nivelar 1 grado
@@ -76,6 +76,7 @@ class CropProposal:
             "left": round(self.left, 4), "top": round(self.top, 4),
             "right": round(self.right, 4), "bottom": round(self.bottom, 4),
             "angle": round(self.angle, 2), "reason": self.reason,
+            "aspect_preserved": True,
         }
 
 
@@ -330,12 +331,14 @@ def _cuts_skin(mask: np.ndarray, window: tuple[float, float, float, float]) -> b
 
 
 def _nearest_strong_point(fx: float, fy: float, level: str) -> tuple[float, float]:
-    """Punto fuerte (tercios; agresivo también áurea) más cercano al sujeto."""
-    lines = list(THIRDS)
+    """Punto fuerte (tercios; centro horizontal; agresivo también áurea) más cercano al sujeto."""
+    x_lines = list(THIRDS) + [0.5]
+    y_lines = list(THIRDS)
     if level == "agresivo":
-        lines += list(GOLDEN)
-    tx = min(lines, key=lambda v: abs(v - fx))
-    ty = min(lines, key=lambda v: abs(v - fy))
+        x_lines += list(GOLDEN)
+        y_lines += list(GOLDEN)
+    tx = min(x_lines, key=lambda v: abs(v - fx))
+    ty = min(y_lines, key=lambda v: abs(v - fy))
     return tx, ty
 
 
@@ -414,6 +417,54 @@ def _recompose(subject: tuple[float, float], target: tuple[float, float],
     return None
 
 
+def _enforce_aspect(
+    window: tuple[float, float, float, float],
+    orig_w: int,
+    orig_h: int,
+) -> tuple[float, float, float, float]:
+    """
+    Ajusta los bordes del crop para que el área resultante conserve exactamente
+    la relación de aspecto original (orig_w : orig_h).
+
+    Estrategia: compara las dimensiones reales en píxeles del crop propuesto
+    con la ratio original. Si difieren en más de 0.1%, recorta el lado
+    excedente centrando el recorte sobre el mismo eje.
+
+    Esta función es NO-destructiva: nunca amplía la ventana más allá de [0, 1].
+    """
+    wl, wt, wr, wb = window
+    crop_w_px = (wr - wl) * orig_w
+    crop_h_px = (wb - wt) * orig_h
+
+    if crop_h_px < 1 or crop_w_px < 1:
+        return window
+
+    target_ratio = orig_w / orig_h
+    actual_ratio = crop_w_px / crop_h_px
+
+    if abs(actual_ratio - target_ratio) < 0.001:
+        return window  # Ya correcto, no tocar
+
+    if actual_ratio > target_ratio:
+        # Demasiado ancho → reducir crop_w
+        new_crop_w_px = crop_h_px * target_ratio
+        new_crop_w_frac = new_crop_w_px / orig_w
+        cx = (wl + wr) / 2.0
+        half = new_crop_w_frac / 2.0
+        wl = max(0.0, cx - half)
+        wr = min(1.0, cx + half)
+    else:
+        # Demasiado alto → reducir crop_h
+        new_crop_h_px = crop_w_px / target_ratio
+        new_crop_h_frac = new_crop_h_px / orig_h
+        cy = (wt + wb) / 2.0
+        half = new_crop_h_frac / 2.0
+        wt = max(0.0, cy - half)
+        wb = min(1.0, cy + half)
+
+    return (wl, wt, wr, wb)
+
+
 def propose_crop(
     scene_type: str,
     face_bboxes: list[list[int]],
@@ -425,6 +476,7 @@ def propose_crop(
     person_bboxes: list[list[int]] | None = None,
     img_rgb: np.ndarray | None = None,
     crop_style: dict | None = None,
+    preserve_aspect: bool = True,
 ) -> CropProposal | None:
     """
     Propone un reencuadre según el tipo de escena y el nivel configurado.
@@ -432,6 +484,8 @@ def propose_crop(
     `person_bboxes`: cuerpos detectados (YOLOv8) — protegen gente sin rostro
     visible. `img_rgb`: si se pasa, activa la guardia de piel en los bordes.
     `crop_style`: estilo aprendido de reencuadre por tipo de escena.
+    `preserve_aspect`: si True (por defecto), ajusta el crop final para conservar
+    exactamente la relación de aspecto original de la imagen.
     """
     if level not in LEVEL_LIMITS:
         return None
@@ -516,4 +570,13 @@ def propose_crop(
         reason += " + nivelado"
 
     prop = CropProposal(*window, angle, reason)
-    return prop if prop.is_meaningful() else None
+    if not prop.is_meaningful():
+        return None
+
+    # Preservar relación de aspecto original: ajustar el crop para que el
+    # área resultante tenga exactamente la misma ratio que la imagen original.
+    if preserve_aspect:
+        adjusted = _enforce_aspect((prop.left, prop.top, prop.right, prop.bottom), w, h)
+        prop.left, prop.top, prop.right, prop.bottom = adjusted
+
+    return prop

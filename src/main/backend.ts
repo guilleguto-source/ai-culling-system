@@ -231,10 +231,7 @@ export function setupBackendIpc() {
   ipcMain.handle('backend:job:status', () => makeGetRequest('/status'));
   ipcMain.handle('backend:job:results', () => makeGetRequest('/results'));
   
-  ipcMain.handle('backend:undo:available', (_, directory: string) =>
-    makeGetRequest(`/undo_export/available?directory=${encodeURIComponent(directory)}`));
-  ipcMain.handle('backend:undo:run', (_, directory: string) =>
-    makePostRequest('/undo_export', { directory }));
+
 
   ipcMain.handle('backend:select-folder', async (_, defaultPath?: string) => {
     const result = await dialog.showOpenDialog({
@@ -245,5 +242,52 @@ export function setupBackendIpc() {
       return null;
     }
     return result.filePaths[0];
+  });
+
+  // --- Gestión de Energía y Suspensión ---
+  let powerBlockerId: number | null = null;
+
+  ipcMain.handle('system:prevent-sleep', () => {
+    const { powerSaveBlocker } = require('electron');
+    if (powerBlockerId === null || !powerSaveBlocker.isStarted(powerBlockerId)) {
+      powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+      console.log(`[PowerSaveBlocker] Bloqueo de suspensión activado (ID: ${powerBlockerId})`);
+    }
+    return powerBlockerId;
+  });
+
+  ipcMain.handle('system:allow-sleep', () => {
+    const { powerSaveBlocker } = require('electron');
+    if (powerBlockerId !== null && powerSaveBlocker.isStarted(powerBlockerId)) {
+      powerSaveBlocker.stop(powerBlockerId);
+      console.log(`[PowerSaveBlocker] Bloqueo de suspensión liberado (ID: ${powerBlockerId})`);
+      powerBlockerId = null;
+    }
+    return true;
+  });
+
+  ipcMain.handle('system:suspend', async () => {
+    const { exec } = require('child_process');
+    console.log('[System] Ejecutando orden de suspensión del sistema...');
+    
+    return new Promise((resolve) => {
+      if (process.platform === 'win32') {
+        // rundll32 es el método más directo y fiable para suspender en Windows,
+        // sin depender de .NET ni de escapes de $false en PowerShell.
+        // Parámetros: Hibernate=0 (sleep), Force=1, DisableWakeEvent=0
+        exec('rundll32.exe powrprof.dll,SetSuspendState 0,1,0', (err: any) => {
+          if (err) {
+            console.error('[System] Error al suspender en Windows:', err);
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      } else if (process.platform === 'darwin') {
+        exec('pmset sleepnow', (err: any) => resolve(!err));
+      } else {
+        exec('systemctl suspend', (err: any) => resolve(!err));
+      }
+    });
   });
 }

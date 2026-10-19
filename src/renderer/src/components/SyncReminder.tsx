@@ -19,8 +19,8 @@ export default function SyncReminder({ active }: { active: boolean }) {
 
   const cargar = useCallback(async () => {
     try {
-      const data = await apiClient.getPendingSync();
-      setEventos(data.events || []);
+      const data = await apiClient.getSyncPending();
+      setEventos((data.events as any) || []);
     } catch { /* backend caído: no bloquea la app */ }
   }, []);
 

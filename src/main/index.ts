@@ -4,10 +4,42 @@ import { startBackend, stopBackend, setupBackendIpc } from './backend';
 
 let mainWindow: BrowserWindow | null = null;
 
+async function loadApp(win: BrowserWindow) {
+  const isDev = !app.isPackaged && process.env.CULLING_LOCAL !== '1';
+  const localHtmlPath = path.join(__dirname, '../renderer/index.html');
+
+  if (!isDev) {
+    await win.loadFile(localHtmlPath);
+    return;
+  }
+
+  const viteUrl = 'http://localhost:5173';
+  let loaded = false;
+  
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    if (win.isDestroyed()) return;
+    try {
+      await win.loadURL(viteUrl);
+      loaded = true;
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  }
+
+  if (!loaded && !win.isDestroyed()) {
+    console.warn('Vite dev server no disponible en 5173. Usando bundle local compilado.');
+    await win.loadFile(localHtmlPath);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 1200,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    backgroundColor: '#131417',
     title: 'Guto Flow',
     icon: path.join(__dirname, '../../assets/icon.ico'),
     webPreferences: {
@@ -17,15 +49,7 @@ function createWindow() {
     }
   });
 
-  // CULLING_LOCAL=1: lanzamiento desde el escritorio sin terminal — usa el
-  // frontend ya compilado (dist/renderer) y el Python del sistema, sin Vite.
-  const useBuiltRenderer = app.isPackaged || process.env.CULLING_LOCAL === '1';
-  if (useBuiltRenderer) {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  } else {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
-  }
+  loadApp(mainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;

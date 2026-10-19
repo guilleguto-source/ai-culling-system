@@ -23,7 +23,7 @@ export default function SemanticSearchBar({ directory, onSearchResults, onClearS
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const data = await apiClient.searchSemantic(query.trim(), directory);
+        const data = await apiClient.semanticSearch(query.trim(), directory || '');
         const list = data.results || [];
         setResultsCount(list.length);
         if (onSearchResults) onSearchResults(list);

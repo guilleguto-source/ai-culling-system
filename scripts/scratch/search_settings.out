@@ -1,0 +1,382 @@
+--- Searching for prefs\.get\( ---
+routers\culling.py:201: pre_edit_prefs = prefs.get("pre_edit", {})
+routers\culling.py:202: pre_edit_enabled = pre_edit_prefs.get("enabled", True)
+routers\culling.py:254: ans = analyze_photo(global_idx, record, face_detector, eye_session, blur_threshold, prefs.get("detect_closed_eyes", True), pre_edit_enabled)
+routers\culling.py:266: detect_closed_eyes=prefs.get("detect_closed_eyes", True),
+routers\culling.py:303: if prefs.get("detect_duplicates", True):
+routers\culling.py:382: preset_path = pre_edit_prefs.get("preset_path") or ""
+routers\culling.py:399: bias=float(pre_edit_prefs.get("exposure_bias", 0.0)),
+routers\culling.py:401: exposure_deadband=float(pre_edit_prefs.get("exposure_deadband", 0.15)),
+routers\culling.py:402: auto_wb=pre_edit_prefs.get("auto_wb", False),
+routers\culling.py:413: lut_cfg = pre_edit_prefs.get("neural_lut", {})
+routers\culling.py:418: rescue_cfg = pre_edit_prefs.get("tonal_rescue", {})
+routers\culling.py:531: if prefs.get("use_vlm_refinement", False) and margen < 0.05:
+routers\culling.py:594: "mode": prefs.get("selectivity_target", "standard"),
+routers\culling.py:601: if prefs.get("ensure_person_coverage", True):
+routers\culling.py:637: overwrite_xmp = prefs.get("overwrite_xmp_ratings", False)
+services\decision.py:138: if trash_flags[idx] and prefs.get("detect_blurry", True):
+services\decision.py:144: keep_frac = KEEP_FRACTION.get(prefs.get("selectivity_target", "standard"), 0.55)
+services\decision.py:152: if prefs.get("detect_highlights", True) and final_selected:
+services\decision.py:157: auto_crop_level = prefs.get("auto_crop", "off")
+services\decision.py:161: auto_straighten = prefs.get("auto_straighten", False)
+services\decision.py:188: prefs.get("detect_closed_eyes", True)
+services\decision.py:195: elif is_trash and prefs.get("detect_blurry", True):
+services\vlm_refiner.py:25: return prefs.get("vlm_model") or DEFAULT_MODEL
+--- Searching for settings\.get\( ---
+routers\advanced.py:53: lut_cfg = settings.get("selection_preferences", {}).get("pre_edit", {}).get("neural_lut", {})
+routers\advanced.py:73: ratings_map = settings.get("ratings_mapping", {})
+routers\advanced.py:126: ratings_map = settings.get("ratings_mapping", {})
+routers\advanced.py:178: ratings_map = settings.get("ratings_mapping", {})
+routers\system.py:100: return save_profile(data.nombre, settings.get("preferences", {}))
+routers\system.py:112: settings["preferences"] = apply_profile(data.nombre, settings.get("preferences", {}))
+services\decision.py:156: ratings_map = settings.get("ratings_mapping", {})
+services\settings_manager.py:205: for entry in settings.get("ratings_mapping", {}).values():
+services\settings_manager.py:228: sensitivity = settings.get("selection_preferences", {}).get(
+services\settings_manager.py:236: target = settings.get("selection_preferences", {}).get(
+tests\test_neural_lut.py:32: assert settings.get("Contrast2012") == -12
+tests\test_preset_manager.py:80: assert p.settings.get("AutoLateralCA") == "1"
+--- Searching for ratings_map ---
+routers\advanced.py:73: ratings_map = settings.get("ratings_mapping", {})
+routers\advanced.py:100: mapping = ratings_map.get(label, {})
+routers\advanced.py:126: ratings_map = settings.get("ratings_mapping", {})
+routers\advanced.py:151: mapping = ratings_map.get(label, {})
+routers\advanced.py:178: ratings_map = settings.get("ratings_mapping", {})
+routers\advanced.py:200: mapping = ratings_map.get(label, {})
+routers\bursts.py:62: ratings_map = settings["ratings_mapping"]
+routers\bursts.py:85: m = ratings_map.get(label, {})
+routers\bursts.py:100: xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True,
+routers\culling.py:491: ratings_map = settings["ratings_mapping"]
+routers\culling.py:620: r["stars"] = ratings_map.get("selected", {}).get("stars", 4)
+routers\culling.py:621: r["color"] = ratings_map.get("selected", {}).get("color", "")
+routers\culling.py:640: xmp_stats = export_results_to_xmp(to_export, ratings_map,
+routers\culling.py:643: xmp_stats = export_results_to_xmp(results, ratings_map,
+routers\export.py:72: ratings_map = load_settings()["ratings_mapping"]
+routers\export.py:82: m = ratings_map.get(label, {})
+routers\export.py:95: xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True, preset=preset_data)
+routers\export.py:129: ratings_map = load_settings()["ratings_mapping"]
+routers\export.py:157: baseline = synced.get(primary, ratings_map.get(exported_label, {}).get("stars", 0))
+routers\system.py:44: ratings_mapping: dict | None = None
+routers\system.py:77: if data.ratings_mapping is not None:
+routers\system.py:78: current["ratings_mapping"].update(data.ratings_mapping)
+services\decision.py:156: ratings_map = settings.get("ratings_mapping", {})
+services\decision.py:197: stars = ratings_map.get("blurry", {}).get("stars", 1)
+services\decision.py:200: stars = ratings_map.get("closed_eyes", {}).get("stars", 1)
+services\decision.py:203: stars = ratings_map.get("duplicates", {}).get("stars", 2)
+services\decision.py:206: stars = ratings_map.get("highlighted", {}).get("stars", 5)
+services\decision.py:209: stars = ratings_map.get("selected", {}).get("stars", 4)
+services\decision.py:212: stars = ratings_map.get("duplicates", {}).get("stars", 2)
+services\decision.py:242: "color": ratings_map.get(label, {}).get("color", "") if label else "",
+services\settings_manager.py:24: "ratings_mapping": {
+services\settings_manager.py:106: if "ratings_mapping" in data and "duplicates" in data["ratings_mapping"]:
+services\settings_manager.py:107: if data["ratings_mapping"]["duplicates"].get("color") in ("Yellow", "Red"):
+services\settings_manager.py:108: data["ratings_mapping"]["duplicates"]["color"] = "Purple"
+services\settings_manager.py:112: if data.get("settings_version", 1) < 2 and "ratings_mapping" in data:
+services\settings_manager.py:115: rm = data["ratings_mapping"]
+services\settings_manager.py:123: if data.get("settings_version", 1) < 3 and "ratings_mapping" in data:
+services\settings_manager.py:124: rm = data["ratings_mapping"]
+services\settings_manager.py:136: if data.get("settings_version", 1) < 4 and "ratings_mapping" in data:
+services\settings_manager.py:138: for entry in data["ratings_mapping"].values():
+services\settings_manager.py:145: if data.get("settings_version", 1) < 5 and "ratings_mapping" in data:
+services\settings_manager.py:146: rm = data["ratings_mapping"]
+services\settings_manager.py:160: if data.get("settings_version", 1) < 6 and "ratings_mapping" in data:
+services\settings_manager.py:161: rm = data["ratings_mapping"]
+services\settings_manager.py:204: """Canoniza los nombres de color del ratings_mapping (in-place)."""
+services\settings_manager.py:205: for entry in settings.get("ratings_mapping", {}).values():
+services\workflow_profiles.py:21: # ratings_mapping: el mapeo a estrellas/colores de Lightroom es del fotógrafo,
+services\xmp_exporter.py:31: # Fallback: el banderín real viene de ratings_mapping[label]["flag"]
+services\xmp_exporter.py:399: def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
+services\xmp_exporter.py:412: mapping = ratings_mapping.get(label, {})
+tests\test_closed_eyes_relative.py:45: SETTINGS = {"ratings_mapping": {
+tests\test_lightroom_sync.py:171: ratings_map = load_settings()["ratings_mapping"]
+tests\test_lightroom_sync.py:172: sel_stars = ratings_map["selected"]["stars"]
+tests\test_lightroom_sync.py:173: dup_stars = ratings_map["duplicates"]["stars"]
+tests\test_main.py:19: assert "ratings_mapping" in get_res.json()
+tests\test_main.py:22: "ratings_mapping": {
+tests\test_main.py:29: assert post_res.json()["settings"]["ratings_mapping"]["selected"]["stars"] == 2
+tests\test_ratings_flags.py:34: "ratings_mapping": {
+tests\test_ratings_flags.py:48: rm = s["ratings_mapping"]
+tests\test_ratings_flags.py:65: "ratings_mapping": {
+tests\test_ratings_flags.py:78: rm = settings_manager.load_settings()["ratings_mapping"]
+tests\test_ratings_flags.py:87: s = {"ratings_mapping": {
+tests\test_ratings_flags.py:92: rm = s["ratings_mapping"]
+tests\test_ratings_flags.py:105: "ratings_mapping": {"duplicates": {"stars": 0, "color": "Roja", "flag": "reject"}},
+tests\test_ratings_flags.py:109: assert saved["ratings_mapping"]["duplicates"]["color"] == "Rojo"
+tests\test_ratings_flags.py:114: "ratings_mapping": {
+tests\test_ratings_flags.py:124: rm = settings_manager.load_settings()["ratings_mapping"]
+tests\test_workflow_profiles.py:28: "ratings_mapping": {"selected": {"stars": 2}},   # ajeno al perfil
+tests\test_workflow_profiles.py:39: assert "ratings_mapping" not in guardado and "otra_cosa" not in guardado
+tests\test_workflow_profiles.py:44: actuales = {"selectivity_target": "more", "ratings_mapping": {"x": 1}, "otra_cosa": 999}
+tests\test_workflow_profiles.py:47: assert res["ratings_mapping"] == {"x": 1}        # se conserva
+--- Searching for preset ---
+routers\bursts.py:74: from services.preset_manager import load_preset
+routers\bursts.py:79: preset_path = snap.get("preset_path", "") if snap and edits_on else ""
+routers\bursts.py:80: preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
+routers\bursts.py:101: preset=preset_data)
+routers\culling.py:162: from services.preset_manager import load_preset
+routers\culling.py:379: preset_data = None
+routers\culling.py:382: preset_path = pre_edit_prefs.get("preset_path") or ""
+routers\culling.py:383: if preset_path and Path(preset_path).exists():
+routers\culling.py:384: preset_data = load_preset(preset_path)
+routers\culling.py:400: preset_wb_bias=preset_data.wb_bias if preset_data else (0.0, 0.0),
+routers\culling.py:405: "preset": preset_data.name if preset_data else None,
+routers\culling.py:644: overwrite=overwrite_xmp, preset=preset_data)
+routers\culling.py:654: preset_path=preset_data.path if preset_data else "",
+routers\export.py:60: Escribe la edición propuesta (crop + preset + WB + exposición) en las
+routers\export.py:65: from services.preset_manager import load_preset
+routers\export.py:75: preset_path = snap.get("preset_path", "")
+routers\export.py:76: preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
+routers\export.py:95: xmp_stats = export_results_to_xmp(rewrite, ratings_map, overwrite=True, preset=preset_data)
+routers\export.py:108: "preset": preset_data.name if preset_data else None,
+routers\media.py:2: routers/media.py — Endpoints de miniaturas, búsqueda semántica, storyline, previsualizaciones EXIF/Raw, presets y administración de caché.
+routers\media.py:38: path: str = ""   # "" = desactivar preset
+routers\media.py:354: @router.get("/presets")
+routers\media.py:355: def get_presets():
+routers\media.py:358: "active": pre.get("preset_path", ""),
+routers\media.py:359: "recent": pre.get("recent_presets", []),
+routers\media.py:365: @router.post("/presets/use")
+routers\media.py:366: def use_preset(data: PresetUseRequest):
+routers\media.py:370: pre["preset_path"] = ""
+routers\media.py:372: return {"success": True, "active": "", "recent": pre.get("recent_presets", [])}
+routers\media.py:374: from services.preset_manager import load_preset, register_recent
+routers\media.py:377: if load_preset(data.path) is None:
+routers\media.py:378: raise HTTPException(status_code=400, detail="No es un preset .xmp válido de Lightroom")
+routers\media.py:380: return {"success": True, "active": pre_updated["preset_path"],
+routers\media.py:381: "recent": pre_updated["recent_presets"]}
+services\app_paths.py:128: def get_presets_dir() -> Path:
+services\app_paths.py:129: d = get_user_data_dir() / "presets"
+services\export_snapshot.py:27: def save_snapshot(directory: str, results: list[dict], preset_path: str = "",
+services\export_snapshot.py:52: "preset_path": preset_path,
+services\neural_lut.py:14: curvas complejas o máscaras IA (gestionados por pre_edit y preset_manager).
+services\preset_manager.py:2: preset_manager.py — Carga y gestión de presets .xmp de Lightroom.
+services\preset_manager.py:3: El preset del usuario aporta el "look" (curva, HSL, color grading, nitidez,
+services\preset_manager.py:5: (exposición, WB, crop, AutoTone) y la metadata de catálogo del preset.
+services\preset_manager.py:16: from services.app_paths import get_presets_dir as _get_presets_dir
+services\preset_manager.py:20: PRESETS_DIR = _get_presets_dir()
+services\preset_manager.py:29: # Metadata del preset
+services\pre_edit.py:254: preset_wb_bias: tuple[float, float] = (0.0, 0.0),
+services\pre_edit.py:262: WB: mediana de sesión (pieles mandan) + sesgo del preset, clamp ±MAX_WB.
+services\pre_edit.py:263: Con `auto_wb=False` solo se aplica el sesgo del preset (la corrección
+services\pre_edit.py:326: # sesgo del preset: no se corrige WB por foto.
+services\pre_edit.py:336: t = float(np.clip(t + preset_wb_bias[0], -MAX_WB, MAX_WB))
+services\pre_edit.py:337: i = float(np.clip(i + preset_wb_bias[1], -MAX_WB, MAX_WB))
+services\settings_manager.py:48: "preset_path": "",              # .xmp de LR activo ("" = sin preset)
+services\settings_manager.py:52: "recent_presets": [],           # [{name, path}] MRU máx 5
+services\settings_manager.py:54: "enabled": True,            # Coexiste con preset, aprende de recetas pasadas
+services\workflow_profiles.py:5: corporativa: cambia la selectividad, el recorte, el preset y la exposición. Sin
+services\xmp_exporter.py:73: preset=None,
+services\xmp_exporter.py:83: `preset`: PresetData (preset_manager) — el "look" del usuario; sus campos
+services\xmp_exporter.py:115: if preset is not None:
+services\xmp_exporter.py:116: crs_fields.update(preset.settings)
+services\xmp_exporter.py:137: # 4. Pre-edición calculada (exposición/WB): pisa al preset y LUT
+services\xmp_exporter.py:162: if crs_fields or paint_corrections or (preset is not None and preset.elements):
+services\xmp_exporter.py:172: # Bloques XML del preset (curvas, HSL point colors, máscaras IA)
+services\xmp_exporter.py:173: if preset is not None:
+services\xmp_exporter.py:174: for element in preset.elements:
+services\xmp_exporter.py:313: develop: dict | None = None, preset=None,
+services\xmp_exporter.py:327: develop=develop, preset=preset, flag=flag,
+services\xmp_exporter.py:400: overwrite: bool = False, preset=None,
+services\xmp_exporter.py:403: `preset` (PresetData) y `lut_adjustments` se aplican a fotos con `develop`."""
+services\xmp_exporter.py:426: preset=preset if develop else None,
+tests\test_apply_edits.py:32: ], preset_path="", edits_applied=False)
+tests\test_preset_manager.py:1: """Tests del preset manager: parseo, lista negra y recientes (MRU)."""
+tests\test_preset_manager.py:9: from services import preset_manager
+tests\test_preset_manager.py:10: from services.preset_manager import load_preset, register_recent
+tests\test_preset_manager.py:12: # Fixture reducida con la estructura real de un preset LR moderno
+tests\test_preset_manager.py:53: def preset_file(tmp_path):
+tests\test_preset_manager.py:59: def test_parseo_basico(preset_file):
+tests\test_preset_manager.py:60: p = load_preset(str(preset_file))
+tests\test_preset_manager.py:68: def test_lista_negra(preset_file):
+tests\test_preset_manager.py:69: p = load_preset(str(preset_file))
+tests\test_preset_manager.py:77: def test_auto_lateral_ca_se_conserva(preset_file):
+tests\test_preset_manager.py:79: p = load_preset(str(preset_file))
+tests\test_preset_manager.py:83: def test_wb_bias_extraido(preset_file):
+tests\test_preset_manager.py:84: p = load_preset(str(preset_file))
+tests\test_preset_manager.py:88: def test_elementos_conservan_curva_y_mascaras(preset_file):
+tests\test_preset_manager.py:89: p = load_preset(str(preset_file))
+tests\test_preset_manager.py:96: def test_preset_ilegible_devuelve_none(tmp_path):
+tests\test_preset_manager.py:99: assert load_preset(str(f)) is None
+tests\test_preset_manager.py:102: def test_register_recent_mru(preset_file, tmp_path, monkeypatch):
+tests\test_preset_manager.py:103: monkeypatch.setattr(preset_manager, "PRESETS_DIR", tmp_path / "presets")
+tests\test_preset_manager.py:105: monkeypatch.setattr(preset_manager, "load_settings",
+tests\test_preset_manager.py:107: monkeypatch.setattr(preset_manager, "save_settings",
+tests\test_preset_manager.py:110: pre = register_recent(str(preset_file))
+tests\test_preset_manager.py:111: assert pre["recent_presets"][0]["name"] == "GutoPro Test"
+tests\test_preset_manager.py:112: assert (tmp_path / "presets" / "GutoPro Test.xmp").exists()
+tests\test_pre_edit.py:230: def test_wb_clamp_final_con_sesgo_de_preset():
+tests\test_pre_edit.py:232: edits = compute_pre_edits(sigs, bias=0.0, preset_wb_bias=(5.0, 5.0))
+tests\test_pre_edit_calibrado.py:39: def test_auto_wb_off_solo_deja_el_sesgo_del_preset():
+tests\test_pre_edit_calibrado.py:41: solo sobrevive el sesgo del preset."""
+tests\test_pre_edit_calibrado.py:45: edits_preset = compute_pre_edits(sigs, bias=0.0, auto_wb=False,
+tests\test_pre_edit_calibrado.py:46: preset_wb_bias=(5.0, 0.0))
+tests\test_pre_edit_calibrado.py:50: assert edits_preset[0]["IncrementalTemperature"] == 5.0   # solo el preset
+tests\test_pre_edit_xmp.py:1: """Tests del paquete XMP con pre-edición (preset + develop) y endpoints de presets."""
+tests\test_pre_edit_xmp.py:12: from services.preset_manager import load_preset
+tests\test_pre_edit_xmp.py:13: from tests.test_preset_manager import PRESET_XML
+tests\test_pre_edit_xmp.py:19: def preset(tmp_path):
+tests\test_pre_edit_xmp.py:22: return load_preset(str(f))
+tests\test_pre_edit_xmp.py:25: def test_packet_desarrollo_completo(preset):
+tests\test_pre_edit_xmp.py:26: packet = _build_xmp_packet(3, "Verde", "selected", develop=_DEVELOP, preset=preset)
+tests\test_pre_edit_xmp.py:32: # Look del preset (ajustes + bloques)
+tests\test_pre_edit_xmp.py:40: def test_packet_develop_sin_preset():
+tests\test_pre_edit_xmp.py:45: def test_rating_sigue_legible_con_todo(tmp_path, preset):
+tests\test_pre_edit_xmp.py:50: crop=crop, develop=_DEVELOP, preset=preset)
+tests\test_pre_edit_xmp.py:54: def test_raw_omite_wb_incremental(tmp_path, preset):
+tests\test_pre_edit_xmp.py:58: develop=_DEVELOP, preset=preset)
+tests\test_pre_edit_xmp.py:64: def test_tamano_paquete_jpeg_bajo_limite_app1(preset):
+tests\test_pre_edit_xmp.py:65: packet = _build_xmp_packet(3, "Verde", "selected", develop=_DEVELOP, preset=preset)
+tests\test_pre_edit_xmp.py:69: # --- Endpoints de presets ---
+tests\test_pre_edit_xmp.py:77: def test_preset_use_invalido_400(client, tmp_path):
+tests\test_pre_edit_xmp.py:80: assert client.post("/presets/use", json={"path": str(f)}).status_code == 400
+tests\test_pre_edit_xmp.py:81: assert client.post("/presets/use", json={"path": str(tmp_path / "nope.xmp")}).status_code == 404
+tests\test_pre_edit_xmp.py:84: def test_preset_get(client):
+tests\test_pre_edit_xmp.py:85: res = client.get("/presets")
+--- Searching for color ---
+routers\advanced.py:105: color=mapping.get("color", ""),
+routers\advanced.py:156: color=mapping.get("color", ""),
+routers\advanced.py:205: color=mapping.get("color", ""),
+routers\bursts.py:91: "color": m.get("color", ""),
+routers\culling.py:621: r["color"] = ratings_map.get("selected", {}).get("color", "")
+routers\export.py:87: "color": m.get("color", ""),
+routers\export.py:307: """Fase J: aprende el 'look' (contraste, tono, color) por escena."""
+services\aesthetic_assessment.py:25: color_harmony: float       # [0.0 - 1.0]
+services\aesthetic_assessment.py:37: def compute_colorfulness(img_rgb: np.ndarray) -> float:
+services\aesthetic_assessment.py:40: Mide cuán vivos y variados son los colores en la imagen.
+services\aesthetic_assessment.py:52: colorfulness = stdRoot + (0.3 * meanRoot)
+services\aesthetic_assessment.py:53: return float(colorfulness)
+services\aesthetic_assessment.py:56: def compute_color_harmony_score(img_rgb: np.ndarray) -> float:
+services\aesthetic_assessment.py:60: c_score = compute_colorfulness(img_rgb)
+services\aesthetic_assessment.py:275: color = compute_color_harmony_score(img_small)
+services\aesthetic_assessment.py:284: 0.15 * color +
+services\aesthetic_assessment.py:295: color_harmony=round(color, 4),
+services\aesthetic_assessment.py:316: return (float(bd.color_harmony), float(bd.dynamic_range), float(bd.rule_of_thirds))
+services\debug_overlay.py:55: # Determinar color del recuadro de enfoque (BGR)
+services\debug_overlay.py:57: focus_color = (0, 255, 0) if is_intentional else (0, 140, 255) # Verde si coincide, Naranja si no
+services\debug_overlay.py:61: focus_color = (0, 255, 255) # Amarillo
+services\debug_overlay.py:66: draw_dashed_rect(img, (fx, fy), (fx + fw, fy + fh), focus_color, thickness=3, label=focus_label)
+services\debug_overlay.py:105: def draw_dashed_rect(img, pt1, pt2, color, thickness=1, style='dashed', gap=10, label=""):
+services\debug_overlay.py:112: cv2.line(img, (x, y1), (min(x + gap, x2), y1), color, thickness)
+services\debug_overlay.py:113: cv2.line(img, (x, y2), (min(x + gap, x2), y2), color, thickness)
+services\debug_overlay.py:117: cv2.line(img, (x1, y), (x1, min(y + gap, y2)), color, thickness)
+services\debug_overlay.py:118: cv2.line(img, (x2, y), (x2, min(y + gap, y2)), color, thickness)
+services\debug_overlay.py:121: cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, thickness)
+services\decision.py:242: "color": ratings_map.get(label, {}).get("color", "") if label else "",
+services\develop_style.py:7: - Esta fase aprende los ajustes ESTILÍSTICOS (curva de tono, color) que el
+services\neural_lut.py:130: Calcula los ajustes de color grading / 3D-LUT escalados por `strength` (0.0 a 1.0).
+services\preset_manager.py:3: El preset del usuario aporta el "look" (curva, HSL, color grading, nitidez,
+services\preview_render.py:9: para decidir "sí/no", no para juzgar el color final. La UI debe decirlo.
+services\settings_manager.py:15: # Labels de color en español para coincidir con el conjunto de etiquetas
+services\settings_manager.py:19: # duplicates (Trash) va SIN color: no ensucia la vista de Lightroom.
+services\settings_manager.py:25: "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
+services\settings_manager.py:26: "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
+services\settings_manager.py:27: "blurry": {"stars": 0, "color": "Rojo", "flag": "reject"},
+services\settings_manager.py:28: "closed_eyes": {"stars": 0, "color": "", "flag": "none"},
+services\settings_manager.py:29: "duplicates": {"stars": 0, "color": "", "flag": "none"},
+services\settings_manager.py:105: # Migrate duplicates color from Yellow or Red to Purple if existing
+services\settings_manager.py:107: if data["ratings_mapping"]["duplicates"].get("color") in ("Yellow", "Red"):
+services\settings_manager.py:108: data["ratings_mapping"]["duplicates"]["color"] = "Purple"
+services\settings_manager.py:111: # imprescindibles) y colores al español del set de LR del usuario.
+services\settings_manager.py:117: entry["color"] = _COLOR_ES.get(entry.get("color"), entry.get("color"))
+services\settings_manager.py:122: # Migración v3: banderines XMP configurables y Trash (duplicates) sin color
+services\settings_manager.py:131: rm["duplicates"]["color"] = ""
+services\settings_manager.py:139: entry["color"] = _FIX_GENERO.get(entry.get("color"), entry.get("color"))
+services\settings_manager.py:148: if dup.get("color") == "Rojo" or dup.get("flag") == "reject":
+services\settings_manager.py:149: dup["color"] = ""
+services\settings_manager.py:153: rm[label]["color"] = "Rojo"
+services\settings_manager.py:163: if ce.get("color") == "Rojo" or ce.get("flag") == "reject":
+services\settings_manager.py:164: ce["color"] = ""
+services\settings_manager.py:192: # Un nombre en femenino o inglés NO pinta el color: se normaliza siempre al
+services\settings_manager.py:203: def normalize_colors(settings: dict[str, Any]) -> dict[str, Any]:
+services\settings_manager.py:204: """Canoniza los nombres de color del ratings_mapping (in-place)."""
+services\settings_manager.py:206: color = (entry.get("color") or "").strip()
+services\settings_manager.py:207: if color:
+services\settings_manager.py:208: entry["color"] = COLOR_CANONICO.get(color.lower(), color)
+services\settings_manager.py:216: normalize_colors(settings)
+services\workflow_profiles.py:21: # ratings_mapping: el mapeo a estrellas/colores de Lightroom es del fotógrafo,
+services\xmp_exporter.py:9: Las etiquetas de color se toman tal cual de la configuración (settings.json),
+services\xmp_exporter.py:10: para que coincidan con el "Conjunto de etiquetas de color" del Lightroom del usuario
+services\xmp_exporter.py:70: def _build_xmp_packet(stars: int, color: str, label: str,
+services\xmp_exporter.py:79: sidecar o para embeber en APP1. El color se escribe tal cual venga de settings.
+services\xmp_exporter.py:102: # ALWAYS write Label to force Lightroom to clear outdated colors if empty
+services\xmp_exporter.py:104: label_el.text = color if color else ""
+services\xmp_exporter.py:118: # 2. Neural 3D-LUT / Estilo aprendido: pisa/reemplaza tono y color base
+services\xmp_exporter.py:172: # Bloques XML del preset (curvas, HSL point colors, máscaras IA)
+services\xmp_exporter.py:311: def write_xmp(image_path: str, label: str, stars: int, color: str,
+services\xmp_exporter.py:326: stars, color, label, crop=crop,
+services\xmp_reader.py:37: Extrae {stars, color} de un paquete XMP (None si no parsea). Con full=True
+services\xmp_reader.py:55: color = ""
+services\xmp_reader.py:69: if not color:
+services\xmp_reader.py:70: color = desc.get(f"{{{NS['xmp']}}}Label", "") or ""
+services\xmp_reader.py:78: color = el.text.strip()
+services\xmp_reader.py:81: if stars is None and not color and not develop and not crop:
+services\xmp_reader.py:83: out = {"stars": stars if stars is not None else 0, "color": color}
+services\xmp_reader.py:92: Lee {stars, color} de una imagen. RAW -> sidecar; JPEG -> embebido.
+tests\test_aesthetic_assessment.py:11: compute_colorfulness,
+tests\test_aesthetic_assessment.py:31: assert 0.0 <= d["color_harmony"] <= 1.0
+tests\test_aesthetic_assessment.py:53: def test_color_harmony_vibrant_vs_grayscale():
+tests\test_aesthetic_assessment.py:54: """Una imagen colorida debe tener mayor color harmony que una imagen monocromática."""
+tests\test_aesthetic_assessment.py:64: assert bd_vibrant.color_harmony > bd_gray.color_harmony
+tests\test_closed_eyes_relative.py:46: "selected": {"stars": 2, "color": "Verde"}, "highlighted": {"stars": 3, "color": "Azul"},
+tests\test_closed_eyes_relative.py:47: "blurry": {"stars": 0, "color": "Rojo"}, "closed_eyes": {"stars": 0, "color": "Rojo"},
+tests\test_closed_eyes_relative.py:48: "duplicates": {"stars": 0, "color": ""},
+tests\test_lightroom_sync.py:22: sidecar.write_bytes(_build_xmp_packet(stars=3, color="Verde", label="selected"))
+tests\test_lightroom_sync.py:24: assert result == {"stars": 3, "color": "Verde"}
+tests\test_lightroom_sync.py:41: assert result == {"stars": 5, "color": "Roja"}
+tests\test_lightroom_sync.py:66: assert write_xmp(str(p), "selected", stars=2, color="Verde", overwrite=True)
+tests\test_lightroom_sync.py:72: assert read_xmp(str(p)) == {"stars": 2, "color": "Verde"}
+tests\test_lightroom_sync.py:77: assert write_xmp(str(jpg), "selected", stars=4, color="Azul", overwrite=True)
+tests\test_lightroom_sync.py:79: assert result == {"stars": 4, "color": "Azul"}
+tests\test_lightroom_sync.py:88: packet = _build_xmp_packet(stars=3, color="Verde", label="selected", crop=_CROP)
+tests\test_lightroom_sync.py:96: """El sync (Fase 4) sigue leyendo stars/color igual con campos crs presentes."""
+tests\test_lightroom_sync.py:100: _build_xmp_packet(stars=3, color="Verde", label="selected", crop=_CROP)
+tests\test_lightroom_sync.py:102: assert read_xmp(str(raw)) == {"stars": 3, "color": "Verde"}
+tests\test_lightroom_sync.py:107: assert write_xmp(str(jpg), "selected", stars=3, color="Azul", overwrite=True, crop=_CROP)
+tests\test_lightroom_sync.py:108: assert read_xmp(str(jpg)) == {"stars": 3, "color": "Azul"}
+tests\test_lightroom_sync.py:180: write_xmp(str(a), "duplicates", stars=max(0, sel_stars - 2), color="", overwrite=True)
+tests\test_lightroom_sync.py:181: write_xmp(str(b), "selected", stars=min(5, dup_stars + 3), color="", overwrite=True)
+tests\test_main.py:23: "selected": {"stars": 2, "color": "Verde", "flag": "pick"}
+tests\test_neural_lut.py:2: test_neural_lut.py — Tests unitarios para el motor Neural LUT y color grading adaptativo.
+tests\test_pre_edit_xmp.py:51: assert read_xmp(str(jpg)) == {"stars": 3, "color": "Azul"}
+tests\test_ratings_flags.py:31: def test_migracion_v3_flags_y_trash_sin_color(tmp_path, monkeypatch):
+tests\test_ratings_flags.py:35: "selected": {"stars": 2, "color": "Verde"},
+tests\test_ratings_flags.py:36: "highlighted": {"stars": 3, "color": "Azul"},
+tests\test_ratings_flags.py:37: "blurry": {"stars": 0, "color": "Roja"},
+tests\test_ratings_flags.py:38: "closed_eyes": {"stars": 0, "color": "Morado"},
+tests\test_ratings_flags.py:39: "duplicates": {"stars": 0, "color": "Morado"},
+tests\test_ratings_flags.py:52: assert rm["blurry"]["color"] == "Rojo"          # v4: masculino (set real de LR)
+tests\test_ratings_flags.py:54: assert rm["duplicates"]["color"] == ""          # duplicadas nunca se marcan
+tests\test_ratings_flags.py:55: assert rm["closed_eyes"]["color"] == ""         # v6 limpia closed_eyes
+tests\test_ratings_flags.py:66: "selected": {"stars": 2, "color": "Verde", "flag": "pick"},
+tests\test_ratings_flags.py:67: "highlighted": {"stars": 3, "color": "Azul", "flag": "pick"},
+tests\test_ratings_flags.py:68: "blurry": {"stars": 0, "color": "", "flag": "none"},
+tests\test_ratings_flags.py:69: "closed_eyes": {"stars": 0, "color": "", "flag": "none"},
+tests\test_ratings_flags.py:70: "duplicates": {"stars": 0, "color": "Rojo", "flag": "reject"},
+tests\test_ratings_flags.py:79: assert rm["duplicates"] == {"stars": 0, "color": "", "flag": "none"}
+tests\test_ratings_flags.py:80: assert rm["blurry"]["color"] == "Rojo" and rm["blurry"]["flag"] == "reject"
+tests\test_ratings_flags.py:81: assert rm["closed_eyes"]["color"] == "" and rm["closed_eyes"]["flag"] == "none"
+tests\test_ratings_flags.py:84: def test_normalize_colors_canoniza_genero_e_idioma():
+tests\test_ratings_flags.py:88: "a": {"color": "Roja"}, "b": {"color": "Morada"}, "c": {"color": "Amarilla"},
+tests\test_ratings_flags.py:89: "d": {"color": "Green"}, "e": {"color": "azul"}, "f": {"color": ""},
+tests\test_ratings_flags.py:91: settings_manager.normalize_colors(s)
+tests\test_ratings_flags.py:93: assert rm["a"]["color"] == "Rojo"
+tests\test_ratings_flags.py:94: assert rm["b"]["color"] == "Morado"
+tests\test_ratings_flags.py:95: assert rm["c"]["color"] == "Amarillo"
+tests\test_ratings_flags.py:96: assert rm["d"]["color"] == "Verde"
+tests\test_ratings_flags.py:97: assert rm["e"]["color"] == "Azul"
+tests\test_ratings_flags.py:98: assert rm["f"]["color"] == ""          # sin color se respeta
+tests\test_ratings_flags.py:105: "ratings_mapping": {"duplicates": {"stars": 0, "color": "Roja", "flag": "reject"}},
+tests\test_ratings_flags.py:109: assert saved["ratings_mapping"]["duplicates"]["color"] == "Rojo"
+tests\test_ratings_flags.py:115: "selected": {"stars": 3, "color": "Green"},
+tests\test_ratings_flags.py:116: "duplicates": {"stars": 0, "color": "Purple"},
+tests\test_ratings_flags.py:125: assert rm["selected"] == {"stars": 2, "color": "Verde", "flag": "pick"}
+tests\test_ratings_flags.py:126: assert rm["duplicates"]["color"] == "" and rm["duplicates"]["flag"] == "none"
+tests\test_undo_export.py:64: # En JPEG el segmento no se puede quitar: queda neutro, sin rating ni color.
+tests\test_undo_export.py:65: assert d is None or (d["stars"] == 0 and not d["color"])
+tests\test_workflow_profiles.py:5: detectores, pre-edición) — NO el mapeo a estrellas/colores de Lightroom, que es
+tests\test_xmp.py:19: assert xe.write_xmp(str(p), label="selected", stars=3, color="Verde") is True
+tests\test_xmp.py:33: xe.write_xmp(str(p), label="closed_eyes", stars=0, color="Púrpura")
+--- Searching for router\.get\(".*health"\) ---
+routers\system.py:54: @router.get("/health")
+--- Searching for router\.get\(".*status"\) ---
+routers\advanced.py:49: @router.get("/lut_status")
+routers\culling.py:73: @router.get("/status")
+--- Searching for router\.get\(".*log"\) ---

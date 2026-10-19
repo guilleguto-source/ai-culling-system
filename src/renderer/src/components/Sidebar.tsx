@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { IconFolder, IconSettings, IconGrid, IconDuel } from './icons';
-import LearningPanel from './LearningPanel';
+import React from 'react';
+import { IconGrid, IconDuel, IconBrain, IconLibrary } from './icons';
+import { Tooltip } from './ui/Tooltip';
 
 interface SidebarProps {
   backendStatus: string;
   hardwareInfo: any;
   jobState: any;
-  onOpenSettings: () => void;
   onStartIngest: (directory: string, mode?: string) => void;
-  currentView: 'grid' | 'duel' | 'calib';
-  onViewChange: (view: 'grid' | 'duel' | 'calib') => void;
+  currentView: 'library' | 'grid' | 'duel' | 'calib';
+  onViewChange: (view: 'library' | 'grid' | 'duel' | 'calib') => void;
   hasResults: boolean;
   lastDirectory?: string;
   onDirectoryChange?: (dir: string) => void;
@@ -20,245 +19,133 @@ interface SidebarProps {
 export default function Sidebar({
   backendStatus,
   hardwareInfo,
-  jobState,
-  onOpenSettings,
-  onStartIngest,
   currentView,
   onViewChange,
-  hasResults,
-  lastDirectory = '',
-  onDirectoryChange,
-  undoAvailable = false,
-  onUndoExport
 }: SidebarProps) {
-  const [folderInput, setFolderInput] = useState(lastDirectory);
-  const [isUndoing, setIsUndoing] = useState(false);
-
-  useEffect(() => {
-    if (lastDirectory && lastDirectory !== folderInput) {
-      setFolderInput(lastDirectory);
-    }
-  }, [lastDirectory]);
-
-  const handleSelectFolder = async () => {
-    if (window.api?.selectFolder) {
-      const selected = await window.api.selectFolder(folderInput || undefined);
-      if (selected) {
-        setFolderInput(selected);
-        if (onDirectoryChange) onDirectoryChange(selected);
-      }
-    }
-  };
-
-  const handleInputChange = (val: string) => {
-    setFolderInput(val);
-    if (onDirectoryChange) onDirectoryChange(val);
-  };
-
-  const handleStart = (mode: string) => {
-    if (folderInput.trim()) {
-      onStartIngest(folderInput.trim(), mode);
-    }
-  };
-
-  const handleUndo = async () => {
-    if (!folderInput.trim() || isUndoing || !onUndoExport) return;
-    const confirm = window.confirm(
-      '¿Deseas deshacer la última exportación?\nEsto restaurará los archivos .XMP al estado exacto previo a este culling.'
-    );
-    if (!confirm) return;
-
-    setIsUndoing(true);
-    try {
-      await onUndoExport(folderInput.trim());
-    } finally {
-      setIsUndoing(false);
-    }
-  };
+  const isAiActive = backendStatus === 'running';
+  const isGpu = hardwareInfo?.using_gpu;
+  const hwProvider = hardwareInfo?.gpu_provider || (isGpu ? 'NVIDIA' : 'CPU');
 
   return (
-    <div style={{
-      width: '280px',
-      backgroundColor: 'var(--bg-secondary)',
-      borderRight: '1px solid var(--border-subtle)',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '24px 16px',
-      gap: '24px',
-      zIndex: 10
-    }}>
-      {/* Brand — wordmark Guto Flow con Glow */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+    <aside className="sidebar-container">
+      {/* Brand Header */}
+      <div style={{ padding: 'var(--space-6) var(--space-5) var(--space-4) var(--space-5)' }}>
+        <div className="flex items-center gap-2">
           <span style={{
-            fontFamily: 'Georgia, "Times New Roman", serif',
-            fontWeight: 700, fontSize: '1.8rem', lineHeight: 1,
-            color: 'var(--accent-primary)', letterSpacing: '-0.02em',
-            textShadow: '0 0 16px rgba(245, 158, 11, 0.4)'
-          }}>
-            guto
-          </span>
-          <span style={{
-            fontFamily: '"Segoe Script", "Brush Script MT", cursive',
-            fontSize: '1.5rem', lineHeight: 1,
+            fontSize: '18px',
+            fontWeight: 'var(--fw-bold)',
+            letterSpacing: '0.04em',
             color: 'var(--text-primary)',
+            textTransform: 'uppercase'
           }}>
-            Flow
+            GUTO <span style={{ color: 'var(--accent-primary)' }}>FLOW</span>
           </span>
         </div>
-        <p style={{
-          color: 'var(--text-secondary)', fontSize: '0.7rem', marginTop: '6px',
-          borderTop: '1px solid var(--border-strong)', paddingTop: '6px',
-          textTransform: 'uppercase', letterSpacing: '0.16em', fontWeight: 600,
+        <div style={{
+          fontSize: '9px',
+          fontWeight: 'var(--fw-medium)',
+          color: 'var(--text-tertiary)',
+          letterSpacing: '0.12em',
+          marginTop: '4px',
+          textTransform: 'uppercase'
         }}>
-          Smart Workflow Pro
-        </p>
-      </div>
-
-      {/* Panel de Aprendizaje de IA */}
-      <LearningPanel active={backendStatus === 'running'} />
-
-      {/* Indicador de Motor IA Neón */}
-      <div className="flex-between" style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', padding: '6px 10px', backgroundColor: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}
-        title={hardwareInfo
-          ? `${hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} · ${hardwareInfo.physical_cores} núcleos`
-          : ''}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className={backendStatus === 'running' ? 'pulse-indicator' : ''} style={{
-            display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-            backgroundColor: backendStatus === 'running'
-              ? 'var(--status-selected-text)' : 'var(--status-blurry-text)',
-          }} />
-          Motor {backendStatus === 'running' ? 'IA Activo' : backendStatus}
-        </span>
-        {hardwareInfo && (
-          <span>{hardwareInfo.using_gpu ? hardwareInfo.gpu_provider : 'CPU'} ({hardwareInfo.physical_cores}c)</span>
-        )}
-      </div>
-
-      {/* Área de Nueva Sesión */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <h3 style={{ fontSize: '0.82rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-          Nueva sesión
-        </h3>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            backgroundColor: 'var(--bg-primary)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: 'var(--radius-md)',
-            padding: '8px 12px',
-            gap: '8px',
-            transition: 'all var(--transition-fast)'
-          }}>
-            <div 
-              onClick={handleSelectFolder}
-              style={{ 
-                cursor: 'pointer', 
-                display: 'flex', 
-                alignItems: 'center', 
-                padding: '4px',
-                borderRadius: '4px'
-              }}
-              title="Elegir carpeta"
-            >
-              <IconFolder size={18} style={{ color: 'var(--accent-primary)' }} />
-            </div>
-            <input 
-              type="text" 
-              placeholder="C:\Fotos\Evento..."
-              value={folderInput}
-              onChange={(e) => handleInputChange(e.target.value)}
-              style={{
-                flex: 1,
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-primary)',
-                outline: 'none',
-                fontSize: '0.85rem'
-              }}
-            />
-          </div>
-          
-          <button
-            className="btn btn-primary"
-            onClick={() => handleStart('cull_edit')}
-            disabled={!folderInput.trim() || backendStatus !== 'running' || jobState?.status === 'running'}
-            style={{ width: '100%', padding: '12px' }}
-          >
-            {jobState?.status === 'running' ? 'Procesando…' : 'Culling + edición'}
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleStart('cull')}
-            disabled={!folderInput.trim() || backendStatus !== 'running' || jobState?.status === 'running'}
-            style={{ width: '100%', padding: '10px' }}
-            title="Solo selecciona (labels/estrellas). Revisas, haces duelos, y aplicas la edición después con un clic."
-          >
-            Solo culling
-          </button>
-
-          {undoAvailable && (
-            <button
-              className="btn btn-secondary"
-              onClick={handleUndo}
-              disabled={isUndoing || jobState?.status === 'running'}
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                fontSize: '0.8rem',
-                color: '#f59e0b',
-                borderColor: 'rgba(245, 158, 11, 0.4)',
-                backgroundColor: 'rgba(245, 158, 11, 0.08)'
-              }}
-              title="Restaura los XMP al estado previo a la exportación más reciente."
-            >
-              {isUndoing ? 'Restaurando…' : '↺ Deshacer exportación XMP'}
-            </button>
-          )}
+          Digital Darkroom
         </div>
       </div>
 
-      {/* Modos de Vista */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: hasResults ? 1 : 0.35, pointerEvents: hasResults ? 'auto' : 'none' }}>
-        <h3 style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-          Modo de vista
-        </h3>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
-            className={`btn ${currentView === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => onViewChange('grid')}
-            style={{ flex: 1 }}
-          >
-            <IconGrid size={16} /> Cuadrícula
-          </button>
-          <button
-            className={`btn ${currentView === 'duel' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => onViewChange('duel')}
-            style={{ flex: 1 }}
-          >
-            <IconDuel size={16} /> Comparar
-          </button>
-        </div>
+      {/* Navigation Groups */}
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', paddingTop: 'var(--space-2)' }}>
+        <div className="sidebar-section-title">Espacio de Trabajo</div>
+
         <button
-          className={`btn ${currentView === 'calib' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => onViewChange('calib')}
-          style={{ width: '100%' }}
-          title="Enséñale tu criterio: ojos, mirada y sonrisa, cara por cara"
+          className={`sidebar-nav-item ${currentView === 'library' ? 'active' : ''}`}
+          onClick={() => onViewChange('library')}
+          aria-label="Biblioteca de Sesiones"
+          style={{ justifyContent: 'space-between' }}
         >
-          ◎ Calibración
+          <div className="flex items-center gap-3">
+            <IconLibrary size={16} />
+            <span>Biblioteca</span>
+          </div>
+          <span className="font-mono text-tertiary" style={{ fontSize: '10px', opacity: 0.6 }}>1</span>
         </button>
+        
+        <button
+          className={`sidebar-nav-item ${currentView === 'grid' ? 'active' : ''}`}
+          onClick={() => onViewChange('grid')}
+          aria-label="Culling Grid"
+          style={{ justifyContent: 'space-between' }}
+        >
+          <div className="flex items-center gap-3">
+            <IconGrid size={16} />
+            <span>Culling</span>
+          </div>
+          <span className="font-mono text-tertiary" style={{ fontSize: '10px', opacity: 0.6 }}>2</span>
+        </button>
+
+        <button
+          className={`sidebar-nav-item ${currentView === 'duel' ? 'active' : ''}`}
+          onClick={() => onViewChange('duel')}
+          aria-label="Comparar Ráfagas"
+          style={{ justifyContent: 'space-between' }}
+        >
+          <div className="flex items-center gap-3">
+            <IconDuel size={16} />
+            <span>Comparar</span>
+          </div>
+          <span className="font-mono text-tertiary" style={{ fontSize: '10px', opacity: 0.6 }}>3</span>
+        </button>
+
+        <div className="sidebar-section-title" style={{ marginTop: 'var(--space-5)' }}>Inteligencia</div>
+
+        <button
+          className={`sidebar-nav-item ${currentView === 'calib' ? 'active' : ''}`}
+          onClick={() => onViewChange('calib')}
+          aria-label="Tu Estilo y Calibración"
+          style={{ justifyContent: 'space-between' }}
+        >
+          <div className="flex items-center gap-3">
+            <IconBrain size={16} />
+            <span>Tu Estilo</span>
+          </div>
+          <span className="font-mono text-tertiary" style={{ fontSize: '10px', opacity: 0.6 }}>4</span>
+        </button>
+      </nav>
+
+      {/* Footer Controls & Local AI Engine Status */}
+      <div style={{
+        padding: 'var(--space-4) var(--space-5)',
+        borderTop: '1px solid var(--border-default)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)'
+      }}>
+        <Tooltip
+          content="Procesamiento 100% local en este equipo."
+          position="top"
+        >
+          <div
+            className="flex items-center gap-2"
+            style={{
+              padding: '6px 10px',
+              backgroundColor: 'var(--color-surface-elevated)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-default)',
+              cursor: 'default'
+            }}
+          >
+            <span className={`gf-dot ${isAiActive ? 'gf-dot-active' : 'gf-dot-inactive'}`} />
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <span style={{ fontSize: '10px', fontWeight: 'var(--fw-semibold)', color: 'var(--text-primary)', letterSpacing: '0.04em' }}>
+                MOTOR LOCAL
+              </span>
+              <span style={{ fontSize: '9px', color: 'var(--text-tertiary)' }} className="truncate font-mono">
+                {isAiActive ? `Activo · ${hwProvider}` : 'Inactivo'}
+              </span>
+            </div>
+          </div>
+        </Tooltip>
       </div>
-
-      <div style={{ flex: 1 }} />
-
-      {/* Ajustes */}
-      <button className="btn btn-secondary" onClick={onOpenSettings} style={{ justifyContent: 'flex-start' }}>
-        <IconSettings size={18} />
-        Ajustes y preferencias
-      </button>
-    </div>
+    </aside>
   );
 }

@@ -10,10 +10,12 @@ contextBridge.exposeInMainWorld('api', {
   getJobStatus: () => ipcRenderer.invoke('backend:job:status'),
   getJobResults: () => ipcRenderer.invoke('backend:job:results'),
   
-  checkUndoAvailable: (directory: string) => ipcRenderer.invoke('backend:undo:available', directory),
-  undoExport: (directory: string) => ipcRenderer.invoke('backend:undo:run', directory),
+
 
   selectFolder: (defaultPath?: string) => ipcRenderer.invoke('backend:select-folder', defaultPath),
+  preventSleep: () => ipcRenderer.invoke('system:prevent-sleep'),
+  allowSleep: () => ipcRenderer.invoke('system:allow-sleep'),
+  suspendPC: () => ipcRenderer.invoke('system:suspend'),
 
   onBackendLog: (callback: (log: string) => void) => {
     const subscription = (_: any, log: string) => callback(log);

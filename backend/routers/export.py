@@ -75,18 +75,21 @@ def apply_edits(data: ApplyEditsRequest):
     preset_path = snap.get("preset_path", "")
     preset_data = load_preset(preset_path) if preset_path and Path(preset_path).exists() else None
 
+    from services.xmp_reader import has_lightroom_edits
+
     rewrite = []
     for path_str, label in snap["items"].items():
         if label not in ("selected", "highlighted"):
             continue
         m = ratings_map.get(label, {})
+        has_lr = has_lightroom_edits(path_str)
         rewrite.append({
             "path": path_str,
             "label": label,
             "stars": m.get("stars", 0),
             "color": m.get("color", ""),
-            "crop": crops.get(path_str),
-            "develop": develops.get(path_str),
+            "crop": None if has_lr else crops.get(path_str),
+            "develop": None if has_lr else develops.get(path_str),
         })
 
     if not rewrite:

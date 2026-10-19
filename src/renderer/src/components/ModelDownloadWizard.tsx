@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { apiClient, BACKEND_URL } from '../api/client';
 
 interface ModelStatus {
   id: string;
@@ -15,8 +16,6 @@ interface ModelStatus {
 interface ModelDownloadWizardProps {
   onComplete: () => void;
 }
-
-const BACKEND_URL = 'http://127.0.0.1:8000';
 
 export const ModelDownloadWizard: React.FC<ModelDownloadWizardProps> = ({ onComplete }) => {
   const [models, setModels] = useState<ModelStatus[]>([]);
@@ -35,8 +34,7 @@ export const ModelDownloadWizard: React.FC<ModelDownloadWizardProps> = ({ onComp
 
   const loadCatalog = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/setup/models`);
-      const data = await res.json();
+      const data = await apiClient.getSetupModels();
       const m: ModelStatus[] = data.models;
       setModels(m);
       // Pre-seleccionar modelos requeridos y los no presentes recomendados
@@ -69,14 +67,10 @@ export const ModelDownloadWizard: React.FC<ModelDownloadWizardProps> = ({ onComp
     setPhase('downloading');
 
     try {
-      await fetch(`${BACKEND_URL}/setup/download`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_ids: Array.from(selected) }),
-      });
+      await apiClient.startModelDownload(Array.from(selected));
 
       // SSE para progreso en tiempo real
-      const es = new EventSource(`${BACKEND_URL}/setup/download/stream`);
+      const es = new EventSource(apiClient.getModelDownloadStreamUrl());
       eventSourceRef.current = es;
 
       es.onmessage = (ev) => {

@@ -1,6 +1,6 @@
 {
   "name": "guto-flow",
-  "version": "1.0.0",
+  "version": "2.3.0",
   "description": "Guto Flow — Smart Workflow: culling y pre-edición de fotos con IA",
   "main": "dist/main/index.js",
   "scripts": {
@@ -17,6 +17,7 @@
     "verify:build": "python scripts/verify_build.py"
   },
   "dependencies": {
+    "react-virtuoso": "^4.18.15",
     "tree-kill": "^1.2.2"
   },
   "devDependencies": {
@@ -45,12 +46,16 @@
       {
         "from": "dist/backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "assets",
         "to": "assets",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -58,7 +63,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

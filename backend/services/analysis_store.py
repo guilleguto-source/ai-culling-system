@@ -21,16 +21,37 @@ from services.app_paths import get_analysis_dir as _get_analysis_dir
 
 # v8: Motor Estético 7-ejes + Ponderación VIP de rostros.
 # v9: Rescate Tonal IA (tonal_adjustments) altas luces y sombras.
-ANALYSIS_VERSION = 9
+# v10: Migración a UniFace (SCRFD + ArcFace nativo).
+ANALYSIS_VERSION = 10
 
 ANALYSIS_DIR = _get_analysis_dir()
+
+
+from utils.json_utils import safe_dumps as _json_dumps
+
+
+def _redirect_key(directory: str) -> str:
+    return hashlib.sha1(str(Path(directory).resolve()).lower().encode("utf-8")).hexdigest()
 
 
 def _get_db_path(directory: str) -> Path:
     # Hash the directory to create a unique db file
     dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
-    _get_analysis_dir().mkdir(parents=True, exist_ok=True)
-    return _get_analysis_dir() / f"{dir_hash}.db"
+    target_dir = ANALYSIS_DIR if ANALYSIS_DIR is not None else _get_analysis_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    db_path = target_dir / f"{dir_hash}.db"
+    if not db_path.exists():
+        try:
+            redirect_file = target_dir / f"{_redirect_key(directory)}.redirect"
+            if redirect_file.exists():
+                primary_dir = redirect_file.read_text(encoding="utf-8").strip()
+                if primary_dir and primary_dir != directory:
+                    primary_db = target_dir / f"{hashlib.md5(primary_dir.encode('utf-8')).hexdigest()}.db"
+                    if primary_db.exists():
+                        return primary_db
+        except Exception:
+            pass
+    return db_path
 
 def _schema_columns() -> list[str]:
     """Columnas que el código espera (se derivan del propio CREATE TABLE)."""
@@ -63,7 +84,17 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
-def init_store(directory: str) -> sqlite3.Connection:
+def init_store(directory: str, extra_directories: Optional[list[str]] = None) -> sqlite3.Connection:
+    target_dir = ANALYSIS_DIR if ANALYSIS_DIR is not None else _get_analysis_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if extra_directories:
+        norm_primary = str(Path(directory).resolve()).lower()
+        for ext in extra_directories:
+            try:
+                if str(Path(ext).resolve()).lower() != norm_primary:
+                    (target_dir / f"{_redirect_key(ext)}.redirect").write_text(directory, encoding="utf-8")
+            except Exception as err:
+                logger.debug(f"Error registrando redirect de análisis para {ext}: {err}")
     db_path = _get_db_path(directory)
     conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -165,9 +196,7 @@ def load_analysis(conn: sqlite3.Connection, path: str, current_mtime: float) -> 
     # si un backend viejo en memoria escribió con lógica anterior — el número
     # de versión no protege contra procesos desactualizados.
     if (data["face_count"] or 0) > 0 and data["face_attrs"] in (None, "", "[]"):
-        from services import face_mesh
-        if face_mesh.is_available():
-            return None     # se re-analiza y esta vez sí se mide
+        return None  # se re-analiza: caras sin atributos son inservibles para calibración
 
     return _row_to_analysis(data)
 
@@ -197,7 +226,7 @@ def refresh_mtimes(conn: sqlite3.Connection, paths: list[str]) -> int:
 
 
 def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: float):
-    face_identities_json = json.dumps([
+    face_identities_json = _json_dumps([
         e.tolist() if isinstance(e, np.ndarray) else e
         for e in analysis.face_identities
     ]) if getattr(analysis, "face_identities", None) else None
@@ -216,16 +245,16 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         ANALYSIS_VERSION,
         analysis.index,
         analysis.scene_type,
-        json.dumps(analysis.face_bboxes),
-        json.dumps(analysis.eye_landmarks),
-        json.dumps(analysis.face_sharpness),
+        _json_dumps(analysis.face_bboxes),
+        _json_dumps(analysis.eye_landmarks),
+        _json_dumps(analysis.face_sharpness),
         analysis.any_closed_eyes,
         analysis.closed_eyes_count,
         analysis.face_count,
         analysis.valid_face_count,
         analysis.looking_away_count,
         analysis.smiling_count,
-        json.dumps(analysis.face_attrs),
+        _json_dumps(analysis.face_attrs),
         face_identities_json,
         analysis.phash,
         analysis.exif_datetime,
@@ -233,13 +262,13 @@ def save_analysis(conn: sqlite3.Connection, analysis: PhotoAnalysis, mtime: floa
         analysis.blur_flag,
         analysis.sharp_anywhere,
         analysis.aesthetic_score,
-        json.dumps(getattr(analysis, "aesthetic_breakdown", {})),
-        json.dumps(analysis.saliency_region) if analysis.saliency_region else None,
+        _json_dumps(getattr(analysis, "aesthetic_breakdown", {})),
+        _json_dumps(analysis.saliency_region) if analysis.saliency_region else None,
         analysis.pre_skin_lum,
         analysis.pre_global_lum,
         analysis.pre_clip_frac,
-        json.dumps(analysis.pre_wb) if analysis.pre_wb else None,
-        json.dumps(getattr(analysis, "tonal_adjustments", {})),
+        _json_dumps(analysis.pre_wb) if analysis.pre_wb else None,
+        _json_dumps(analysis.tonal_adjustments) if analysis.tonal_adjustments else None,
         analysis.error
     ))
     conn.commit()

@@ -20,7 +20,7 @@ from sklearn.preprocessing import StandardScaler
 
 from services.calibration_store import ATTRIBUTES, CalibrationStore
 from services.embedding_service import EMBEDDING_DIM
-from services.face_mesh import FEATURE_DIM
+from services.legacy.face_mesh import FEATURE_DIM
 
 logger = logging.getLogger(__name__)
 

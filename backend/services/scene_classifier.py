@@ -24,56 +24,78 @@ class SceneResult:
     face_count: int
     face_bboxes: list[list[int]]    # [[x, y, w, h], ...]
     eye_landmarks: list[list]       # Puntos de referencia de ojos por rostro
+    face_embeddings: list[np.ndarray | None] # Embeddings ArcFace por rostro
+    face_yaws: list[float]          # Yaw por rostro
+    face_pitches: list[float]       # Pitch por rostro
     confidence: float               # Confianza promedio de la detección
 
 
 def classify_scene(
     img_rgb: np.ndarray,
-    face_detector,                  # YuNet detector de OpenCV
+    face_detector,                  # UniFace FaceAnalyzer
     min_face_confidence: float = 0.6,
+    gaze_estimator=None,
 ) -> SceneResult:
     """
     Clasifica la escena detectando si hay rostros presentes.
 
     Args:
         img_rgb: Array numpy en formato RGB (H, W, 3).
-        face_detector: Instancia del detector YuNet de OpenCV.
+        face_detector: Instancia del detector UniFace FaceAnalyzer.
         min_face_confidence: Umbral mínimo de confianza para considerar un rostro válido.
 
     Returns:
         SceneResult con el tipo de escena y datos de rostros si los hay.
     """
-    h, w = img_rgb.shape[:2]
     img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
 
-    # Ajustar el tamaño de entrada del detector al tamaño de la imagen
-    face_detector.setInputSize((w, h))
-
-    _, detections = face_detector.detect(img_bgr)
+    faces = face_detector.analyze(img_bgr) if face_detector else []
 
     face_bboxes = []
     eye_landmarks = []
+    face_embeddings = []
+    face_yaws = []
+    face_pitches = []
     confidences = []
 
-    if detections is not None:
-        for det in detections:
-            confidence = float(det[-1])
-            if confidence < min_face_confidence:
-                continue
+    for face in faces:
+        confidence = float(face.confidence)
+        if confidence < min_face_confidence:
+            continue
 
-            # Extraer bounding box [x, y, w, h]
-            x, y, fw, fh = int(det[0]), int(det[1]), int(det[2]), int(det[3])
-            face_bboxes.append([x, y, fw, fh])
-            confidences.append(confidence)
+        # Extraer bounding box [x, y, w, h]
+        x, y, fw, fh = face.bbox_xywh
+        face_bboxes.append([int(x), int(y), int(fw), int(fh)])
+        confidences.append(confidence)
+        
+        # Extraer embedding (ArcFace)
+        face_embeddings.append(face.embedding)
 
-            # Extraer landmarks: índices 4-13 son los 5 puntos faciales (x,y pares)
-            # Orden: ojo_izq, ojo_der, nariz, boca_izq, boca_der
-            landmarks = []
-            for i in range(5):
-                lx = int(det[4 + i * 2])
-                ly = int(det[4 + i * 2 + 1])
-                landmarks.append([lx, ly])
+        # Extraer landmarks: uniface devuelve un array (5, 2)
+        # Orden: ojo_izq, ojo_der, nariz, boca_izq, boca_der
+        if face.landmarks is not None and len(face.landmarks) >= 5:
+            landmarks = [[int(pt[0]), int(pt[1])] for pt in face.landmarks]
             eye_landmarks.append(landmarks)
+        else:
+            eye_landmarks.append([])
+
+        # Extraer Gaze si el estimador está disponible
+        yaw, pitch = 0.0, 0.0
+        if gaze_estimator is not None:
+            # Recortar la cara
+            x1, y1 = max(0, int(x)), max(0, int(y))
+            x2, y2 = min(img_bgr.shape[1], int(x+fw)), min(img_bgr.shape[0], int(y+fh))
+            face_crop = img_bgr[y1:y2, x1:x2]
+            if face_crop.size > 0:
+                try:
+                    gaze = gaze_estimator.estimate(face_crop)
+                    # Convertir a grados para que sea fácil razonar
+                    yaw = np.degrees(gaze.yaw)
+                    pitch = np.degrees(gaze.pitch)
+                except Exception as e:
+                    logger.debug(f"Error estimating gaze: {e}")
+        face_yaws.append(yaw)
+        face_pitches.append(pitch)
 
     face_count = len(face_bboxes)
     avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
@@ -90,6 +112,9 @@ def classify_scene(
         face_count=face_count,
         face_bboxes=face_bboxes,
         eye_landmarks=eye_landmarks,
+        face_embeddings=face_embeddings,
+        face_yaws=face_yaws,
+        face_pitches=face_pitches,
         confidence=avg_confidence,
     )
 
