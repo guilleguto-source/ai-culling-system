@@ -144,14 +144,20 @@ def _build_xmp_packet(stars: int, color: str, label: str,
     if develop:
         for key in ("Exposure2012", "IncrementalTemperature", "IncrementalTint"):
             if develop.get(key) is not None:
-                crs_fields[key] = f"{develop[key]:+.2f}"
+                try:
+                    crs_fields[key] = f"{float(develop[key]):+.2f}"
+                except (ValueError, TypeError):
+                    crs_fields[key] = str(develop[key])
         if "IncrementalTemperature" in crs_fields or "IncrementalTint" in crs_fields:
             crs_fields.setdefault("WhiteBalance", "Custom")
         # Estilo aprendido por escena clásico (fallback si no hubo LUT)
         if not lut_adjustments:
             for key in STYLE_FIELDS:
                 if develop.get(key) is not None:
-                    crs_fields.setdefault(key, f"{develop[key]:g}")
+                    try:
+                        crs_fields.setdefault(key, f"{float(develop[key]):g}")
+                    except (ValueError, TypeError):
+                        crs_fields.setdefault(key, str(develop[key]))
 
     # 5. Crop (geometría): manda sobre todo
     if crop:

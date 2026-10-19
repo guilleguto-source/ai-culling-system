@@ -10,7 +10,8 @@ import io
 from core.job_manager import job_manager
 from services.thumbnail_store import get_thumbnail_cache_paths
 from services.xmp_exporter import write_xmp, update_file_metadata
-from services.export_snapshot import load_snapshot, update_labels
+from services.export_snapshot import load_snapshot, update_labels, _save
+from services.preset_manager import load_preset
 from services.metadata_manager import (
     get_metadata_profiles,
     save_or_update_profile,
@@ -92,7 +93,7 @@ def import_selection(req: ImportSelectionRequest):
     if req.client_folder:
         client_path = Path(req.client_folder)
         if client_path.exists() and client_path.is_dir():
-            for f in client_path.iterdir():
+            for f in client_path.rglob("*"):
                 if f.is_file() and not f.name.startswith('.'):
                     target_stems.add(f.stem.lower())
                     
@@ -125,28 +126,143 @@ def import_selection(req: ImportSelectionRequest):
     else:
         paths_to_check = [str(f) for f in base_path.rglob("*") if f.is_file() and f.suffix.lower() in valid_extensions]
 
+    target_files = [p for p in paths_to_check if Path(p).stem.lower() in target_stems]
     updated_count = 0
     promoted_labels = {}
-    
-    for file_str in paths_to_check:
-        f = Path(file_str)
-        if f.stem.lower() in target_stems:
+
+    # Cargar preset del evento si está registrado en el snapshot o configuración
+    preset_data = None
+    snapshot_develops = {}
+    snapshot_crops = {}
+
+    if snapshot:
+        snapshot_develops = dict(snapshot.get("develops") or {})
+        snapshot_crops = dict(snapshot.get("crops") or {})
+        preset_path = snapshot.get("preset_path", "")
+        if preset_path and Path(preset_path).exists():
+            preset_data = load_preset(preset_path)
+
+    if not preset_data:
+        try:
+            from services.settings_manager import load_settings
+            from services.app_paths import get_models_dir
+            settings = load_settings()
+            default_preset = settings.get("pre_edit", {}).get("preset")
+            if default_preset:
+                p_file = get_models_dir().parent / "models" / "presets" / default_preset
+                if p_file.exists():
+                    preset_data = load_preset(str(p_file))
+        except Exception:
+            pass
+
+    # Si hay fotos sin develop precalculado en el snapshot, intentar derivar de la DB de análisis
+    conn = None
+    try:
+        from services.analysis_store import init_store, load_analysis
+        conn = init_store(req.base_dir)
+    except Exception:
+        conn = None
+
+    try:
+        for file_str in target_files:
+            if file_str not in snapshot_develops and conn is not None:
+                try:
+                    ana = load_analysis(conn, file_str)
+                    if ana:
+                        tonal = getattr(ana, "tonal_adjustments", None) or {}
+                        glob_lum = getattr(ana, "pre_global_lum", None)
+                        derived_dev = dict(tonal)
+                        if glob_lum and glob_lum > 0:
+                            import math
+                            ev = round(math.log2(0.18 / glob_lum), 2)
+                            ev = max(-1.2, min(1.2, ev))
+                            derived_dev["Exposure2012"] = f"{ev:+.2f}"
+                        if derived_dev:
+                            snapshot_develops[file_str] = derived_dev
+                except Exception:
+                    pass
+    finally:
+        if conn is not None:
             try:
-                write_xmp(
-                    image_path=file_str,
-                    label="selected",
-                    stars=4,
-                    color="Red",
-                    flag="pick",
-                    overwrite=True
-                )
-                promoted_labels[file_str] = "selected"
-                updated_count += 1
-            except Exception as e:
-                print(f"Error updating XMP for {f.name}: {e}")
+                conn.close()
+            except Exception:
+                pass
+
+    def _update_single(file_str: str) -> tuple[str, bool]:
+        try:
+            dev = snapshot_develops.get(file_str)
+            crp = snapshot_crops.get(file_str)
+            ok = write_xmp(
+                image_path=file_str,
+                label="selected",
+                stars=4,
+                color="Red",
+                flag="pick",
+                overwrite=True,
+                crop=crp,
+                develop=dev,
+                preset=preset_data,
+            )
+
+            # Sincronizar par RAW + JPG si existe
+            p_obj = Path(file_str)
+            paired_candidates = []
+            if p_obj.suffix.lower() in {".jpg", ".jpeg"}:
+                for raw_ext in (".cr3", ".cr2", ".arw", ".nef", ".dng", ".raf", ".orf"):
+                    raw_p = p_obj.with_suffix(raw_ext)
+                    if raw_p.exists():
+                        paired_candidates.append(str(raw_p))
+                    raw_u = p_obj.with_suffix(raw_ext.upper())
+                    if raw_u.exists():
+                        paired_candidates.append(str(raw_u))
+            elif p_obj.suffix.lower() in {".cr3", ".cr2", ".arw", ".nef", ".dng", ".raf", ".orf"}:
+                for jpg_ext in (".jpg", ".jpeg", ".JPG", ".JPEG"):
+                    jpg_p = p_obj.with_suffix(jpg_ext)
+                    if jpg_p.exists():
+                        paired_candidates.append(str(jpg_p))
+
+            for paired in paired_candidates:
+                try:
+                    write_xmp(
+                        image_path=paired,
+                        label="selected",
+                        stars=4,
+                        color="Red",
+                        flag="pick",
+                        overwrite=True,
+                        crop=crp,
+                        develop=dev,
+                        preset=preset_data,
+                    )
+                except Exception:
+                    pass
+
+            return file_str, ok
+        except Exception as e:
+            print(f"Error updating XMP for {Path(file_str).name}: {e}")
+            return file_str, False
+
+    if target_files:
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures = [executor.submit(_update_single, p) for p in target_files]
+            for fut in as_completed(futures):
+                file_str, ok = fut.result()
+                if ok:
+                    promoted_labels[file_str] = "selected"
+                    updated_count += 1
                 
     if promoted_labels and snapshot:
         update_labels(req.base_dir, promoted_labels)
+        if "develops" not in snapshot:
+            snapshot["develops"] = {}
+        if "crops" not in snapshot:
+            snapshot["crops"] = {}
+        for fpath in promoted_labels.keys():
+            if fpath in snapshot_develops:
+                snapshot["develops"][fpath] = snapshot_develops[fpath]
+            if fpath in snapshot_crops:
+                snapshot["crops"][fpath] = snapshot_crops[fpath]
+        _save(req.base_dir, snapshot)
 
     matched_all = {Path(p).stem.lower() for p in paths_to_check if Path(p).stem.lower() in target_stems}
     not_found_count = len(target_stems - matched_all)

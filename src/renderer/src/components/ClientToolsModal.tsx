@@ -29,7 +29,9 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
   
   // Import State
   const [pasteText, setPasteText] = useState('');
-  const [importing, setImporting] = useState(false);
+  const [importingText, setImportingText] = useState(false);
+  const [importingFolder, setImportingFolder] = useState(false);
+  const isImporting = importingText || importingFolder;
 
   // Metadata State
   const [profiles, setProfiles] = useState<MetadataProfile[]>([]);
@@ -150,7 +152,7 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
     const lines = pasteText.split(/\n|,|;/).map(s => s.trim()).filter(Boolean);
     if (lines.length === 0) return;
     
-    setImporting(true);
+    setImportingText(true);
     try {
       const res = await apiClient.importSelection(currentDirectory, lines);
       showToast(`Se aplicaron 4 estrellas y etiqueta roja a ${res.updated} fotos.`, 'success');
@@ -158,7 +160,7 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
     } catch (e: any) {
       showToast(`Error al importar: ${e.message || e}`, 'error');
     } finally {
-      setImporting(false);
+      setImportingText(false);
     }
   };
 
@@ -169,13 +171,13 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
       const clientFolder = await window.api.selectFolder();
       if (!clientFolder) return;
       
-      setImporting(true);
+      setImportingFolder(true);
       const res = await apiClient.importSelection(currentDirectory, [], clientFolder);
       showToast(`Se aplicaron 4 estrellas y etiqueta roja a ${res.updated} fotos.`, 'success');
     } catch (e: any) {
       showToast(`Error al importar carpeta: ${e.message || e}`, 'error');
     } finally {
-      setImporting(false);
+      setImportingFolder(false);
     }
   };
 
@@ -383,14 +385,32 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
                   placeholder={'IMG_001.CR3\nIMG_005.CR3\n...'}
                   style={textAreaStyle}
                   rows={5}
+                  disabled={isImporting}
                 />
                 <button 
                   onClick={handleImportText} 
-                  disabled={importing || !pasteText.trim()} 
-                  style={actionBtnStyle}
+                  disabled={isImporting || !pasteText.trim()} 
+                  style={{ ...actionBtnStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                  {importing ? 'Aplicando...' : 'Aplicar desde Texto'}
+                  {importingText && <span className="gf-spinner" />}
+                  <span>{importingText ? 'Aplicando desde Texto...' : 'Aplicar desde Texto'}</span>
                 </button>
+                {importingText && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(231, 161, 58, 0.1)',
+                    border: '1px solid rgba(231, 161, 58, 0.25)',
+                    color: 'var(--accent-primary)',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span className="gf-spinner" style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                    <span>Aplicando 4★ y etiqueta roja a las fotos indicadas...</span>
+                  </div>
+                )}
               </div>
               
               <div style={{ textAlign: 'center', margin: '8px 0', color: 'var(--text-muted)' }}>— O —</div>
@@ -399,11 +419,37 @@ export const ClientToolsModal: React.FC<ClientToolsModalProps> = ({ isOpen, onCl
                 <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--fw-medium)' }}>Opción 2: Usar carpeta de selecciones</span>
                 <button 
                   onClick={handleImportFolder} 
-                  disabled={importing} 
-                  style={{ ...actionBtnStyle, backgroundColor: 'var(--color-surface-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
+                  disabled={isImporting} 
+                  style={{
+                    ...actionBtnStyle,
+                    backgroundColor: 'var(--color-surface-elevated)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-default)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
                 >
-                  {importing ? 'Aplicando...' : 'Seleccionar Carpeta con Fotos'}
+                  {importingFolder && <span className="gf-spinner" />}
+                  <span>{importingFolder ? 'Importando selecciones...' : 'Seleccionar Carpeta con Fotos'}</span>
                 </button>
+                {importingFolder && (
+                  <div style={{
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'rgba(231, 161, 58, 0.1)',
+                    border: '1px solid rgba(231, 161, 58, 0.25)',
+                    color: 'var(--accent-primary)',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span className="gf-spinner" style={{ width: '12px', height: '12px', flexShrink: 0 }} />
+                    <span>Buscando fotos y escribiendo metadatos XMP en la red local... Por favor, no cierres esta ventana.</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

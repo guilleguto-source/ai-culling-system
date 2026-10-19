@@ -229,3 +229,18 @@
   animation: shimmer 1.6s infinite ease-in-out;
   border-radius: var(--radius-xs);
 }
+
+/* --- Spinners --- */
+.gf-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: gf-spin 0.8s linear infinite;
+}
+
+@keyframes gf-spin {
+  to { transform: rotate(360deg); }
+}

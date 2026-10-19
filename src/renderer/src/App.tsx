@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import MainContent from './components/MainContent';
@@ -33,6 +33,7 @@ function MainApp() {
 
   // New batch & pre-culling state
   const [preCullingFolder, setPreCullingFolder] = useState<string | null>(null);
+  const memoizedInitialQueue = useMemo(() => (preCullingFolder ? [preCullingFolder] : []), [preCullingFolder]);
   const [batchQueue, setBatchQueue] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('culling_batch_queue');
@@ -44,6 +45,7 @@ function MainApp() {
   const [activeConfig, setActiveConfig] = useState<PreCullingConfig | null>(null);
   const [autoSleepActive, setAutoSleepActive] = useState<boolean>(false);
   const autoSleepRef = useRef<boolean>(false);
+  const isTransitioningBatchRef = useRef<boolean>(false);
 
   useEffect(() => {
     autoSleepRef.current = autoSleepActive;
@@ -139,19 +141,23 @@ function MainApp() {
     if (backendStatus !== 'running') return;
     
     const pollJob = async () => {
+      if (isTransitioningBatchRef.current) return;
       try {
         const state = await window.api.getJobStatus();
         setJobState(state);
         
-        // If job completed, fetch results
-        if (state.status === 'completed' && !jobResults) {
+        // If job completed, fetch results once (guarded by ref to prevent concurrent interval ticks)
+        if (state.status === 'completed' && !jobResults && !isTransitioningBatchRef.current) {
+          isTransitioningBatchRef.current = true;
           const res = await window.api.getJobResults();
           setJobResults(res);
           
           // Check if there are more event groups to process
           if (activeConfig && activeConfig.eventGroups && activeConfig.eventGroups.length > 1) {
-            // Find which group just finished by checking lastDirectory
-            const currentGroupIndex = activeConfig.eventGroups.findIndex(g => g[0] === lastDirectory);
+            const normPath = (d: string) => (d || '').trim().toLowerCase().replace(/\\/g, '/').replace(/\/+$/, '');
+            const currentGroupIndex = activeConfig.eventGroups.findIndex(
+              g => normPath(g[0]) === normPath(lastDirectory)
+            );
             if (currentGroupIndex >= 0 && currentGroupIndex < activeConfig.eventGroups.length - 1) {
               const nextIndex = currentGroupIndex + 1;
               const nextGroup = activeConfig.eventGroups[nextIndex];
@@ -189,6 +195,8 @@ function MainApp() {
                   setJobResults(null);
                 } catch (e: any) {
                   showToast(`Error iniciando siguiente lote: ${e.message || e}`, 'error');
+                } finally {
+                  isTransitioningBatchRef.current = false;
                 }
               }, 1500);
               return; // Stop here, don't execute "Cola completa" logic
@@ -196,6 +204,7 @@ function MainApp() {
           }
           
           // Cola completa
+          isTransitioningBatchRef.current = false;
           setBatchQueue([]);
           showToast('¡Culling completado con éxito!', 'success');
           if (window.api?.allowSleep) {
@@ -209,7 +218,7 @@ function MainApp() {
           setJobResults(null);
         }
       } catch (err) {
-        // Silently ignore poll errors
+        isTransitioningBatchRef.current = false;
       }
     };
 
@@ -423,7 +432,7 @@ function MainApp() {
       <PreCullingModal
         isOpen={!!preCullingFolder}
         initialDirectory={preCullingFolder || ''}
-        initialQueue={preCullingFolder ? [preCullingFolder] : []}
+        initialQueue={memoizedInitialQueue}
         onClose={() => setPreCullingFolder(null)}
         onConfirm={handleConfirmPreCulling}
       />

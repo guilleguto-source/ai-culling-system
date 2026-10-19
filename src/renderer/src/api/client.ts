@@ -85,10 +85,20 @@ export const apiClient = {
   // --- Culling & Pipeline ---
   getHardwareProfile: () => request<HardwareProfile>('/hardware-profile'),
 
-  getCullingEstimate: (directory: string, eventType: string = 'wedding', selectivity: string = 'standard') =>
-    request<CullingEstimate>(
-      `/estimate?directory=${encodeURIComponent(directory)}&event_type=${encodeURIComponent(eventType)}&selectivity=${encodeURIComponent(selectivity)}`
-    ),
+  getCullingEstimate: (
+    directory: string,
+    eventType: string = 'wedding',
+    selectivity: string = 'standard',
+    extraDirectories?: string[]
+  ) => {
+    const extraParam =
+      extraDirectories && extraDirectories.length > 0
+        ? `&extra_dirs=${encodeURIComponent(JSON.stringify(extraDirectories))}`
+        : '';
+    return request<CullingEstimate>(
+      `/estimate?directory=${encodeURIComponent(directory)}&event_type=${encodeURIComponent(eventType)}&selectivity=${encodeURIComponent(selectivity)}${extraParam}`
+    );
+  },
 
   getAvailablePresets: () => request<PresetItem[]>('/available-presets'),
 

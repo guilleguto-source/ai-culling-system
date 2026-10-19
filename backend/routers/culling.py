@@ -120,22 +120,39 @@ def get_hardware():
 
 
 @router.get("/estimate")
-def get_culling_estimate(directory: str, event_type: str = "wedding", selectivity: str = "standard"):
+def get_culling_estimate(
+    directory: str,
+    event_type: str = "wedding",
+    selectivity: str = "standard",
+    extra_dirs: str | None = None,
+):
     """
-    Escaneo rápido no bloqueante del directorio para calcular la estimación dinámica de fotos.
+    Escaneo rápido no bloqueante de los directorios para calcular la estimación dinámica de fotos.
     """
     dir_path = Path(directory)
     if not dir_path.is_dir():
         raise HTTPException(status_code=400, detail=f"Directorio inválido: {directory}")
 
+    dirs_to_scan = [directory]
+    if extra_dirs:
+        try:
+            parsed = json.loads(extra_dirs)
+            if isinstance(parsed, list):
+                for d in parsed:
+                    if isinstance(d, str) and Path(d).is_dir() and d not in dirs_to_scan:
+                        dirs_to_scan.append(d)
+        except Exception as e:
+            logger.debug(f"No se pudo parsear extra_dirs en /estimate: {e}")
+
     valid_exts = {".jpg", ".jpeg", ".raw", ".arw", ".cr2", ".cr3", ".nef", ".dng", ".raf", ".orf"}
     stems = set()
     try:
-        for root, _, files in os.walk(directory):
-            for name in files:
-                ext = os.path.splitext(name)[1].lower()
-                if ext in valid_exts:
-                    stems.add(os.path.join(root, os.path.splitext(name)[0]).lower())
+        for scan_dir in dirs_to_scan:
+            for root, _, files in os.walk(scan_dir):
+                for name in files:
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in valid_exts:
+                        stems.add(os.path.join(root, os.path.splitext(name)[0]).lower())
         total_count = len(stems)
     except Exception as e:
         logger.error(f"Error escaneando directorio para estimación: {e}")
@@ -397,7 +414,7 @@ def _run_culling_pipeline(
         pre_edit_enabled = pre_edit_prefs.get("enabled", True)
 
         records = []
-        conn = init_store(directory)
+        conn = init_store(directory, extra_directories)
 
         BATCH_SIZE = 200
         errors = 0
@@ -1060,7 +1077,8 @@ def _run_culling_pipeline(
         from services.export_snapshot import save_snapshot
         save_snapshot(directory, results,
                       preset_path=preset_data.path if preset_data else "",
-                      edits_applied=(mode != "cull"))
+                      edits_applied=(mode != "cull"),
+                      extra_directories=extra_directories)
 
         try:
             selected_count = sum(1 for r in results if r.get("label") in ("selected", "highlighted", "recommended"))
@@ -1074,6 +1092,23 @@ def _run_culling_pipeline(
             )
         except Exception as err:
             logger.warning(f"No se pudo registrar la sesión en SessionHistoryStore: {err}")
+
+        # Cerrar DB y liberar modelos ANTES de marcar completed para evitar colisión con el siguiente lote
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception as close_err:
+                logger.debug(f"Error cerrando DB: {close_err}")
+            conn = None
+
+        try:
+            from services import embedding_service
+            embedding_service.unload_model()
+        except Exception as err:
+            logger.debug(f"Error descargando embedding_service: {err}")
+
+        import gc
+        gc.collect()
 
         job_manager.set_results(
             results=results,
@@ -1092,23 +1127,14 @@ def _run_culling_pipeline(
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
-                pass
-
-        try:
-            from services import embedding_service
-            embedding_service.unload_model()
-        except Exception as err:
-            logger.debug(f"Error descargando embedding_service: {err}")
-
-        import gc
-        gc.collect()
+            except Exception as close_err:
+                logger.debug(f"Error cerrando DB en finally: {close_err}")
 
         try:
             import ctypes
             # Recorta el Working Set del proceso para devolver páginas a Windows
             ctypes.windll.psapi.EmptyWorkingSet(-1)
-        except Exception:
-            pass
+        except Exception as ws_err:
+            logger.debug(f"EmptyWorkingSet no disponible: {ws_err}")
 
         logger.info(f"Pipeline finalizado: memoria RAM liberada para job {job_id}.")

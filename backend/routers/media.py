@@ -405,7 +405,14 @@ def get_library_projects():
             except Exception:
                 pass
 
-            if not directory or directory == "." or not os.path.isabs(directory) or directory.lower() in seen_dirs:
+            if not directory or directory == "." or not os.path.isabs(directory):
+                continue
+
+            snapshot = load_snapshot(directory)
+            if snapshot and snapshot.get("directory"):
+                directory = snapshot["directory"]
+
+            if directory.lower() in seen_dirs:
                 continue
             seen_dirs.add(directory.lower())
 
@@ -417,7 +424,6 @@ def get_library_projects():
                         size += os.path.getsize(os.path.join(root, f))
 
             size_mb = round(size / (1024 * 1024), 2)
-            snapshot = load_snapshot(directory)
 
             if snapshot and snapshot.get("items"):
                 items = snapshot.get("items", {})

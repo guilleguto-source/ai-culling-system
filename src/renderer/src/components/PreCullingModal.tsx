@@ -64,23 +64,19 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
   const [presets, setPresets] = useState<PresetItem[]>([]);
   const [hardware, setHardware] = useState<HardwareProfile | null>(null);
 
-  // Sync initial directory & queue
+  // Sync initial directory & queue only when modal opens or target directory changes
   useEffect(() => {
-    if (initialDirectory) {
+    if (isOpen && initialDirectory) {
       const q = Array.isArray(initialQueue) && initialQueue.includes(initialDirectory)
         ? initialQueue
         : [initialDirectory, ...(Array.isArray(initialQueue) ? initialQueue.filter((p) => p !== initialDirectory) : [])];
       setQueue(q);
-      // Cleanly assign each folder its event number without retaining orphaned keys
-      setFolderEventMap(prev => {
-        const next: Record<string, number> = {};
-        q.forEach((path, idx) => {
-          next[path] = prev[path] ?? (idx + 1);
-        });
-        return next;
+      setFolderEventMap({
+        ...Object.fromEntries(q.map((path, idx) => [path, idx + 1]))
       });
+      setEventTypeMap({});
     }
-  }, [initialDirectory, initialQueue]);
+  }, [isOpen, initialDirectory]);
 
   // Load hardware profile & presets
   useEffect(() => {
@@ -88,7 +84,7 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
 
     apiClient.getHardwareProfile()
       .then((h) => setHardware(h))
-      .catch(() => {});
+      .catch((err) => console.error('Error loading hardware profile:', err));
 
     apiClient.getAvailablePresets()
       .then((p) => {
@@ -103,31 +99,35 @@ export const PreCullingModal: React.FC<PreCullingModalProps> = ({
       });
   }, [isOpen]);
 
-  // Dynamic estimate fetching
+  // Dynamic estimate fetching across all queued folders
   useEffect(() => {
-    if (!isOpen || !initialDirectory) return;
+    const primaryDir = queue[0] || initialDirectory;
+    if (!isOpen || !primaryDir) return;
+    const extraDirs = queue.length > 1 ? queue.slice(1) : undefined;
 
     setIsEstimating(true);
-    apiClient.getCullingEstimate(initialDirectory, eventType, selectivity)
+    apiClient.getCullingEstimate(primaryDir, eventType, selectivity, extraDirs)
       .then((est) => setEstimate(est))
       .catch((err) => console.error('Error fetching estimate:', err))
       .finally(() => setIsEstimating(false));
-  }, [isOpen, initialDirectory, eventType, selectivity]);
+  }, [isOpen, initialDirectory, queue, eventType, selectivity]);
 
   if (!isOpen) return null;
 
   const handleAddFolder = async () => {
     if (window.api?.selectFolder) {
       const selected = await window.api.selectFolder();
-      if (selected && !queue.includes(selected)) {
-        const newQueue = [...queue, selected];
-        setQueue(newQueue);
-        // New folder gets the next available event number
-        const maxEvent = Math.max(0, ...Object.values(folderEventMap));
-        const newEvNum = maxEvent + 1;
-        setFolderEventMap(prev => ({ ...prev, [selected]: newEvNum }));
-        // Inherit the global event type for the new event number
-        setEventTypeMap(prev => ({ ...prev, [newEvNum]: prev[newEvNum] ?? eventType }));
+      if (selected) {
+        const normSelected = selected.trim().toLowerCase().replace(/\\/g, '/');
+        const alreadyInQueue = queue.some(p => p.trim().toLowerCase().replace(/\\/g, '/') === normSelected);
+        if (!alreadyInQueue) {
+          const newQueue = [...queue, selected];
+          setQueue(newQueue);
+          // New folder gets the next available event number
+          const maxEvent = Math.max(0, ...Object.values(folderEventMap));
+          const newEvNum = maxEvent + 1;
+          setFolderEventMap(prev => ({ ...prev, [selected]: newEvNum }));
+        }
       }
     }
   };

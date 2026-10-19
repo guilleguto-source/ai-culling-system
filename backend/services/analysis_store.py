@@ -30,12 +30,28 @@ ANALYSIS_DIR = _get_analysis_dir()
 from utils.json_utils import safe_dumps as _json_dumps
 
 
+def _redirect_key(directory: str) -> str:
+    return hashlib.sha1(str(Path(directory).resolve()).lower().encode("utf-8")).hexdigest()
+
+
 def _get_db_path(directory: str) -> Path:
     # Hash the directory to create a unique db file
     dir_hash = hashlib.md5(directory.encode('utf-8')).hexdigest()
     target_dir = ANALYSIS_DIR if ANALYSIS_DIR is not None else _get_analysis_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
-    return target_dir / f"{dir_hash}.db"
+    db_path = target_dir / f"{dir_hash}.db"
+    if not db_path.exists():
+        try:
+            redirect_file = target_dir / f"{_redirect_key(directory)}.redirect"
+            if redirect_file.exists():
+                primary_dir = redirect_file.read_text(encoding="utf-8").strip()
+                if primary_dir and primary_dir != directory:
+                    primary_db = target_dir / f"{hashlib.md5(primary_dir.encode('utf-8')).hexdigest()}.db"
+                    if primary_db.exists():
+                        return primary_db
+        except Exception:
+            pass
+    return db_path
 
 def _schema_columns() -> list[str]:
     """Columnas que el código espera (se derivan del propio CREATE TABLE)."""
@@ -68,7 +84,17 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
-def init_store(directory: str) -> sqlite3.Connection:
+def init_store(directory: str, extra_directories: Optional[list[str]] = None) -> sqlite3.Connection:
+    target_dir = ANALYSIS_DIR if ANALYSIS_DIR is not None else _get_analysis_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if extra_directories:
+        norm_primary = str(Path(directory).resolve()).lower()
+        for ext in extra_directories:
+            try:
+                if str(Path(ext).resolve()).lower() != norm_primary:
+                    (target_dir / f"{_redirect_key(ext)}.redirect").write_text(directory, encoding="utf-8")
+            except Exception as err:
+                logger.debug(f"Error registrando redirect de análisis para {ext}: {err}")
     db_path = _get_db_path(directory)
     conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
