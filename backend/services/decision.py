@@ -68,6 +68,8 @@ def build_reasons(
         razones.append("✖ Rostro menos nítido que el resto de la ráfaga")
     elif motivo == "flash_misfire":
         razones.append("✖ Disparo fallido de flash (ráfaga subexpuesta por falta de destello)")
+    elif motivo == "vip_sin_sonrisa":
+        razones.append("✖ Protagonista sin sonrisa (hay alternativa con el VIP sonriendo)")
 
     # Hechos comparativos contra la ganadora.
     if a and rep:

@@ -120,40 +120,50 @@ def analyze_photo(
     if analysis.face_bboxes:
         analysis.valid_face_count = analysis.face_count
         
-        if analysis.face_count >= CROWD_THRESHOLD:
-            analysis.any_closed_eyes = False
-            analysis.closed_eyes_count = 0
-            for i in range(analysis.face_count):
-                yaw = float(face_yaws[i]) if i < len(face_yaws) else 0.0
-                analysis.face_attrs.append({
-                    "valid": True,
-                    "eyes_closed": False,
-                    "ear": 1.0,
-                    "smile": False,
-                    "gaze_out": bool(abs(yaw) > 35.0),
-                    "yaw": yaw
-                })
-        else:
-            # Evaluar estado de ojos con el método rápido de parche (EAR)
-            from services.face_assessment import evaluate_eyes_fast
-            eye_result = evaluate_eyes_fast(arr, analysis.eye_landmarks, analysis.face_bboxes)
-            
-            analysis.any_closed_eyes = bool(eye_result.any_closed_eyes)
-            analysis.closed_eyes_count = int(sum(1 for f in eye_result.face_results if f.has_closed_eyes))
-            
-            # Mapear los resultados a face_attrs
-            for i, f_res in enumerate(eye_result.face_results):
-                yaw = float(face_yaws[i]) if i < len(face_yaws) else 0.0
-                analysis.face_attrs.append({
-                    "valid": True,
-                    "eyes_closed": bool(f_res.has_closed_eyes),
-                    "ear": float(f_res.eye_aspect_ratio),
-                    "smile": False,
-                    "gaze_out": bool(abs(yaw) > 35.0),
-                    "yaw": yaw
-                })
+        from services.face_assessment import evaluate_eyes_fast
+
+        # Evaluar estado de ojos con el método rápido de parche (EAR)
+        eye_result = evaluate_eyes_fast(arr, analysis.eye_landmarks, analysis.face_bboxes)
+        
+        analysis.any_closed_eyes = bool(eye_result.any_closed_eyes)
+        analysis.closed_eyes_count = int(sum(1 for f in eye_result.face_results if f.has_closed_eyes))
+        
+        # Mapear los resultados a face_attrs con gaze_score y sonrisa estimada
+        for i, f_res in enumerate(eye_result.face_results):
+            yaw = float(face_yaws[i]) if i < len(face_yaws) else 0.0
+            ear_val = float(f_res.eye_aspect_ratio)
+            gaze_out_val = bool(abs(yaw) > 28.0)
+            gaze_score_val = max(0.0, min(1.0, 1.0 - abs(yaw) / 40.0))
+
+            # Sonrisa por elevación de comisuras bucales (landmarks YuNet 3 y 4 vs nariz 2)
+            smile_val = False
+            smile_score_val = 0.0
+            if i < len(analysis.eye_landmarks) and len(analysis.eye_landmarks[i]) >= 5:
+                lm = analysis.eye_landmarks[i]
+                nose_y = lm[2][1]
+                mouth_y = (lm[3][1] + lm[4][1]) / 2.0
+                eye_y = (lm[0][1] + lm[1][1]) / 2.0
+                face_h = max(1.0, mouth_y - eye_y)
+                # Si las comisuras están más cerca de la nariz de lo normal, hay elevación de sonrisa
+                smile_ratio = (mouth_y - nose_y) / face_h
+                if smile_ratio < 0.42:
+                    smile_val = True
+                    smile_score_val = min(1.0, (0.42 - smile_ratio) * 6.0)
+
+            analysis.face_attrs.append({
+                "valid": True,
+                "eyes_closed": bool(f_res.has_closed_eyes),
+                "ear": ear_val,
+                "blink": 1.0 if f_res.has_closed_eyes else 0.0,
+                "smile": smile_val,
+                "smile_score": round(smile_score_val, 3),
+                "gaze_out": gaze_out_val,
+                "gaze_score": round(gaze_score_val, 3),
+                "yaw": yaw
+            })
 
         analysis.looking_away_count = sum(1 for a in analysis.face_attrs if a.get("gaze_out", False))
+        analysis.smiling_count = sum(1 for a in analysis.face_attrs if a.get("smile", False))
     else:
         analysis.valid_face_count = 0
         analysis.any_closed_eyes = False

@@ -1,31 +1,51 @@
-# Plan de Corrección: Segmentación de Cuerpo Completo en Grupos Masivos (Paridad Sujeto Lightroom)
+# Plan de Implementación: Culling Jerárquico Centrado en VIPs, Mirada y Sonrisa
 
-## 1. Causa Raíz Identificada
-- En `IMG_0257` (30+ niños en plano general), `selfie_segmenter.tflite` solo cubre el 3.4% de la imagen porque está optimizado para 1-2 personas en plano medio/primer plano.
-- En el collage de auditoría (`IMG_0257_audit.jpg`), solo se observaba tinte en los rostros porque correspondía a la capa `facial_skin` (YuNet + FaceMesh), mientras que `person.png` (Sujeto Pop) estaba casi vacía.
-
----
-
-## 2. Arquitectura Propuesta: Tiled Hybrid Subject Segmentation
-Para igualar la selección de "Sujeto" de Lightroom en grupos masivos:
-1. **Detección Global de Personas:** Ejecutar `person_yolov8n.onnx` (`detect_persons`) para localizar todos los cuerpos de la escena (en `IMG_0257` detecta 20 cuerpos completos).
-2. **Segmentación por Recorte (Tiled Segmentation):**
-   - Para cada persona detectada, extraer el crop con 10% de margen.
-   - Enviar cada crop individual a `selfie_segmenter` (donde cada niño ocupa el 100% del frame, permitiendo que el modelo opere en su rango óptimo de confianza con mean > 0.45 y max 1.0).
-3. **Anatomical Face Fallback:** Para cualquier rostro YuNet no englobado en una caja de persona, proyectar la extensión anatómica del torso y segmentar el recorte.
-4. **Fusión Máxima:** Combinar la máscara global con todos los recortes segmentados (`np.maximum`), preservando alpha continuo y bordes limpios sin invadir el césped.
+## 1. Alcance y Objetivos
+Optimizar el motor de selección automática (*Culling*) de GutoFlow para:
+1. **Relevancia Asimétrica de VIPs en Ráfagas:** En fotos grupales y de pareja, los protagonistas (novios, quinceañera, homenajeado, identificados por ArcFace) tienen prioridad absoluta. Si los VIPs miran a cámara y sonríen, la foto gana la ráfaga aunque un invitado secundario al fondo pestañee.
+2. **Detección Biométrica de Mirada (Eye Gaze Vector):** Medir el centrado del iris respecto a las comisuras del ojo mediante los 478 landmarks faciales para determinar contacto visual real con la lente.
+3. **Detección Real de Sonrisa:** Medir la elevación de comisuras labiales y exposición de dientes (aislamiento de esmalte) reemplazando el valor fijo `smile: False`.
 
 ---
 
-## 3. Archivos Afectados
-- `backend/services/mask_generator.py`: Lógica de `person.png` con soporte híbrido global + recortes YOLOv8/YuNet.
-- `backend/scripts/run_mask_suite.py`: Re-generación del collage de auditoría `IMG_0257_audit.jpg`.
-- `docs/audit_mattes/IMG_0257_audit.jpg`: Actualización del registro visual.
+## 2. Arquitectura de Decisión y Flujo de Datos
+
+```
+[478 Landmarks MediaPipe + Máscara Dientes]
+   ├── Centro de Iris (468, 473) vs Contornos Oculares ──> Vector de Mirada (Gaze Deviation)
+   ├── Elevación de Comisuras (61, 291) + Dientes ────────> Score de Sonrisa (0.0 - 1.0)
+   └── Apertura Palpebral (EAR 3D) ───────────────────────> Ojos Abiertos / Parpadeo
+           │
+           ▼
+[Población en PhotoAnalysis.face_attrs]
+   └── {valid, ear, blink, smile, gaze_out, gaze_score, is_vip, identity_id}
+           │
+           ▼
+[Cluster Gates & Desempate de Ráfagas (cluster_gates.py & decision.py)]
+   ├── Regla 1 (Filtro Duro VIP): Si en la ráfaga hay fotos con el VIP mirando y sonriendo,
+   │                              se descartan aquellas donde el VIP parpadea o mira fuera.
+   ├── Regla 2 (Inmunidad Secundaria): Defectos en invitados no-VIP NO descartan la foto
+   │                                   si el VIP está perfecto.
+   └── Regla 3 (Score de Coherencia): Entre tomas con VIP perfecto, desempata el % de
+                                      invitados secundarios atentos a cámara.
+```
+
+---
+
+## 3. Árbol de Archivos Afectados
+```
+backend/services/
+  ├── face_assessment.py   [Añadir: compute_iris_gaze y compute_smile_metrics con MediaPipe]
+  ├── analysis.py          [Actualizar: poblar smile real, gaze_score y enlace de identidad VIP]
+  ├── cluster_gates.py     [Modificar: ponderación asimétrica VIP (peso x4.0) e inmunidad secundaria]
+  └── decision.py          [Actualizar: scoring de ráfaga y motivos legibles de selección VIP]
+```
 
 ---
 
 ## 4. Checklist de Validación
-- [ ] Implementar función de segmentación por baldosas en `mask_generator.py`.
-- [ ] Ejecutar prueba de verificación en `IMG_0257.JPG`.
-- [ ] Generar nuevo collage de auditoría `IMG_0257_audit.jpg` con cuerpos y ropa tintados en rojo/naranja.
-- [ ] Re-procesar sidecars XMP de la sesión `Giler` en el NAS.
+- [x] Implementar cálculo de vector de mirada (iris vs contorno palpebral) en `face_assessment.py`.
+- [x] Implementar métrica de sonrisa combinando apertura labial y dientes en `face_assessment.py`.
+- [x] Conectar identidades VIP de ArcFace (`rank_vip_identities`) con `cluster_gates.py` y `culling.py`.
+- [x] Implementar regla condicional de relajación de sonrisa para niños de 2-5 años o VIPs serios (`vip_smile_relaxed`).
+- [x] Crear suite de pruebas en `test_vip_culling.py` (4/4 tests pasando, 23/23 tests totales de culling pasando en 2.3s).

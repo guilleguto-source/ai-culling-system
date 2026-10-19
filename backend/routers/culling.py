@@ -726,6 +726,16 @@ def _run_culling_pipeline(
         decidido_por: dict[int, str] = {}
         margenes: dict[int, float] = {}
 
+        # Tasa global de sonrisa de los VIPs en el evento (Regla condicional niños 2-5 años / VIPs serios)
+        vip_photos = [i for i in vip_photo_indices if i < len(analyses)]
+        vip_smiles = sum(1 for i in vip_photos if analyses[i].smiling_count > 0)
+        vip_smile_ratio = (vip_smiles / max(1, len(vip_photos)))
+        vip_smile_relaxed = bool(vip_smile_ratio < 0.20)
+        if vip_smile_relaxed and vip_photos:
+            logger.info(f"[VIP Culling] Tasa de sonrisa VIP baja ({vip_smile_ratio:.1%}). Modo adaptativo activo: sonrisa opcional, ojos abiertos y mirada a cámara prioritarios.")
+
+        face_identities_list = [identidades.get(i, []) for i in range(len(analyses))]
+
         for cluster in clusters:
             if not cluster.image_indices:
                 continue
@@ -736,6 +746,9 @@ def _run_culling_pipeline(
                 [a.face_sharpness for a in analyses],
                 [a.face_bboxes for a in analyses],
                 [a.pre_global_lum for a in analyses],
+                face_identities_list=face_identities_list,
+                vip_identity_ids=vip_ids,
+                vip_smile_relaxed=vip_smile_relaxed,
             )
             gate_reasons.update(motivos_gate)
 
@@ -751,14 +764,22 @@ def _run_culling_pipeline(
                 if idx in vip_photo_indices:
                     score = min(1.0, score * 1.20)
 
-                # Bono Hero Shot (Gaze Continuity) para ráfagas con caras
+                # Bono Hero Shot (Gaze Continuity & Expresión VIP) para ráfagas con caras
                 if len(cluster.image_indices) >= 2 and a.valid_face_count > 0 and len(a.face_attrs) > 0:
                     yaws = [abs(f.get("yaw", 0.0)) for f in a.face_attrs if f.get("valid", True)]
                     max_yaw = max(yaws) if yaws else 0.0
-                    # Si todos miran muy frontal (yaw < 15 grados) y ojos abiertos (low blink/ear high), dar boost.
-                    # El fotograma ideal de contacto visual recibe bonificación sustancial para ganar el duelo.
-                    if max_yaw < 15.0 and a.closed_eyes_count == 0 and a.looking_away_count == 0:
+                    gaze_scores = [f.get("gaze_score", 0.5) for f in a.face_attrs if f.get("valid", True)]
+                    avg_gaze = sum(gaze_scores) / len(gaze_scores) if gaze_scores else 0.5
+
+                    # Fotograma con contacto visual y ojos abiertos
+                    if (max_yaw < 15.0 or avg_gaze >= 0.75) and a.closed_eyes_count == 0 and a.looking_away_count == 0:
                         score = min(1.0, score + 0.35)
+
+                    # Boost prioritario VIP: ojos abiertos y mirada fija a cámara
+                    if idx in vip_photo_indices and a.closed_eyes_count == 0 and a.looking_away_count == 0:
+                        score = min(1.0, score + 0.15)
+                        if a.smiling_count > 0:
+                            score = min(1.0, score + 0.15)
 
                 all_scores[idx] = score
 
