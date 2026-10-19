@@ -35,13 +35,14 @@
 
 ---
 
-## 3. Protocolo de Ejecución por Carpeta del NAS
-Para maximizar rendimiento y estabilidad de red:
-- Procesar secuencialmente: **Giler** (436) -> **Dayana** (679) -> **Gioconda** (836).
-- Monitoreo en background con registro de avance porcentual.
-- Generación de XMP sidecars junto a cada archivo original en el NAS.
+## 3. Estado de Ejecución por Carpeta del NAS
+- **Giler (407 fotos JPG):** ✅ Completado (407/407 XMP + máscaras binarias generadas, 0 errores).
+- **Dayana (679 fotos CR2 RAW):** ✅ Completado (679/679 XMP + máscaras binarias generadas, 0 errores).
+- **Gioconda (836 fotos JPG):** ✅ Completado (836/836 XMP + máscaras binarias generadas, 0 errores).
+- **TOTAL:** ✅ **1,922 / 1,922 fotos procesadas con éxito (0 fallos).**
 
 ---
 
-## 4. Confirmación Requerida
-¿Aprobado para ejecutar primero la **Fase 1 (Respaldo y Git)** y luego arrancar la **Fase 2 (Procesamiento en lote de las 3 sesiones del NAS)**?
+## 4. Repositorio Remoto GutoCraft
+- Repo local sincronizado en rama `gutoflow` (`da36d64`).
+- Pendiente: Crear `GutoCraft` en GitHub (https://github.com/new) para habilitar el push final.
