@@ -1,0 +1,184 @@
+{
+  "version": "1.0.0",
+  "regions": {
+    "global_en": {
+      "country": "Global / US / UK",
+      "language": "en",
+      "code_platforms": [
+        {
+          "name": "GitHub",
+          "url": "https://github.com",
+          "search_template": "https://github.com/search?q={query}&type=issues"
+        },
+        {
+          "name": "GitLab",
+          "url": "https://gitlab.com",
+          "search_template": "https://gitlab.com/search?search={query}"
+        },
+        {
+          "name": "Codeberg",
+          "url": "https://codeberg.org",
+          "search_template": "https://codeberg.org/explore/repos?q={query}"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "Reddit",
+          "subreddits": ["r/rust", "r/cpp", "r/computervision", "r/algorithms", "r/embedded", "r/electronjs"],
+          "search_template": "https://www.google.com/search?q=site:reddit.com+{query}"
+        },
+        {
+          "name": "Hacker News",
+          "search_template": "https://hn.algolia.com/?q={query}"
+        },
+        {
+          "name": "Lobsters",
+          "search_template": "https://lobste.rs/search?q={query}"
+        }
+      ]
+    },
+    "china": {
+      "country": "China",
+      "language": "zh-CN",
+      "code_platforms": [
+        {
+          "name": "Gitee (码云)",
+          "url": "https://gitee.com",
+          "search_template": "https://gitee.com/search?q={query}"
+        },
+        {
+          "name": "GitCode (CSDN)",
+          "url": "https://gitcode.com",
+          "search_template": "https://gitcode.com/search?q={query}"
+        },
+        {
+          "name": "AtomGit",
+          "url": "https://atomgit.com",
+          "search_template": "https://atomgit.com/search?q={query}"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "CSDN",
+          "search_template": "https://so.csdn.net/so/search?q={query}"
+        },
+        {
+          "name": "Zhihu (知乎)",
+          "search_template": "https://www.zhihu.com/search?type=content&q={query}"
+        },
+        {
+          "name": "V2EX",
+          "search_template": "https://www.google.com/search?q=site:v2ex.com+{query}"
+        }
+      ]
+    },
+    "russia": {
+      "country": "Russia / CIS",
+      "language": "ru",
+      "code_platforms": [
+        {
+          "name": "GitVerse",
+          "url": "https://gitverse.ru",
+          "search_template": "https://gitverse.ru/search?q={query}"
+        },
+        {
+          "name": "GitFlic",
+          "url": "https://gitflic.ru",
+          "search_template": "https://gitflic.ru/search?q={query}"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "Habr",
+          "description": "Artículos técnicos profundos, ingeniería inversa, bajo nivel y algoritmos",
+          "search_template": "https://habr.com/ru/search/?q={query}&target_type=posts"
+        },
+        {
+          "name": "CyberForum",
+          "search_template": "https://www.cyberforum.ru/search.php?q={query}"
+        }
+      ]
+    },
+    "japan": {
+      "country": "Japan",
+      "language": "ja",
+      "code_platforms": [
+        {
+          "name": "GitHub Japan ecosystem",
+          "search_template": "https://github.com/search?q={query}+lang:ja"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "Qiita",
+          "search_template": "https://qiita.com/search?q={query}"
+        },
+        {
+          "name": "Zenn",
+          "search_template": "https://zenn.dev/search?q={query}"
+        }
+      ]
+    },
+    "south_korea": {
+      "country": "South Korea",
+      "language": "ko",
+      "code_platforms": [
+        {
+          "name": "GitHub Korea ecosystem",
+          "search_template": "https://github.com/search?q={query}+lang:ko"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "Velog",
+          "search_template": "https://velog.io/search?q={query}"
+        },
+        {
+          "name": "Naver D2",
+          "description": "Ingeniería técnica y arquitectura de Naver",
+          "search_template": "https://d2.naver.com/search?query={query}"
+        },
+        {
+          "name": "GeekNews (Korea)",
+          "search_template": "https://news.hada.io/search?q={query}"
+        }
+      ]
+    },
+    "germany": {
+      "country": "Germany / Central Europe",
+      "language": "de",
+      "code_platforms": [
+        {
+          "name": "Codeberg",
+          "search_template": "https://codeberg.org/explore/repos?q={query}"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "Heise Developer",
+          "search_template": "https://www.heise.de/developer/suche/?q={query}"
+        },
+        {
+          "name": "Golem.de",
+          "search_template": "https://suche.golem.de/search.php?q={query}"
+        }
+      ]
+    },
+    "france": {
+      "country": "France",
+      "language": "fr",
+      "code_platforms": [
+        {
+          "name": "Framagit",
+          "search_template": "https://framagit.org/explore/projects?name={query}"
+        }
+      ],
+      "deep_tech_forums": [
+        {
+          "name": "LinuxFr.org",
+          "search_template": "https://linuxfr.org/recherche?q={query}"
+        }
+      ]
+    }
+  }
+}

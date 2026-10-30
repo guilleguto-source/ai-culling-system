@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Límites por nivel: máximo % lineal removible por dimensión
 LEVEL_LIMITS = {"minimo": 0.15, "medio": 0.30, "agresivo": 0.45}
 
-MAX_LEVEL_ANGLE = 7.0      # grados; más inclinación = holandés intencional o error
+MAX_LEVEL_ANGLE = 6.0      # grados; acotado a <= 6.0° según acuerdo URE Mesh
 ROTATION_CROP_PER_DEG = 0.015  # recorte lineal que consume nivelar 1 grado
 MAX_ROTATION_CROP = 0.08   # si nivelar exige más que esto, no se nivela
 MIN_CHANGE = 0.02          # cambio lineal mínimo para proponer crop

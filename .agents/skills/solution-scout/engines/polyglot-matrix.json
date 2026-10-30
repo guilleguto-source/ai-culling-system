@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "technical_concepts": {
+    "raw_image_decoding": {
+      "en": ["RAW image decoding", "embedded thumbnail extraction", "demosaicing performance"],
+      "zh": ["RAW图像解码", "嵌入式缩略图提取", "去马赛克性能优化"],
+      "ru": ["декодирование RAW изображений", "извлечение встроенных превью", "демозаика производительность"],
+      "ja": ["RAW画像デコード", "埋め込みサムネイル抽出", "デモザイク高速化"],
+      "ko": ["RAW 이미지 디코딩", "포함된 썸네일 추출", "디모자이킹 성능 최적화"],
+      "de": ["RAW-Bilddecodierung", "eingebettete Miniaturansichten extrahieren", "Demosaicing Leistung"]
+    },
+    "memory_leak_and_profiling": {
+      "en": ["memory leak fix", "heap profiling", "out of memory", "allocator optimization"],
+      "zh": ["内存泄漏修复", "堆内存分析", "内存溢出OOM", "内存分配器优化"],
+      "ru": ["утечка памяти исправление", "профилирование кучи", "переполнение памяти OOM", "оптимизация аллокатора"],
+      "ja": ["メモリリーク修正", "ヒーププロファイリング", "メモリ不足", "アロケータ最適化"],
+      "ko": ["메모리 누수 해결", "힙 프로파일링", "메모리 부족 OOM", "메모리 할당자 최적화"],
+      "de": ["Speicherleck beheben", "Heap-Profiling", "Speicherüberlauf", "Allokator-Optimierung"]
+    },
+    "zero_copy_and_ipc": {
+      "en": ["zero-copy buffer", "shared memory IPC", "Electron high throughput IPC"],
+      "zh": ["零拷贝缓冲区", "共享内存IPC", "Electron高性能IPC通信"],
+      "ru": ["zero-copy буфер", "разделяемая память IPC", "высокопроизводительный IPC в Electron"],
+      "ja": ["ゼロコピーバッファ", "共有メモリIPC", "Electron高速IPC通信"],
+      "ko": ["제로 카피 버퍼", "공유 메모리 IPC", "Electron 고성능 IPC 통신"],
+      "de": ["Zero-Copy Puffer", "Shared Memory IPC", "Electron Hochdurchsatz IPC"]
+    },
+    "simd_and_parallelism": {
+      "en": ["SIMD vectorization AVX2", "multithreaded pipeline", "lock-free ring buffer"],
+      "zh": ["SIMD向量化 AVX2", "多线程处理流水线", "无锁环形缓冲区"],
+      "ru": ["SIMD векторизация AVX2", "многопоточный конвейер", "бесблокировочный кольцевой буфер"],
+      "ja": ["SIMDベクトル化 AVX2", "マルチスレッドパイプライン", "ロックフリーリングバッファ"],
+      "ko": ["SIMD 벡터화 AVX2", "멀티스레드 파이프라인", "락프리 링 버퍼"],
+      "de": ["SIMD-Vektorisierung AVX2", "Multithreaded Pipeline", "sperrenfreier Ringpuffer"]
+    },
+    "facial_recognition_and_culling": {
+      "en": ["facial landmark jitter", "face clustering cosine similarity", "blinking detection closed eyes"],
+      "zh": ["人脸关键点抖动", "人脸聚类余弦相似度", "闭眼眨眼检测"],
+      "ru": ["джиттер ключевых точек лица", "кластеризация лиц косинусное сходство", "детекция закрытых глаз"],
+      "ja": ["顔ランドマークジッター", "顔クラスタリングコサイン類似度", "まばたき目つむり検出"],
+      "ko": ["얼굴 랜드마크 지터", "얼굴 클러스터링 코사인 유사도", "눈 감김 감지"],
+      "de": ["Gesichts-Landmark-Jitter", "Gesichts-Clustering Kosinus-Ähnlichkeit", "Blinzel- und Augenschlusserkennung"]
+    },
+    "sqlite_and_catalogs": {
+      "en": ["SQLite WAL mode concurrent reads", "database lockup 100k records", "photo catalog schema"],
+      "zh": ["SQLite WAL模式并发读取", "大数据量锁库 10万条", "照片目录库表结构"],
+      "ru": ["SQLite WAL режим параллельное чтение", "блокировка БД 100к записей", "схема каталога фото"],
+      "ja": ["SQLite WALモード並行読み込み", "大量データロック", "写真カタログスキーマ"],
+      "ko": ["SQLite WAL 모드 동시 읽기", "대용량 데이터베이스 락", "사진 카탈로그 스키마"],
+      "de": ["SQLite WAL-Modus gleichzeitiges Lesen", "Datenbank-Lock 100k Einträge", "Fotokatalog-Schema"]
+    }
+  }
+}

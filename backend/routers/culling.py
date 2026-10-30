@@ -735,6 +735,8 @@ def _run_culling_pipeline(
             logger.info(f"[VIP Culling] Tasa de sonrisa VIP baja ({vip_smile_ratio:.1%}). Modo adaptativo activo: sonrisa opcional, ojos abiertos y mirada a cámara prioritarios.")
 
         face_identities_list = [identidades.get(i, []) for i in range(len(analyses))]
+        from services.elo_ranking import rank_burst_elo
+        deferred_vlm_ties = []
 
         for cluster in clusters:
             if not cluster.image_indices:
@@ -789,23 +791,16 @@ def _run_culling_pipeline(
                 cands_sorted = sorted(candidates, key=lambda i: all_scores[i], reverse=True)
                 margen = round(all_scores[cands_sorted[0]] - all_scores[cands_sorted[1]], 4)
                 
-                # FASE S: Refinamiento VLM
-                if prefs.get("use_vlm_refinement", False) and margen < 0.05:
-                    job_manager.set_phase("La IA está desempatando algunas ráfagas...")
-                    from services.vlm_refiner import decide_winner
-                    top_paths = [records[i].path for i in cands_sorted[:3]]
-                    vlm_winner_idx = decide_winner(top_paths)
-                    if vlm_winner_idx is not None:
-                        best_idx = cands_sorted[vlm_winner_idx]
-                        decidido_por[best_idx] = "vlm"
-
-                # FASE 3.4: Desempate ELO
-                if best_idx not in decidido_por and margen <= 0.02:
-                    from services.elo_ranking import rank_burst_elo
-                    ranked_elo, _, _ = rank_burst_elo(candidates, analyses, all_scores)
+                # FASE 3.4: Desempate ELO ultra-rápido en RAM (< 1ms)
+                if margen <= 0.025:
+                    ranked_elo, _, _ = rank_burst_elo(cands_sorted[:3], analyses, all_scores)
                     if ranked_elo:
                         best_idx = ranked_elo[0]
                         decidido_por[best_idx] = "elo"
+
+                # Encolar para desempate diferido al final SOLO si VLM está activo y el margen es microscópico
+                if prefs.get("use_vlm_refinement", False) and margen < 0.015:
+                    deferred_vlm_ties.append((cluster, cands_sorted[:2]))
             else:
                 margen = 1.0
                 
@@ -827,6 +822,24 @@ def _run_culling_pipeline(
 
             photos_evaluated += len(cluster.image_indices)
             job_manager.update_phase_progress("selection", min(photos_evaluated, total_photos), total_photos)
+
+        # FASE FINAL: Desempate diferido por VLM (solo 2 finalistas por ráfaga sin detener el culling general)
+        if deferred_vlm_ties:
+            job_manager.set_phase(f"Desempatando {len(deferred_vlm_ties)} ráfagas reñidas...")
+            try:
+                from services.vlm_refiner import decide_winner
+                for clus, top2 in deferred_vlm_ties:
+                    top_paths = [records[i].path for i in top2]
+                    vlm_winner_idx = decide_winner(top_paths)
+                    if vlm_winner_idx is not None and vlm_winner_idx < len(top2):
+                        w_idx = top2[vlm_winner_idx]
+                        if w_idx != clus.representative_index:
+                            rep_scores.pop(clus.representative_index, None)
+                        clus.representative_index = w_idx
+                        rep_scores[w_idx] = all_scores[w_idx]
+                        decidido_por[w_idx] = "vlm"
+            except Exception as e:
+                logger.warning(f"Error en desempate diferido VLM: {e}")
 
         SEVERE_BLUR_FACTOR = 0.35
         trash_flags = [
@@ -945,7 +958,7 @@ def _run_culling_pipeline(
             ]
             develop_by_idx = pre_edit.compute_pre_edits(
                 signatures,
-                bias=float(pre_edit_prefs.get("exposure_bias", 0.0)),
+                bias=float(pre_edit_prefs.get("exposure_bias", 0.28)),
                 preset_wb_bias=preset_data.wb_bias if preset_data else (0.0, 0.0),
                 exposure_deadband=float(pre_edit_prefs.get("exposure_deadband", 0.15)),
                 auto_wb=pre_edit_prefs.get("auto_wb", False),

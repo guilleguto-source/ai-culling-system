@@ -515,6 +515,8 @@ export default function LibraryView({
                   <div
                     key={proj.directory}
                     onClick={() => setSelectedProj(proj)}
+                    onDoubleClick={() => onSelectProject && onSelectProject(proj.directory)}
+                    title="Doble clic para abrir en Culling"
                     style={{
                       backgroundColor: isActive ? 'rgba(233, 160, 74, 0.04)' : isSelected ? 'var(--color-surface-elevated)' : 'var(--color-surface)',
                       border: `1px solid ${isActive ? 'var(--accent-primary)' : isSelected ? 'var(--border-strong)' : 'var(--border-default)'}`,
@@ -667,7 +669,7 @@ export default function LibraryView({
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: 'auto', paddingTop: 'var(--space-4)' }}>
-                  {onSelectProject && directory?.toLowerCase() !== selectedProj.directory.toLowerCase() && (
+                  {onSelectProject && (
                     <Button
                       variant="primary"
                       style={{ width: '100%', justifyContent: 'center' }}

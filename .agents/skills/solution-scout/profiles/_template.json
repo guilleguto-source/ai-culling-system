@@ -1,0 +1,22 @@
+{
+  "profile_id": "custom-domain",
+  "name": "Nombre descriptivo del Dominio",
+  "description": "Propósito y stack tecnológico principal",
+  "competitor_targets": [
+    "Competidor 1",
+    "Competidor 2"
+  ],
+  "trusted_open_source_repos": [
+    "owner/repo1",
+    "owner/repo2"
+  ],
+  "domain_search_tags": [
+    "tag1",
+    "tag2",
+    "tag3"
+  ],
+  "technical_pain_points": [
+    "Problema técnico recurrente 1",
+    "Problema técnico recurrente 2"
+  ]
+}

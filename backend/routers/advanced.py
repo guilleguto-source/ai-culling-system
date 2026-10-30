@@ -161,6 +161,9 @@ def relight_faces(req: RelightRequest):
             lut_adjustments=r.get("lut_adjustments"),
             tonal_rescue=r.get("tonal_rescue"),
             paint_corrections=paint_elements,
+            face_regions=r.get("face_regions"),
+            image_dims=r.get("image_dims") or (4000, 3000),
+            include_anatomical_masks=bool(r.get("face_regions") or has_faces),
         )
         applied_count += 1
 
@@ -188,7 +191,7 @@ def skin_retouch(req: SkinRetouchRequest):
         if not target_paths and r.get("label") not in ("selected", "highlighted"):
             continue
 
-        has_faces = bool(r.get("face_bboxes"))
+        has_faces = bool(r.get("face_bboxes") or r.get("face_regions") or (r.get("diagnostics", {}).get("valid_face_count", 0) > 0))
         proposal = calculate_skin_retouch(has_skin=has_faces, smoothness=req.smoothness)
         if not proposal.skin_detected:
             continue
@@ -210,6 +213,9 @@ def skin_retouch(req: SkinRetouchRequest):
             lut_adjustments=r.get("lut_adjustments"),
             tonal_rescue=r.get("tonal_rescue"),
             paint_corrections=paint_elements,
+            face_regions=r.get("face_regions"),
+            image_dims=r.get("image_dims") or (4000, 3000),
+            include_anatomical_masks=bool(r.get("face_regions") or has_faces),
         )
         applied_count += 1
 

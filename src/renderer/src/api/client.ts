@@ -5,6 +5,8 @@
 
 import {
   HardwareInfo,
+  HardwareProfile,
+  CullingEstimate,
   Settings,
   JobStatus,
   JobResults,

@@ -1,51 +1,43 @@
-# Plan de Implementación: Culling Jerárquico Centrado en VIPs, Mirada y Sonrisa
+# Plan de Implementación: Fusión Integral URE Mesh + Correcciones de Auditoría (Code Review)
 
-## 1. Alcance y Objetivos
-Optimizar el motor de selección automática (*Culling*) de GutoFlow para:
-1. **Relevancia Asimétrica de VIPs en Ráfagas:** En fotos grupales y de pareja, los protagonistas (novios, quinceañera, homenajeado, identificados por ArcFace) tienen prioridad absoluta. Si los VIPs miran a cámara y sonríen, la foto gana la ráfaga aunque un invitado secundario al fondo pestañee.
-2. **Detección Biométrica de Mirada (Eye Gaze Vector):** Medir el centrado del iris respecto a las comisuras del ojo mediante los 478 landmarks faciales para determinar contacto visual real con la lente.
-3. **Detección Real de Sonrisa:** Medir la elevación de comisuras labiales y exposición de dientes (aislamiento de esmalte) reemplazando el valor fijo `smile: False`.
-
----
-
-## 2. Arquitectura de Decisión y Flujo de Datos
-
-```
-[478 Landmarks MediaPipe + Máscara Dientes]
-   ├── Centro de Iris (468, 473) vs Contornos Oculares ──> Vector de Mirada (Gaze Deviation)
-   ├── Elevación de Comisuras (61, 291) + Dientes ────────> Score de Sonrisa (0.0 - 1.0)
-   └── Apertura Palpebral (EAR 3D) ───────────────────────> Ojos Abiertos / Parpadeo
-           │
-           ▼
-[Población en PhotoAnalysis.face_attrs]
-   └── {valid, ear, blink, smile, gaze_out, gaze_score, is_vip, identity_id}
-           │
-           ▼
-[Cluster Gates & Desempate de Ráfagas (cluster_gates.py & decision.py)]
-   ├── Regla 1 (Filtro Duro VIP): Si en la ráfaga hay fotos con el VIP mirando y sonriendo,
-   │                              se descartan aquellas donde el VIP parpadea o mira fuera.
-   ├── Regla 2 (Inmunidad Secundaria): Defectos en invitados no-VIP NO descartan la foto
-   │                                   si el VIP está perfecto.
-   └── Regla 3 (Score de Coherencia): Entre tomas con VIP perfecto, desempata el % de
-                                      invitados secundarios atentos a cámara.
-```
+## Resumen del Plan
+Unificación definitiva en el código de producción de Guto Flow 3:
+1. **Auditoría (Code Review):**
+   - [x] Limpieza de representante previo en `rep_scores` en desempate VLM diferido (`backend/routers/culling.py`).
+   - [x] Propagación de `face_bboxes`, `face_regions` y dimensiones en `backend/services/decision.py`.
+   - [x] Corrección de memory leak C++ y restauración de `TARGET_SIZE=512` en `backend/services/mask_generator.py`.
+   - [x] Sincronización de etiquetas en `src/renderer/src/components/GridView.tsx`.
+   - [x] Imports tipados en `src/renderer/src/api/client.ts`.
+   - [x] Erradicación de bare excepts en `backend/scripts/vlm_stream_runner.py`.
+2. **URE Mesh:**
+   - [x] Pre-revelado adaptativo con sesgo `+0.28 EV` en `backend/services/pre_edit.py`.
+   - [x] Preset de estilo `GutoPro Day Boy` al 100% de fuerza.
+   - [x] Smart Crop 3:2 / 2:3 con filtro YCrCb y Straighten $\theta \le 6.0^\circ$ en `backend/services/auto_crop.py` y `straighten.py`.
+   - [x] Inyección de directivas XMP de máscaras IA (`crs:MaskGroupBasedCorrections`: Piel Facial con textura intacta) para Lightroom Classic.
 
 ---
 
-## 3. Árbol de Archivos Afectados
-```
-backend/services/
-  ├── face_assessment.py   [Añadir: compute_iris_gaze y compute_smile_metrics con MediaPipe]
-  ├── analysis.py          [Actualizar: poblar smile real, gaze_score y enlace de identidad VIP]
-  ├── cluster_gates.py     [Modificar: ponderación asimétrica VIP (peso x4.0) e inmunidad secundaria]
-  └── decision.py          [Actualizar: scoring de ráfaga y motivos legibles de selección VIP]
-```
+## Archivos Modificados
+- `backend/routers/culling.py`
+- `backend/routers/advanced.py`
+- `backend/services/pre_edit.py`
+- `backend/services/decision.py`
+- `backend/services/auto_crop.py`
+- `backend/services/straighten.py` (nuevo servicio URE Mesh)
+- `backend/services/mask_generator.py`
+- `backend/scripts/vlm_stream_runner.py`
+- `src/renderer/src/api/client.ts`
+- `src/renderer/src/components/GridView.tsx`
 
 ---
 
-## 4. Checklist de Validación
-- [x] Implementar cálculo de vector de mirada (iris vs contorno palpebral) en `face_assessment.py`.
-- [x] Implementar métrica de sonrisa combinando apertura labial y dientes en `face_assessment.py`.
-- [x] Conectar identidades VIP de ArcFace (`rank_vip_identities`) con `cluster_gates.py` y `culling.py`.
-- [x] Implementar regla condicional de relajación de sonrisa para niños de 2-5 años o VIPs serios (`vip_smile_relaxed`).
-- [x] Crear suite de pruebas en `test_vip_culling.py` (4/4 tests pasando, 23/23 tests totales de culling pasando en 2.3s).
+## Checklist de Verificación
+- [x] Desempate VLM diferido no deja huérfanos en `rep_scores`.
+- [x] `face_bboxes` y `face_regions` inyectados en `results` por `decision.py`.
+- [x] Retoque de piel en `AdvancedPanel` procesa con éxito fotos con rostros ($N > 0$) e inyecta máscaras anatómicas en XMP.
+- [x] Máscaras de Piel Facial con textura intacta escritas en `.xmp` para Lightroom.
+- [x] Pre-revelado con sesgo `+0.28 EV` aplicado.
+- [x] Preset al 100% sin atenuación.
+- [x] Smart Crop (3:2 / 2:3) y enderezado angular $\le 6^\circ$ operativos.
+- [x] `mask_generator.py` libera memoria C++ y re-exporta `TARGET_SIZE`.
+- [x] Filtros de GridView (`highlighted`, `duplicate`, `trash`, `doubtful`) y cliente API tipados.

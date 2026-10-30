@@ -1,0 +1,30 @@
+{
+  "profile_id": "algo-trading-mql5",
+  "name": "Algorithmic Trading & Low-Latency Execution",
+  "description": "Optimizado para estrategias algorítmicas, OnTick en MQL5, análisis cuantitativo, backtesting y comunicación FFI de baja latencia con C++/Rust",
+  "competitor_targets": [
+    "MetaTrader 5",
+    "TradingView",
+    "cTrader",
+    "NinjaTrader"
+  ],
+  "trusted_open_source_repos": [
+    "ta-lib/ta-lib",
+    "backtrader/backtrader",
+    "polarssource/polars",
+    "rosetta-code/financial",
+    "QuantConnect/Lean"
+  ],
+  "domain_search_tags": [
+    "mql5-optimization",
+    "ontick-latency",
+    "ring-buffer-orderbook",
+    "simd-moving-average",
+    "shared-memory-quotes"
+  ],
+  "technical_pain_points": [
+    "Latencia en procesamiento de ticks de alta frecuencia en bucle OnTick",
+    "Bloqueo al exportar históricos masivos a SQLite o archivos binarios",
+    "Cálculo ineficiente de indicadores multitemporales repetidos"
+  ]
+}

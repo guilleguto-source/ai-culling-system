@@ -10,6 +10,7 @@ Exporta 5 planos alpha de 8 bits:
 import sys
 import os
 import json
+import struct
 import argparse
 from pathlib import Path
 
@@ -27,6 +28,42 @@ MODELS_DIR = get_models_dir()
 YUNET_PATH = MODELS_DIR / "yunet.onnx"
 LANDMARKER_PATH = MODELS_DIR / "face_landmarker.task"
 SEGMENTER_PATH = MODELS_DIR / "selfie_segmenter.tflite"
+YOLO_SEG_PATH = MODELS_DIR / "yolov8n-seg.pt"
+
+_YOLO_SEG_MODEL = None
+
+
+def get_yolo_seg():
+    global _YOLO_SEG_MODEL
+    if _YOLO_SEG_MODEL is None and YOLO_SEG_PATH.exists():
+        try:
+            from ultralytics import YOLO
+            _YOLO_SEG_MODEL = YOLO(str(YOLO_SEG_PATH))
+        except Exception as e:
+            sys.stderr.write(f"Warning: could not load YOLOv8-seg: {e}\n")
+    return _YOLO_SEG_MODEL
+
+
+EXIF_INVERSE_TRANSPOSE = {
+    1: None,
+    2: Image.Transpose.FLIP_LEFT_RIGHT,
+    3: Image.Transpose.ROTATE_180,
+    4: Image.Transpose.FLIP_TOP_BOTTOM,
+    5: Image.Transpose.TRANSPOSE,
+    6: Image.Transpose.ROTATE_90,
+    7: Image.Transpose.TRANSVERSE,
+    8: Image.Transpose.ROTATE_270,
+}
+
+
+def untranspose_mask(mask: np.ndarray, orientation: int) -> np.ndarray:
+    """Invierte la rotación EXIF para guardar la máscara en el espacio nativo del sensor."""
+    method = EXIF_INVERSE_TRANSPOSE.get(orientation)
+    if method is None:
+        return mask
+    pil_mask = Image.fromarray(mask)
+    untransposed = pil_mask.transpose(method)
+    return np.array(untransposed)
 
 # MediaPipe FaceMesh Landmarks (478 puntos)
 LEFT_IRIS_CENTER = 468
@@ -49,12 +86,15 @@ FACE_OVAL = [
     54, 103, 67, 109
 ]
 
-TARGET_SIZE = 512
+TARGET_MAX_DIM = 1024
+TARGET_SIZE = 512  # Alias de compatibilidad para scripts de benchmark
 
 
-def load_image(path: Path) -> np.ndarray:
-    """Carga imagen preservando orientación EXIF."""
+def load_image(path: Path, max_dim: int = 2048, return_orient: bool = False):
+    """Carga imagen preservando orientación EXIF, retornando la imagen rotada a display (y opcionalmente el tag EXIF)."""
     raw_exts = {".cr2", ".cr3", ".nef", ".arw", ".dng", ".orf", ".rw2"}
+    orient = 1
+    arr = None
     if path.suffix.lower() in raw_exts:
         try:
             import rawpy
@@ -64,18 +104,34 @@ def load_image(path: Path) -> np.ndarray:
                     if thumb.format == rawpy.ThumbFormat.JPEG:
                         import io
                         img = Image.open(io.BytesIO(thumb.data))
+                        exif = img.getexif()
+                        orient = exif.get(274, 1)
                         img = ImageOps.exif_transpose(img).convert("RGB")
-                        return np.array(img)
+                        if max_dim is not None and max(img.size) > max_dim:
+                            img.thumbnail((max_dim, max_dim), Image.BILINEAR)
+                        arr = np.array(img)
                 except Exception:
                     pass
-                arr = raw.postprocess(use_camera_wb=True, half_size=True)
-                return arr
+                if arr is None:
+                    arr = raw.postprocess(use_camera_wb=True, half_size=True)
         except Exception:
             pass
 
-    pil_img = Image.open(path)
-    pil_img = ImageOps.exif_transpose(pil_img).convert("RGB")
-    return np.array(pil_img)
+    if arr is None:
+        pil_img = Image.open(path)
+        try:
+            exif = pil_img.getexif()
+            orient = exif.get(274, 1)
+        except Exception:
+            orient = 1
+        pil_img = ImageOps.exif_transpose(pil_img).convert("RGB")
+        if max_dim is not None and max(pil_img.size) > max_dim:
+            pil_img.thumbnail((max_dim, max_dim), Image.BILINEAR)
+        arr = np.array(pil_img)
+
+    if return_orient:
+        return arr, orient
+    return arr
 
 
 def calculate_iou(boxA, boxB):
@@ -106,11 +162,11 @@ def nms_boxes(boxes, scores, iou_thresh=0.35):
     return keep
 
 
-def generate_all_masks(img_path: str, output_dir: str):
+def generate_all_masks(img_path: str, output_dir: str, max_dim: int = 2048):
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    img_rgb = load_image(Path(img_path))
+    img_rgb, orient = load_image(Path(img_path), max_dim=max_dim, return_orient=True)
     h0, w0 = img_rgb.shape[:2]
 
     person_full = np.zeros((h0, w0), dtype=np.uint8)
@@ -128,19 +184,36 @@ def generate_all_masks(img_path: str, output_dir: str):
     if YUNET_PATH.exists():
         detector = cv2.FaceDetectorYN.create(
             str(YUNET_PATH), "", (w0, h0),
-            score_threshold=0.55, nms_threshold=0.30
+            score_threshold=0.60, nms_threshold=0.30
         )
         _, raw_faces = detector.detect(img_bgr)
         if raw_faces is not None and len(raw_faces) > 0:
             boxes = [[int(f[0]), int(f[1]), int(f[2]), int(f[3])] for f in raw_faces]
             scores = [float(f[14]) for f in raw_faces]
             keep_idx = nms_boxes(boxes, scores, iou_thresh=0.35)
-            confirmed_faces = [raw_faces[i] for i in keep_idx]
+            # Descartar falsos positivos parásitos (hojas/ramas en árboles menores a 35px)
+            confirmed_faces = [raw_faces[i] for i in keep_idx if int(raw_faces[i][2]) >= 35 and int(raw_faces[i][3]) >= 35]
 
     # -------------------------------------------------------------
-    # 2. Sujeto / Pop: Segmentación Híbrida (Global + Crops YOLOv8 + Torso YuNet)
+    # 2. Sujeto / Pop: Segmentación de Cuerpo Completo (YOLOv8-seg nativo)
     # -------------------------------------------------------------
-    if SEGMENTER_PATH.exists():
+    seg_model = get_yolo_seg()
+    yolo_success = False
+    if seg_model is not None:
+        try:
+            results = seg_model(img_rgb, classes=[0], conf=0.15, imgsz=min(2048, max(w0, h0)), verbose=False)
+            if results and results[0].masks is not None:
+                m_data = results[0].masks.data.cpu().numpy()
+                for m in m_data:
+                    m_u8 = (m * 255.0).astype(np.uint8)
+                    if m_u8.shape != (h0, w0):
+                        m_u8 = cv2.resize(m_u8, (w0, h0), interpolation=cv2.INTER_LINEAR)
+                    person_full = np.maximum(person_full, m_u8)
+                yolo_success = True
+        except Exception as e:
+            sys.stderr.write(f"Warning: YOLOv8-seg inference failed: {e}\n")
+
+    if not yolo_success and SEGMENTER_PATH.exists():
         try:
             import mediapipe as mp
             from mediapipe.tasks import python as mp_python
@@ -153,7 +226,6 @@ def generate_all_masks(img_path: str, output_dir: str):
                 output_confidence_masks=True
             )
             with vision.ImageSegmenter.create_from_options(opts) as segmenter:
-                # 2.1 Pase global para planos medios / sujetos principales
                 scale = 1024.0 / max(h0, w0)
                 sw, sh = int(round(w0 * scale)), int(round(h0 * scale))
                 small = cv2.resize(img_rgb, (sw, sh), interpolation=cv2.INTER_AREA)
@@ -163,52 +235,8 @@ def generate_all_masks(img_path: str, output_dir: str):
                     conf = res.confidence_masks[0].numpy_view()
                     conf_u8 = (np.clip(conf, 0.0, 1.0) * 255.0).astype(np.uint8)
                     person_full = cv2.resize(conf_u8, (w0, h0), interpolation=cv2.INTER_LINEAR)
-
-                # 2.2 Segmentación por recorte para cuerpos YOLOv8 (grupos y sujetos lejanos)
-                person_boxes = detect_persons(img_rgb)
-                for bx, by, bw, bh in person_boxes:
-                    mx, my = int(bw * 0.10), int(bh * 0.10)
-                    x0 = max(0, bx - mx)
-                    y0 = max(0, by - my)
-                    x1 = min(w0, bx + bw + mx)
-                    y1 = min(h0, by + bh + my)
-                    crop = img_rgb[y0:y1, x0:x1]
-                    if crop.size == 0:
-                        continue
-                    ch, cw = crop.shape[:2]
-                    cscale = 512.0 / max(ch, cw)
-                    c_small = cv2.resize(crop, (max(1, int(round(cw * cscale))), max(1, int(round(ch * cscale)))), interpolation=cv2.INTER_AREA)
-                    mp_crop = mp.Image(image_format=mp.ImageFormat.SRGB, data=c_small)
-                    res_crop = segmenter.segment(mp_crop)
-                    if res_crop.confidence_masks:
-                        cmask = res_crop.confidence_masks[0].numpy_view()
-                        cmask_u8 = (np.clip(cmask, 0.0, 1.0) * 255.0).astype(np.uint8)
-                        cmask_full = cv2.resize(cmask_u8, (cw, ch), interpolation=cv2.INTER_LINEAR)
-                        person_full[y0:y1, x0:x1] = np.maximum(person_full[y0:y1, x0:x1], cmask_full)
-
-                # 2.3 Segmentación de torso para rostros YuNet no cubiertos por cajas de personas
-                for f in confirmed_faces:
-                    fx, fy, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
-                    fcx, fcy = int(fx + fw / 2), int(fy + fh / 2)
-                    if person_full[min(h0 - 1, max(0, fcy)), min(w0 - 1, max(0, fcx))] < 100:
-                        bx = int(max(0, fcx - fw * 1.5))
-                        by = int(max(0, fy - fh * 0.5))
-                        bw = int(min(w0 - bx, fw * 3.0))
-                        bh = int(min(h0 - by, fh * 4.5))
-                        crop = img_rgb[by:by + bh, bx:bx + bw]
-                        if crop.size > 0:
-                            ch, cw = crop.shape[:2]
-                            cscale = 512.0 / max(ch, cw)
-                            c_small = cv2.resize(crop, (max(1, int(round(cw * cscale))), max(1, int(round(ch * cscale)))), interpolation=cv2.INTER_AREA)
-                            mp_crop = mp.Image(image_format=mp.ImageFormat.SRGB, data=c_small)
-                            res_crop = segmenter.segment(mp_crop)
-                            if res_crop.confidence_masks:
-                                cmask = res_crop.confidence_masks[0].numpy_view()
-                                cmask_u8 = (np.clip(cmask, 0.0, 1.0) * 255.0).astype(np.uint8)
-                                cmask_full = cv2.resize(cmask_u8, (cw, ch), interpolation=cv2.INTER_LINEAR)
-                                person_full[by:by + bh, bx:bx + bw] = np.maximum(person_full[by:by + bh, bx:bx + bw], cmask_full)
         except Exception as e:
-            sys.stderr.write(f"Warning: selfie segmenter failed: {e}\n")
+            sys.stderr.write(f"Warning: selfie segmenter fallback failed: {e}\n")
 
     # -------------------------------------------------------------
     # 3. MediaPipe FaceLandmarker (478 landmarks)
@@ -231,7 +259,10 @@ def generate_all_masks(img_path: str, output_dir: str):
 
     CROP_MARGIN = 0.60
     CROP_SIZE = 384
-    import mediapipe as mp
+    try:
+        import mediapipe as mp
+    except Exception:
+        mp = None
 
     # Precalcular espacio HSV para discriminación de dientes
     img_hsv = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2HSV)
@@ -379,16 +410,30 @@ def generate_all_masks(img_path: str, output_dir: str):
         skin_layer = cv2.GaussianBlur(skin_layer, (5, 5), 0)
         skin_full = np.maximum(skin_full, skin_layer)
 
+    if landmarker is not None:
+        try:
+            landmarker.close()
+        except Exception:
+            pass
+
     # -------------------------------------------------------------
-    # 4. Exportación a TARGET_SIZE (512x512) en PNG y Raw BIN
+    # 4. Exportación Proporcional en Coordenadas de Sensor (PNG y Raw BIN con cabecera)
     # -------------------------------------------------------------
     def save_layer(img_layer, name):
-        resized = cv2.resize(img_layer, (TARGET_SIZE, TARGET_SIZE), interpolation=cv2.INTER_AREA)
+        scale = min(1.0, float(TARGET_MAX_DIM) / float(max(h0, w0)))
+        tw = max(1, int(round(w0 * scale)))
+        th = max(1, int(round(h0 * scale)))
+        resized = cv2.resize(img_layer, (tw, th), interpolation=cv2.INTER_AREA)
+
+        sensor_matte = untranspose_mask(resized, orient)
+        sh, sw = sensor_matte.shape[:2]
+
         png_path = out_path / f"{name}.png"
-        cv2.imwrite(str(png_path), resized)
+        cv2.imwrite(str(png_path), sensor_matte)
         bin_path = out_path / f"{name}.bin"
         with open(bin_path, "wb") as f:
-            f.write(resized.tobytes())
+            f.write(struct.pack("<II", sw, sh))
+            f.write(sensor_matte.tobytes())
         return str(png_path)
 
     # Asegurar que toda piel facial sea parte de la máscara de sujeto

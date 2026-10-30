@@ -250,7 +250,7 @@ def segment_light_sessions(signatures: list[PhotoSignature]) -> list[list[int]]:
 
 def compute_pre_edits(
     signatures: list[PhotoSignature],
-    bias: float,
+    bias: float = 0.28,
     preset_wb_bias: tuple[float, float] = (0.0, 0.0),
     exposure_deadband: float = 0.0,
     auto_wb: bool = True,

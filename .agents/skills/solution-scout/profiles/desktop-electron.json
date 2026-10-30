@@ -1,0 +1,29 @@
+{
+  "profile_id": "desktop-electron",
+  "name": "Desktop Native & Electron Performance",
+  "description": "Optimizado para aplicaciones de escritorio híbridas (Electron + React/TypeScript) con backend local (Python/Rust)",
+  "competitor_targets": [
+    "Slack Desktop",
+    "VS Code",
+    "Figma Desktop",
+    "Spotify Desktop"
+  ],
+  "trusted_open_source_repos": [
+    "microsoft/vscode",
+    "electron/electron",
+    "tauri-apps/tauri",
+    "d2projects/electron-vite-react"
+  ],
+  "domain_search_tags": [
+    "electron-ipc-performance",
+    "zero-copy-buffer",
+    "virtual-scroll-grid",
+    "main-process-block",
+    "memory-leak-chromium"
+  ],
+  "technical_pain_points": [
+    "Bloqueo del thread principal de render al transferir arrays binarios grandes",
+    "Fugas de memoria en buffers de imagen al desmontar componentes de lista",
+    "Latencia en IPC bidireccional entre proceso principal y renderer"
+  ]
+}

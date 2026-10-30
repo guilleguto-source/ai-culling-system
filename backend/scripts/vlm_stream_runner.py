@@ -26,7 +26,7 @@ def check_ollama():
         req = urllib.request.Request("http://localhost:11434/api/tags")
         with urllib.request.urlopen(req, timeout=3) as resp:
             return resp.status == 200
-    except:
+    except Exception:
         return False
 
 def run_vlm_stream():
@@ -52,7 +52,8 @@ def run_vlm_stream():
     if RESULTS_FILE.exists():
         try:
             vlm_results = json.loads(RESULTS_FILE.read_text(encoding="utf-8"))
-        except:
+        except Exception as e:
+            log.warning("No se pudo cargar vlm_results previo: %s", e)
             vlm_results = {}
 
     log.info("Carpetas a monitorear: %d. Evaluaciones VLM ya completadas: %d", len(por_carpeta), len(vlm_results))

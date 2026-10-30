@@ -28,7 +28,16 @@ NS = {
     "dc":        "http://purl.org/dc/elements/1.1/",
     "xmpRights": "http://ns.adobe.com/xap/1.0/rights/",
     "photoshop": "http://ns.adobe.com/photoshop/1.0/",
+    "mwg-rs":    "http://www.metadataworkinggroup.com/schemas/regions/",
+    "stArea":    "http://ns.adobe.com/xmp/sType/Area#",
+    "stDim":     "http://ns.adobe.com/xap/1.0/sType/Dimensions#",
 }
+
+def _photo_sync_id(name: str) -> str:
+    h = 0x811C9DC5
+    for b in name.encode("utf-8"):
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
 
 # Mapeo de label interno a pick status XMP (extensión Lightroom).
 # Fallback: el banderín real viene de ratings_mapping[label]["flag"]
@@ -77,7 +86,10 @@ def _build_xmp_packet(stars: int, color: str, label: str,
                       flag: str | None = None,
                       lut_adjustments: dict | None = None,
                       tonal_rescue: dict | None = None,
-                      paint_corrections: list | None = None) -> bytes:
+                      paint_corrections: list | None = None,
+                      face_regions: list[dict] | None = None,
+                      image_dims: tuple[int, int] | None = None,
+                      include_anatomical_masks: bool = False) -> bytes:
     """Construye un paquete XMP completo (con envoltura xpacket) listo para
     sidecar o para embeber en APP1. El color se escribe tal cual venga de settings.
     `crop`: dict {left, top, right, bottom, angle} — reencuadre NO destructivo.
@@ -96,7 +108,14 @@ def _build_xmp_packet(stars: int, color: str, label: str,
     rdf = etree.SubElement(xmpmeta, f"{{{NS['rdf']}}}RDF", nsmap={"rdf": NS["rdf"]})
     desc = etree.SubElement(
         rdf, f"{{{NS['rdf']}}}Description",
-        nsmap={"rdf": NS["rdf"], "xmp": NS["xmp"], "crs": NS["crs"]})
+        nsmap={
+            "rdf": NS["rdf"],
+            "xmp": NS["xmp"],
+            "crs": NS["crs"],
+            "mwg-rs": NS["mwg-rs"],
+            "stArea": NS["stArea"],
+            "stDim": NS["stDim"],
+        })
     desc.set(f"{{{NS['rdf']}}}about", "")
 
     rating_el = etree.SubElement(desc, f"{{{NS['xmp']}}}Rating")
@@ -189,6 +208,94 @@ def _build_xmp_packet(stars: int, color: str, label: str,
         if paint_corrections:
             for element in paint_corrections:
                 desc.append(_copy.deepcopy(element))
+
+    # 6. MWG-RS Regions para rostros (LightCraft y Lightroom Classic)
+    if face_regions:
+        w_px, h_px = image_dims if image_dims else (4000, 3000)
+        regions_el = etree.SubElement(desc, f"{{{NS['mwg-rs']}}}Regions")
+        regions_el.set(f"{{{NS['rdf']}}}parseType", "Resource")
+
+        app_dim = etree.SubElement(regions_el, f"{{{NS['mwg-rs']}}}AppliedToDimensions")
+        app_dim.set(f"{{{NS['rdf']}}}parseType", "Resource")
+        app_dim.set(f"{{{NS['stDim']}}}w", str(w_px))
+        app_dim.set(f"{{{NS['stDim']}}}h", str(h_px))
+        app_dim.set(f"{{{NS['stDim']}}}unit", "pixel")
+
+        reg_list = etree.SubElement(regions_el, f"{{{NS['mwg-rs']}}}RegionList")
+        bag = etree.SubElement(reg_list, f"{{{NS['rdf']}}}Bag")
+        for r in face_regions:
+            li = etree.SubElement(bag, f"{{{NS['rdf']}}}li")
+            li.set(f"{{{NS['rdf']}}}parseType", "Resource")
+            area = etree.SubElement(li, f"{{{NS['mwg-rs']}}}Area")
+            area.set(f"{{{NS['rdf']}}}parseType", "Resource")
+            area.set(f"{{{NS['stArea']}}}x", f"{r['x']:.6f}")
+            area.set(f"{{{NS['stArea']}}}y", f"{r['y']:.6f}")
+            area.set(f"{{{NS['stArea']}}}w", f"{r['w']:.6f}")
+            area.set(f"{{{NS['stArea']}}}h", f"{r['h']:.6f}")
+            area.set(f"{{{NS['stArea']}}}unit", "normalized")
+            type_el = etree.SubElement(li, f"{{{NS['mwg-rs']}}}Type")
+            type_el.text = "Face"
+
+    # 7. Máscaras Anatómicas Proporcionales (crs:MaskGroupBasedCorrections)
+    if include_anatomical_masks:
+        crs_fields.setdefault("Version", "15.4")
+        crs_fields.setdefault("ProcessVersion", "15.4")
+        crs_fields["AlreadyApplied"] = "False"
+        crs_fields.setdefault("HasSettings", "True")
+
+        corrections = desc.find(f"{{{NS['crs']}}}MaskGroupBasedCorrections")
+        if corrections is None:
+            corrections = etree.SubElement(desc, f"{{{NS['crs']}}}MaskGroupBasedCorrections")
+            seq = etree.SubElement(corrections, f"{{{NS['rdf']}}}Seq")
+        else:
+            seq = corrections.find(f"{{{NS['rdf']}}}Seq")
+            if seq is None:
+                seq = etree.SubElement(corrections, f"{{{NS['rdf']}}}Seq")
+
+        mask_definitions = [
+            ("Sujeto Pop (GutoFlow)", "1", None, {
+                "LocalExposure2012": "+0.0625",
+                "LocalContrast2012": "+0.10",
+            }),
+            ("Piel Facial (GutoFlow)", "3", "2", {
+                "LocalTexture": "-0.16",
+                "LocalClarity2012": "-0.08",
+            }),
+            ("Esclera Ojos (GutoFlow)", "3", "8", {
+                "LocalSaturation": "-0.22",
+            }),
+            ("Iris y Pupila (GutoFlow)", "3", "3", {
+                "LocalExposure2012": "+0.0875",
+                "LocalClarity2012": "+0.15",
+            }),
+            ("Dientes (GutoFlow)", "3", "12", {
+                "LocalSaturation": "-0.25",
+                "LocalExposure2012": "+0.0625",
+            }),
+        ]
+
+        for name, sub_type, sub_cat, sliders in mask_definitions:
+            li = etree.SubElement(seq, f"{{{NS['rdf']}}}li")
+            li.set(f"{{{NS['crs']}}}What", "Correction")
+            li.set(f"{{{NS['crs']}}}CorrectionAmount", "1.000000")
+            li.set(f"{{{NS['crs']}}}CorrectionActive", "true")
+            li.set(f"{{{NS['crs']}}}CorrectionName", name)
+            li.set(f"{{{NS['crs']}}}CorrectionSyncID", _photo_sync_id(name))
+
+            for k, v in sliders.items():
+                li.set(f"{{{NS['crs']}}}{k}", v)
+
+            mask_list = etree.SubElement(li, f"{{{NS['crs']}}}CorrectionMasks")
+            mask_seq = etree.SubElement(mask_list, f"{{{NS['rdf']}}}Seq")
+            m_li = etree.SubElement(mask_seq, f"{{{NS['rdf']}}}li")
+            m_li.set(f"{{{NS['crs']}}}What", "Mask/Image")
+            m_li.set(f"{{{NS['crs']}}}MaskActive", "true")
+            m_li.set(f"{{{NS['crs']}}}MaskName", name)
+            m_li.set(f"{{{NS['crs']}}}MaskBlendMode", "0")
+            m_li.set(f"{{{NS['crs']}}}MaskInverted", "false")
+            m_li.set(f"{{{NS['crs']}}}MaskSubType", sub_type)
+            if sub_cat is not None:
+                m_li.set(f"{{{NS['crs']}}}MaskSubCategoryID", sub_cat)
 
     body = etree.tostring(xmpmeta, encoding="utf-8", xml_declaration=False)
     return _XPACKET_OPEN + body + _XPACKET_CLOSE
@@ -326,7 +433,10 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
               flag: str | None = None,
               lut_adjustments: dict | None = None,
               tonal_rescue: dict | None = None,
-              paint_corrections: list | None = None) -> bool:
+              paint_corrections: list | None = None,
+              face_regions: list[dict] | None = None,
+              image_dims: tuple[int, int] | None = None,
+              include_anatomical_masks: bool = False) -> bool:
     """Escribe el rating/etiqueta de forma atómica. RAW -> sidecar; JPEG -> embebido. Respeta overwrite."""
     p = Path(image_path)
     try:
@@ -353,6 +463,9 @@ def write_xmp(image_path: str, label: str, stars: int, color: str,
             lut_adjustments=lut_adjustments,
             tonal_rescue=tonal_rescue,
             paint_corrections=paint_corrections,
+            face_regions=face_regions,
+            image_dims=image_dims,
+            include_anatomical_masks=include_anatomical_masks,
         )
         if _is_raw(p):
             xmp_path = _get_xmp_path(image_path)
@@ -561,10 +674,27 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
         item_lut = result.get("lut_adjustments") or (lut_adjustments if develop else None)
         item_rescue = result.get("tonal_rescue")
         item_paint = result.get("paint_corrections")
+        f_regions = result.get("face_regions")
+        dims = result.get("image_dims") or (4000, 3000)
+        if not f_regions and result.get("faces"):
+            f_regions = []
+            w_img, h_img = dims
+            for f in result["faces"]:
+                bbox = getattr(f, "bbox", None) or (f.get("bbox") if isinstance(f, dict) else None)
+                if bbox and len(bbox) == 4:
+                    bx, by, bw, bh = bbox
+                    f_regions.append({
+                        "x": (bx + bw / 2.0) / w_img,
+                        "y": (by + bh / 2.0) / h_img,
+                        "w": bw / w_img,
+                        "h": bh / h_img,
+                    })
+        stars_val = mapping.get("stars", 0)
+        with_masks = result.get("include_anatomical_masks", True if (f_regions and (stars_val >= 2 or label in ("selected", "highlighted"))) else False)
         ok = write_xmp(
             image_path=result["path"],
             label=label,
-            stars=mapping.get("stars", 0),
+            stars=stars_val,
             color=mapping.get("color", ""),
             overwrite=overwrite,
             crop=result.get("crop"),
@@ -574,6 +704,9 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
             lut_adjustments=item_lut,
             tonal_rescue=item_rescue,
             paint_corrections=item_paint,
+            face_regions=f_regions,
+            image_dims=dims,
+            include_anatomical_masks=with_masks,
         )
         if result.get("linked_raw_path"):
             try:
@@ -590,6 +723,9 @@ def export_results_to_xmp(results: list[dict], ratings_mapping: dict,
                     lut_adjustments=item_lut,
                     tonal_rescue=item_rescue,
                     paint_corrections=item_paint,
+                    face_regions=f_regions,
+                    image_dims=dims,
+                    include_anatomical_masks=with_masks,
                 )
             except Exception as e:
                 logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")
@@ -629,10 +765,27 @@ def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
         item_lut = result.get("lut_adjustments") or (lut_adjustments if develop else None)
         item_rescue = result.get("tonal_rescue")
         item_paint = result.get("paint_corrections")
+        f_regions = result.get("face_regions")
+        dims = result.get("image_dims") or (4000, 3000)
+        if not f_regions and result.get("faces"):
+            f_regions = []
+            w_img, h_img = dims
+            for f in result["faces"]:
+                bbox = getattr(f, "bbox", None) or (f.get("bbox") if isinstance(f, dict) else None)
+                if bbox and len(bbox) == 4:
+                    bx, by, bw, bh = bbox
+                    f_regions.append({
+                        "x": (bx + bw / 2.0) / w_img,
+                        "y": (by + bh / 2.0) / h_img,
+                        "w": bw / w_img,
+                        "h": bh / h_img,
+                    })
+        stars_val = mapping.get("stars", 0)
+        with_masks = result.get("include_anatomical_masks", True if (f_regions and (stars_val >= 2 or label in ("selected", "highlighted"))) else False)
         ok = write_xmp(
             image_path=result["path"],
             label=label,
-            stars=mapping.get("stars", 0),
+            stars=stars_val,
             color=mapping.get("color", ""),
             overwrite=overwrite,
             crop=result.get("crop"),
@@ -642,6 +795,9 @@ def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
             lut_adjustments=item_lut,
             tonal_rescue=item_rescue,
             paint_corrections=item_paint,
+            face_regions=f_regions,
+            image_dims=dims,
+            include_anatomical_masks=with_masks,
         )
         if result.get("linked_raw_path"):
             try:
@@ -658,6 +814,9 @@ def export_results_to_xmp_generator(results: list[dict], ratings_mapping: dict,
                     lut_adjustments=item_lut,
                     tonal_rescue=item_rescue,
                     paint_corrections=item_paint,
+                    face_regions=f_regions,
+                    image_dims=dims,
+                    include_anatomical_masks=with_masks,
                 )
             except Exception as e:
                 logger.error(f"Error escribiendo XMP para RAW vinculado {result['linked_raw_path']}: {e}")

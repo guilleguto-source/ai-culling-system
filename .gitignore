@@ -6,6 +6,7 @@ release/
 __pycache__/
 *.pyc
 backend/models/*.onnx
+backend/models/*.pt
 .pytest_cache/
 *.log
 
@@ -31,3 +32,6 @@ backend/scripts/out/
 
 # Proyecto nativo en Rust (subproyecto independiente)
 gutoflow-rust/
+
+# Scripts temporales
+scratch/

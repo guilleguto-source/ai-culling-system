@@ -1,6 +1,6 @@
 {
   "name": "guto-flow",
-  "version": "2.3.0",
+  "version": "3.0.0-beta",
   "description": "Guto Flow — Smart Workflow: culling y pre-edición de fotos con IA",
   "main": "dist/main/index.js",
   "scripts": {

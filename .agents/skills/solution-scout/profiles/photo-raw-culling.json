@@ -1,0 +1,38 @@
+{
+  "profile_id": "photo-raw-culling",
+  "name": "RAW Photo Processing, Culling & Editing Engine",
+  "description": "Optimizado para motores de revelado RAW (LightCraft), culling automático por IA (Guto Flow) y manipulación masiva de metadatos XMP",
+  "competitor_targets": [
+    "Lightroom Classic",
+    "Aftershoot",
+    "Narrative Select",
+    "Capture One"
+  ],
+  "trusted_open_source_repos": [
+    "pasqualepillitteri/lightcraft",
+    "darktable-org/darktable",
+    "Beep6581/RawTherapee",
+    "LibRaw/LibRaw",
+    "immich-app/immich",
+    "photoprism/photoprism",
+    "deepinsight/insightface",
+    "image-rs/image",
+    "pedrocr/rawloader"
+  ],
+  "domain_search_tags": [
+    "libraw",
+    "raw-image",
+    "exiftool",
+    "xmp-sidecar",
+    "cr3-decode",
+    "arw-preview",
+    "face-clustering",
+    "onnx-runtime-vision"
+  ],
+  "technical_pain_points": [
+    "Extracción lenta de preview embebida en archivos Sony ARW y Canon CR3",
+    "Sincronización y colisiones de escritura en archivos sidecar XMP",
+    "Falsos positivos de ojos cerrados por personas con gafas de sol o expresiones asimétricas",
+    "Sobrecarga de memoria al cargar cuadrículas de más de 10,000 miniaturas"
+  ]
+}

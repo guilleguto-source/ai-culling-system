@@ -6,13 +6,15 @@ import PhotoDetail from './PhotoDetail';
 import { apiClient } from '../api/client';
 import { useToast } from './Toast';
 
+const normPath = (p: string) => (p || '').trim().toLowerCase().replace(/\\/g, '/');
+
 const FILTROS: [string, string, (r: any) => boolean][] = [
   ['todas', 'Todas', () => true],
   ['elegidas', 'Elegidas', r => r.label === 'selected' || r.label === 'highlighted'],
-  ['recomendadas', 'Recomendadas', r => r.label === 'recommended'],
-  ['repetidas', 'Repetidas', r => r.label === 'duplicates'],
-  ['descartes', 'Descartes', r => r.label === 'blurry' || r.label === 'closed_eyes'],
-  ['dudosas', 'Dudosas', r => (r.margin ?? 1) < 0.05],
+  ['recomendadas', 'Recomendadas', r => r.label === 'highlighted' || r.label === 'recommended'],
+  ['repetidas', 'Repetidas', r => r.label === 'duplicate' || r.is_exact_duplicate],
+  ['descartes', 'Descartes', r => r.label === 'trash' || r.label === 'blur' || r.label === 'blurry'],
+  ['dudosas', 'Dudosas', r => (r.margin ?? 1) < 0.05 || r.label === 'doubtful'],
   ['bw', 'B&N Recomendado', r => Boolean(r.is_bw_candidate || r.diagnostics?.is_bw_candidate)],
 ];
 
@@ -67,10 +69,11 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
     const f = FILTROS.find(([k]) => k === filtro)?.[2] || (() => true);
     let arr = results.filter(f);
     if (semanticPaths) {
-      arr = arr.filter(r => semanticPaths.has(r.path));
+      arr = arr.filter(r => semanticPaths.has(normPath(r.path)) || semanticPaths.has(r.path));
     }
     if (storylinePaths) {
-      arr = arr.filter(r => storylinePaths.has(r.path));
+      arr = arr.filter(r => storylinePaths.has(normPath(r.path)) || storylinePaths.has(r.path));
+      return arr;
     }
 
     const finalArr: any[] = [];
@@ -187,7 +190,7 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
     }
   };
 
-  if (!results || results.length === 0) return null;
+  if (!results) return null;
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -308,9 +311,17 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
         </div>
 
         {/* Thumbnails Flow Area */}
-        <div style={{ flex: 1, backgroundColor: 'var(--color-bg)' }}>
-          <VirtuosoGrid
-            totalCount={visibles.length}
+        <div style={{ flex: 1, backgroundColor: 'var(--color-bg)', minHeight: 0, height: '100%', overflow: 'hidden' }}>
+          {visibles.length === 0 ? (
+            <div className="flex-center" style={{ height: '100%', flexDirection: 'column', gap: '8px', color: 'var(--text-tertiary)', padding: '40px 20px', textAlign: 'center' }}>
+              <span style={{ fontSize: '24px' }}>📷</span>
+              <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-secondary)' }}>No hay fotos para mostrar en esta vista</p>
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-disabled)' }}>Prueba seleccionando otro momento o cambiando el filtro superior</p>
+            </div>
+          ) : (
+            <VirtuosoGrid
+              style={{ height: '100%', width: '100%' }}
+              totalCount={visibles.length}
             overscan={200}
             components={{
               List: forwardRef(({ style, children, ...props }, ref) => {
@@ -385,6 +396,7 @@ export default function GridView({ results, selectedPaths = new Set(), onSelectP
               );
             }}
           />
+          )}
         </div>
       </div>
 

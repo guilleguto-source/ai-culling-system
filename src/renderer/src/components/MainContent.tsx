@@ -12,6 +12,8 @@ import { apiClient } from '../api/client';
 import { useToast } from './Toast';
 import { Button } from './ui/Button';
 
+const normPath = (p: string) => (p || '').trim().toLowerCase().replace(/\\/g, '/');
+
 interface MainContentProps {
   jobState: any;
   jobResults: any;
@@ -306,7 +308,7 @@ export default function MainContent({
     let displayResults = filteredResults || jobResults.results;
 
     if (activeStorylinePaths) {
-      displayResults = displayResults.filter((photo: any) => activeStorylinePaths.has(photo.path));
+      displayResults = displayResults.filter((photo: any) => activeStorylinePaths.has(normPath(photo.path)));
     }
 
     if (activeVIPIds.size > 0) {
@@ -339,8 +341,8 @@ export default function MainContent({
           <SemanticSearchBar
             directory={directory}
             onSearchResults={(searchResults) => {
-              const matchedPaths = new Set(searchResults.map((sr: any) => sr.path));
-              const filtered = jobResults.results.filter((photo: any) => matchedPaths.has(photo.path));
+              const matchedPaths = new Set(searchResults.map((sr: any) => normPath(sr.path)));
+              const filtered = jobResults.results.filter((photo: any) => matchedPaths.has(normPath(photo.path)));
               setFilteredResults(filtered);
             }}
             onClearSearch={() => setFilteredResults(null)}
@@ -397,27 +399,25 @@ export default function MainContent({
           directory={directory} 
           onSelectChapter={(chapter) => {
             if (chapter && chapter.paths) {
-              setActiveStorylinePaths(new Set(chapter.paths));
+              setActiveStorylinePaths(new Set(chapter.paths.map(normPath)));
             } else {
               setActiveStorylinePaths(null);
             }
           }}
         />
 
-          {/* Personajes VIP Filters */}
-          <div style={{ width: '100%', flexBasis: '100%' }}>
-            <VIPBar
-              directory={directory}
-              activeVIPIds={activeVIPIds}
-              onToggleVIP={handleToggleVIP}
-              onClearVIPs={handleClearVIPs}
-              vipFilterMode={vipFilterMode}
-              onChangeFilterMode={setVipFilterMode}
-            />
-          </div>
+        {/* Personajes VIP Filters */}
+        <VIPBar
+          directory={directory}
+          activeVIPIds={activeVIPIds}
+          onToggleVIP={handleToggleVIP}
+          onClearVIPs={handleClearVIPs}
+          vipFilterMode={vipFilterMode}
+          onChangeFilterMode={setVipFilterMode}
+        />
 
         {/* Active Workspace View */}
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {viewMode === 'grid' && (
             <GridView 
               results={displayResults} 

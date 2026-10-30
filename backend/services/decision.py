@@ -395,6 +395,18 @@ def apply_decision_logic(
                         crop_dict = prop.to_dict()
                 record.thumb_ai = None  # Free memory
 
+            f_bboxes = analyses[idx].face_bboxes if idx < len(analyses) else []
+            f_regions = []
+            for b in f_bboxes:
+                if len(b) >= 4:
+                    bx, by, bw, bh = b[:4]
+                    f_regions.append({
+                        "x": (bx + bw / 2.0) / 4000.0,
+                        "y": (by + bh / 2.0) / 3000.0,
+                        "w": float(bw) / 4000.0,
+                        "h": float(bh) / 3000.0,
+                    })
+
             photo_reasons = build_reasons(
                 idx, (idx in final_selected_set or is_representative),
                 analyses, cluster.representative_index,
@@ -442,6 +454,9 @@ def apply_decision_logic(
                 "has_crop": crop_dict is not None,
                 "develop": develop_by_idx.get(idx) if label in ("selected", "highlighted") else None,
                 "identity_ids": sorted(identities_map.get(idx, [])) if identities_map else [],
+                "face_bboxes": f_bboxes,
+                "face_regions": f_regions,
+                "image_dims": (4000, 3000),
                 "error": record.error,
                 "chapter_id": chapter_map.get(idx, "capitulo_0") if chapter_map else "capitulo_0",
             })
