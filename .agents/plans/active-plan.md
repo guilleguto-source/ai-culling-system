@@ -1,22 +1,21 @@
-# Plan: Purga de Términos Sensibles & Enriquecimiento Visual de Alto Nivel
+# Plan: Énfasis en Aprendizaje Continuo e Integración "Todo-en-Uno" con LightCraft
 
 ## Contexto Digerido
-El usuario solicita expresamente NO mencionar "ingeniería inversa" ni exponer detalles excesivos o códigos hexadecimales de metadatos. La presentación debe enfocarse en "diferentes algoritmos especializados", "visión por computador" y "procesamiento avanzado", manteniendo un tono profesional, general con detalles clave y altamente visual.
+El usuario solicita incorporar el motor de aprendizaje continuo por contexto (evento, luz, momento narrativo) y añadir en la visión de futuro la integración nativa con darkrooms como **LightCraft** para unificar culling, máscaras y revelado RAW en un único ecosistema autónomo.
 
 ## Archivos Afectados
-- `README.md` (eliminación de referencias a tags hexadecimales/ingeniería inversa; redacción ejecutiva de alto nivel; integración de muestras visuales).
-- `CHANGELOG.md` (ajuste de redacción técnica hacia descripciones algorítmicas generales).
-- `assets/showcase/` (activos visuales y comparativas gráficas antes/después).
+- `README.md` (adición de sección de Aprendizaje de Estilo, diagrama de feedback loop y sección de Hoja de Ruta / Integración LightCraft).
+- `CHANGELOG.md` (actualización de roadmap hacia suite unificada).
 
 ## Checklist de Tareas
-- [ ] **1. Depuración de Contenido Sensible en README y CHANGELOG:**
-  - Sustituir menciones de tags EXIF hexadecimales (`0x0017`, `0x200B`, `0x001D`, etc.) por "algoritmos especializados de agrupación temporal y hardware en Rust".
-  - Eliminar cualquier alusión a ingeniería inversa o desensamblado; describir como "algoritmos de visión computacional, segmentación semántica y compatibilidad estándar con metadatos XMP".
-- [ ] **2. Tono General y Profesional (Sin Fuga de Secretos):**
-  - Enfocar en beneficios para el fotógrafo: velocidad, precisión, 100% offline, respeto de selecciones y paridad de edición.
-- [ ] **3. Galería Visual "Antes vs. Después" en README:**
-  - *Culling Inteligente:* Descarte (ojos cerrados/distracción) vs. Foto seleccionada (Hero Shot).
-  - *Alineación Geométrica:* Corrección angular sutil de horizonte.
-  - *Segmentación Avanzada:* Muestra visual de separación por capas (piel, vestimenta, fondo) a partir de `docs/audit_mattes/`.
-- [ ] **4. Vista Previa de la Experiencia de Usuario:**
-  - Mockup/tarjeta gráfica representativa del entorno Digital Darkroom.
+- [ ] **1. Sección de Aprendizaje de Estilo Contextual en README:**
+  - *Fuentes de Feedback:* Modo Duelo 1v1 en app y sincronización de ediciones/descartes desde Lightroom.
+  - *Contexto Triple:* Por Tipo de Evento (Bodas, Retratos, Niños), Situación de Luz (Luz dura, atardecer, tungsteno) y Momento Narrativo (Preparativos, Ceremonia, Fiesta).
+  - *Evolución Dual:* Culling (selectividad y mirada) + Pre-edición (curva de tono, calidez y máscaras).
+- [ ] **2. Diagrama Mermaid de Ciclo de Aprendizaje:**
+  - Bucle interactivo: Sesión -> Inferencia Contextual -> Calificación del Usuario -> Calibración de Pesos -> Próxima Sesión.
+- [ ] **3. Sección "Hacia el Flujo Todo-en-Uno" (Roadmap / LightCraft):**
+  - Conexión e integración con motores de revelado RAW como **LightCraft**.
+  - Objetivo: Culling asistido + Máscaras anatómicas + Revelado RAW completo en una sola interfaz sin depender de software de terceros.
+- [ ] **4. Commit y Push a Remoto:**
+  - Sincronizar cambios en `master` y `feat/history-learning-and-face-id`.

@@ -6,6 +6,7 @@
 **100% Local · Procesamiento Offline · Cero Nube · Integración Nativa con Adobe Lightroom Classic**
 
 [![Version](https://img.shields.io/badge/Version-v3.0.0--beta-E9A04A?style=for-the-badge&logo=electron&logoColor=white)](#)
+[![Style Learning](https://img.shields.io/badge/Adaptive-Style%20Learning-8A2BE2?style=for-the-badge)](#)
 [![Rust Core](https://img.shields.io/badge/Core-Rust%20Engine-DEA584?style=for-the-badge&logo=rust&logoColor=white)](#)
 [![Lightroom Native](https://img.shields.io/badge/Adobe%20Lightroom-XMP%20Mask%20Parity-31A8FF?style=for-the-badge&logo=adobe&logoColor=white)](#)
 [![Tests](https://img.shields.io/badge/Tests-335%20Passed%20%E2%9C%85-2EA043?style=for-the-badge)](#)
@@ -19,7 +20,7 @@
 
 **Guto Flow** es una plataforma de escritorio de alto rendimiento creada para fotógrafos de bodas, retratos y eventos masivos. Automatiza el proceso de postproducción más laborioso: la selección inteligente de tomas (**culling**), la priorización de momentos decisivos (**Hero Shots**) y la generación automática de **máscaras de retoque anatómico compatibles con Lightroom Classic**, garantizando máxima privacidad al procesar el 100% de los datos en tu propio equipo.
 
-Su arquitectura integra un **núcleo en Rust** para el análisis ultrarrápido de secuencias de disparo, modelos de visión por computador sobre **ONNX Runtime (con aceleración DirectML/CUDA/CPU)** y una interfaz **Digital Darkroom en React + Electron virtualizada a 60 FPS**.
+A diferencia de soluciones rígidas con filtros estáticos, su motor no impone un estándar ajeno: **aprende tu criterio visual con cada sesión procesada**, adaptándose a tus preferencias estéticas, la iluminación de la escena y el tipo de evento.
 
 ---
 
@@ -46,6 +47,37 @@ Algoritmos de procesamiento en mosaico (*tiled*) para preservar la definición d
 *Aislamiento simultáneo de múltiples personas y separación limpia contra el entorno.*
 
 </div>
+
+---
+
+## 🧠 Aprendizaje Continuo de Estilo: Tu Criterio, Automatizado
+
+Guto Flow evoluciona contigo. Su arquitectura cuenta con un ciclo de retroalimentación activa que calibra tanto la **selectividad del culling** como la **firma de pre-edición**:
+
+### 🔄 Fuentes de Retroalimentación Activa
+* **En la Aplicación (Modo Duelo 1v1):** En empates técnicos de ráfagas, el sistema te presenta las opciones cara a cara. Cada elección manual entrena los pesos de preferencia del algoritmo.
+* **Desde tu Flujo de Trabajo (Lightroom Classic):** Al sincronizar catálogos o archivos `.XMP`, Guto Flow asimila qué fotos aprobaste o rescataste y qué ajustes manuales aplicaste, adaptándose a tu gusto personal.
+
+### 🎯 Adaptación por Triple Contexto
+
+El sistema reconoce que no se evalúa ni edita igual una boda formal que una sesión infantil:
+
+| Eje de Adaptación | Contextos Reconocidos | Comportamiento del Motor |
+| :--- | :--- | :--- |
+| **Tipo de Evento** | Bodas, Quinceañeras, Sesiones Infantiles, Retrato Corporativo. | Modula la tolerancia a la espontaneidad, la exigencia protocolaria y la tasa de retención. |
+| **Situación Lumínica** | Luz dura cenital, interiores con tungsteno, Golden Hour, contraluces y claroscuros. | Asimila tu firma tonal: rescate de altas luces, temperatura de color y densidad de máscaras según la atmósfera lumínica. |
+| **Momento Narrativo** | Preparativos, Ceremonia solemne, Sesión de pareja, Fiesta y Baile. | Adapta el ritmo (*pacing*): rigor absoluto de enfoque en la ceremonia; dinamismo y captura de micro-emociones en el baile. |
+
+### 📈 Ciclo Cerrado de Evolución Local
+
+```mermaid
+flowchart TD
+    A["📸 Sesión de Fotos (RAW+JPG)"] --> B["⚙️ Inferencia por Contexto<br/>(Evento + Luz + Momento)"]
+    B --> C["🎯 Culling & Máscaras Sugeridas"]
+    C --> D["🧑‍🎨 Decisión del Fotógrafo<br/>(Duelos en App / Revelado en Lightroom)"]
+    D --> E["📈 Calibración de Pesos Local<br/>(Estilo Personal & Tono)"]
+    E -.->|Próximo evento más afinado| B
+```
 
 ---
 
@@ -108,6 +140,16 @@ Guto Flow evoluciona bajo un principio de **alta eficiencia y eliminación de de
 | **Peso del Paquete de Instalación** | ~320 MB | **~115 MB** | **-64%** (Eliminación de redundancias) |
 | **Estabilidad de Memoria en Lotes Masivos**| Consumo creciente | **Estable en ~1.9 GB** | **Zero Memory Leaks** |
 | **Cobertura de Pruebas Unitarias** | 325 aprobadas | **335 aprobadas (100% ✅)**| **Alta confiabilidad** |
+
+---
+
+## 🔮 El Futuro: Hacia la Suite Todo-en-Uno con LightCraft
+
+Actualmente, Guto Flow interactúa de manera no destructiva con **Adobe Lightroom Classic** a través de sidecars `.XMP` con paridad total de máscaras.
+
+La visión arquitectónica en marcha contempla la **integración nativa con motores de revelado RAW modernos como LightCraft**:
+* **Ecosistema Unificado:** Fusionar en una sola aplicación de escritorio el culling asistido por IA, la extracción de ráfagas en Rust, las máscaras anatómicas automáticas y el revelado fotográfico profesional de 32 bits.
+* **Flujo Todo-en-Uno Sin Fricciones:** Eliminar la necesidad de alternar entre diferentes programas o lidiar con exportaciones complejas, brindando al fotógrafo una estación de trabajo completa, rápida e independiente.
 
 ---
 
